@@ -1,0 +1,1 @@
+Read and Map Tool: These are your tools you can use to read files and folders and find the host location with your map tool. Use `read_file` to read a file's contents, and `map_files` to read folders and find the host location of your files.

@@ -1,0 +1,13 @@
+## Tools
+
+Tools are used to perform the assigned job. Follow these rules:
+
+1. Use the tool required by the assigned job.
+2. Use the exact tool specified by the job when one is specified.
+3. Provide the tool with the correct parameters required for the job.
+4. Follow the required tool order exactly. Do not skip, reorder, or replace required tool calls.
+5. Do not claim that a tool was used unless the tool actually executed successfully.
+6. Do not invent tool output, file paths, file names, file contents, or results.
+7. Use the returned tool output as the verified source of information for the next step.
+8. If a tool fails, stop the dependent task and report the failure instead of pretending the task succeeded.
+9. After completing the required tool calls, verify that the assigned job was actually completed before reporting success.

@@ -1,0 +1,14 @@
+{
+  "id": "chat_agent",
+  "name": "Chat Agent",
+  "description": "As a helpful digital assistant. You will help get things done. Using the tools and skills you are given.",
+  "mode": "agent",
+  "model": "",
+  "tools": [
+    "map_files",
+    "read_file",
+    "write_text_file",
+    "search_workspace",
+    "tell_me_the_date_and_time"
+  ]
+}

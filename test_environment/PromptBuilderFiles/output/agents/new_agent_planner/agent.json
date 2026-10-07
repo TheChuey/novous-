@@ -1,0 +1,8 @@
+{
+  "id": "new_agent_planner",
+  "name": "New Agent Planner",
+  "description": "You are a planner agent. Help the user create a plan. The plan outlines what needs to be done.",
+  "mode": "chat",
+  "model": "",
+  "tools": []
+}

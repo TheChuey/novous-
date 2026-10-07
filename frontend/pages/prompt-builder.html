@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Prompt Builder</title>
+<link rel="stylesheet" href="/static/css/builder.css">
+
+<!-- Page furniture only. Everything the builder itself draws is scoped
+     under .pb in builder.css, so none of these can leak into /test. -->
+<style>
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#101318;color:#e8edf2}
+header{padding:18px 24px;background:#181d24;border-bottom:1px solid #303741}
+header h1{margin:0 0 5px;font-size:22px}
+header p{margin:0;color:#9ca8b5;max-width:90ch}
+#pbHost{padding:20px 16px 48px}
+</style>
+</head>
+
+<!-- This page used to be self-contained: inline CSS, inline markup, an
+     inline script. It is now a shell around static/js/builder.js, because
+     the same builder runs as the right-hand panel on /test and a second
+     copy of the markup, the styles and 1000 lines of logic would be two
+     copies to keep in step. The header below is all that is genuinely
+     page-specific. -->
+
+<body>
+<header>
+<h1>Agent Prompt Builder</h1>
+<p>Create reusable prompt parts in categories you can add or remove, select them, and assemble an editable agent.md — published straight into the isolated test environment, never into the managed workspace.</p>
+</header>
+
+<div class="pb" id="pbHost"></div>
+
+<script type="module">
+import Builder from '/static/js/builder.js';
+
+/* No onShowEvidence here: there is no dashboard on this page, so the
+   button would have nothing to point at. It stays disabled. */
+Builder.mount(document.getElementById('pbHost'));
+</script>
+</body>
+</html>

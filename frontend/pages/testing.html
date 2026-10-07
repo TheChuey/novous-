@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Header Test Dashboard</title>
+
+<!-- The evidence log is read by a person looking at a verdict, and a
+     page that has to be reassembled from a stylesheet and a module to
+     show four PASS/FAIL rows is a page that breaks in the one moment it
+     is needed. So the styles, the fetch calls and the nav stay inline.
+
+     The one exception is the sidebar tree, which is the shared
+     js/tree.js module. It is not reimplemented here because a second
+     copy of the tree would be a second copy of the expand state, the
+     folder switcher and the editor hand-off, and the dashboard would
+     drift from the editor the first time any of them changed.
+
+     Three modules are imported now, and all three earn it: js/tree.js
+     (the tree), js/panels.js (resize and collapse) and js/report.js
+     (the saved report's text). The evidence log's own fetches stay inline. -->
+
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#101318;color:#e8edf2;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+body.panel-dragging{cursor:col-resize;user-select:none}
+body.panel-dragging *{cursor:col-resize !important}
+header{padding:10px 24px;background:#181d24;border-bottom:1px solid #303741;display:flex;align-items:center;gap:18px;flex-wrap:wrap;flex-shrink:0}
+nav{display:flex;gap:6px;margin-left:auto;flex-shrink:0;align-self:center;flex-wrap:wrap}
+nav a{display:inline-flex;align-items:center;padding:6px 12px;border-radius:6px;border:1px solid #45474d;background:#2f3136;color:#e5e7eb;font-size:13px;font-weight:500;text-decoration:none;white-space:nowrap}
+nav a:hover{background:#3a3d44;border-color:#565a61;color:#fff}
+nav a[aria-current=page]{background:#0e639c;border-color:#1177bb;color:#fff}
+
+.workspace{display:flex;flex:1;min-height:0}
+
+/* Handles: 4px so they are findable but not a wall. Double-click
+   resets the panel to its default width; arrows work when focused. */
+.resize-handle{width:8px;flex:0 0 auto;cursor:col-resize;background:#20262e;transition:background .2s}
+.resize-handle:hover,.resize-handle:focus-visible{background:#0e639c;outline:none}
+.resize-handle[hidden]{display:none}
+
+.sidebar{width:260px;min-width:180px;flex-shrink:0;background:#181d24;border-right:1px solid #303741;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-header{padding:10px;border-bottom:1px solid #303741;font-weight:bold;color:#8fa0b3;font-size:12px;letter-spacing:.06em;text-transform:uppercase}
+
+/* The right panel keeps test controls close to the evidence they operate on. */
+.test-panel{width:360px;min-width:300px;flex-shrink:0;background:#181d24;border-left:1px solid #303741;display:flex;flex-direction:column;overflow:hidden}
+.test-panel-header{padding:10px;border-bottom:1px solid #303741;font-weight:bold;color:#8fa0b3;font-size:12px;letter-spacing:.06em;text-transform:uppercase;flex-shrink:0}
+.test-tools-content{flex:1;overflow-y:auto;padding:12px}
+.test-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.test-func-card{min-height:76px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:10px 6px;border:1px solid #39424d;border-radius:7px;background:#20262e;color:#dfe6ee;font-size:12px;text-align:center}
+.test-func-icon{color:#70b7ed;font-size:19px;font-weight:bold;line-height:1}
+.test-func-card:hover:not(:disabled){background:#293341;border-color:#0e639c}
+.test-func-card:disabled{background:#171c22;border-color:#2a3038;color:#687382;opacity:.6;cursor:not-allowed}
+.test-func-card:disabled .test-func-icon{color:#687382}
+.test-panel-note{margin:14px 2px 0;color:#7f8b99;font-size:12px;line-height:1.5}
+
+.tree{flex:1;overflow-y:auto;padding:8px}
+.tree-item{user-select:none;cursor:pointer;padding:4px 6px;border-radius:3px}
+.tree-item:hover{background:#20262e}
+.tree-item.selected{background:#094771}
+.tree-item.folder{display:flex;align-items:center;gap:4px}
+.tree-item.folder .toggle{display:inline-block;width:12px;font-size:11px;color:#8fa0b3;text-align:center;flex-shrink:0}
+.tree-item.folder .label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tree-item.root{font-weight:bold;text-transform:uppercase;font-size:11px;letter-spacing:.5px;color:#9ca3af;margin-top:4px}
+.tree-item.root.active{color:#e5e7eb}
+.tree-item.root.readonly .label{color:#6b7280}
+.tree-item.readonly{opacity:.6}
+.root-lock{margin-left:auto;font-size:11px;opacity:.7}
+.children{margin-left:12px}
+.children.collapsed{display:none}
+
+main{flex:1;min-width:0;overflow-y:auto;padding:40px 32px 48px;display:grid;gap:20px;align-content:start}
+
+/* The title sits with the content it describes rather than in the
+   header, matching home.html. home.html centres the heading by
+   shrink-wrapping it in a flex column; main is a grid whose items
+   span the full width, so the wrapper centres the text instead. */
+.page-intro{text-align:center}
+.page-intro h1{margin:0;font-size:34px;font-weight:bold;letter-spacing:1px;color:#fff}
+.page-intro p{margin:8px 0 8px;font-size:13px;color:#9ca8b5;line-height:1.5}
+.card{background:#151a20;border:1px solid #303741;border-radius:8px;padding:16px}
+h2{margin:0 0 12px;font-size:16px;color:#dfe6ee;border-bottom:1px solid #303741;padding-bottom:8px;display:flex;align-items:center;gap:10px}
+h2 .spacer{flex:1}
+button{border:0;border-radius:6px;padding:10px 14px;cursor:pointer;background:#4c8bf5;color:#fff;font-size:14px;font-family:inherit}
+button.secondary{background:#303944}
+button.danger{background:#9f303b}
+button.tiny{padding:4px 10px;font-size:12px}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:hover:not(:disabled){opacity:.92}
+select,input{background:#0d1116;color:#edf2f7;border:1px solid #39424d;border-radius:6px;padding:9px;font-family:inherit;font-size:14px;min-width:0}
+.toolbar{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:5px;min-width:180px}
+.field span{font-size:12px;color:#8fa0b3;letter-spacing:.04em}
+.status{margin-top:14px;padding:10px;border-radius:6px;background:#1a2129;color:#aeb9c5;font-size:13px;white-space:pre-wrap;line-height:1.5}
+.status.error{color:#ff9b9b}
+.status.ok{color:#8fe3a6}
+.status.warn{color:#f5c96b}
+.status[hidden]{display:none}
+
+/* Summary bar: the one-glance answer before any reading. */
+.summary{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.summary .counts{font-size:26px;font-weight:600}
+.summary .meta{color:#9ca8b5;font-size:13px;line-height:1.6}
+.badge{display:inline-block;padding:3px 11px;border-radius:9px;font-size:12px;font-weight:600;letter-spacing:.04em}
+.badge.pass{background:#123a24;color:#8fe3a6;border:1px solid #2a6b45}
+.badge.fail{background:#3a1620;color:#ff9b9b;border:1px solid #6b3341}
+.badge.idle{background:#1f252d;color:#8fa0b3;border:1px solid #39424d}
+
+/* One card per header test. The verdict is the heading, the reason is
+   the summary line, and the transcript is below it - a PASS with no
+   transcript in reach is a claim, not a result. */
+.result{border-left:3px solid #39424d}
+.result.pass{border-left-color:#2a6b45}
+.result.fail{border-left-color:#6b3341}
+.result h3{margin:0;font-size:15px;color:#dfe6ee;text-transform:capitalize}
+.result .reason{margin:6px 0 12px;color:#aeb9c5;font-size:13px;line-height:1.5}
+.turn{margin:0 0 10px}
+.turn:last-child{margin-bottom:0}
+.turn .label{font-size:11px;color:#6f7d8c;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}
+.turn pre{margin:0;padding:10px;background:#0d1116;border:1px solid #262d36;border-radius:6px;color:#cbd5e1;font-family:Consolas,Menlo,monospace;font-size:12.5px;white-space:pre-wrap;word-break:break-word;max-height:340px;overflow:auto}
+.turn.prompt pre{color:#9fb3c8}
+details{margin-top:10px}
+summary{cursor:pointer;font-size:12.5px;color:#8fa0b3;padding:4px 0}
+summary:hover{color:#cbd5e1}
+.empty{color:#5c6774;font-size:13px;font-style:italic;line-height:1.6}
+.empty code{font-style:normal;background:#0d1116;padding:2px 6px;border-radius:5px;border:1px solid #39424d}
+.results{display:grid;gap:12px}
+</style>
+</head>
+
+<body>
+<header>
+  <nav aria-label="Main">
+    <a href="/">Home</a>
+    <a href="/editor">Editor</a>
+    <a href="/chat">Chat</a>
+    <a href="/prompt-builder" target="_blank" rel="noopener">Prompt Builder</a>
+    <a href="/test" aria-current="page">Test</a>
+  </nav>
+  <!-- The builder remains available as a separate page; this dashboard
+       keeps only its own test tools in the right-hand panel. -->
+</header>
+
+<div class="workspace" id="workspace">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">Folders</div>
+    <div id="tree" class="tree">Loading...</div>
+  </div>
+
+  <div class="resize-handle" id="handleLeft" role="separator" aria-orientation="vertical" tabindex="0"
+       aria-label="Resize or collapse folders panel"
+       title="Drag to resize; drag to the edge to collapse or back to reopen. Double-click to reset. Arrow keys resize."></div>
+
+  <main id="centrePanel">
+
+    <div class="page-intro">
+      <h1>&#129514; Agent Header Test Dashboard</h1>
+      <p>Four questions, one per header of an agent's markdown, asked of the running
+         agent. The verdict comes from its own reply, so this shows what the model
+         received - not what the file says.</p>
+    </div>
+
+    <div class="card">
+      <h2>Run the header tests</h2>
+      <div class="toolbar">
+        <label class="field">
+          <span>Test agent</span>
+          <select id="agent_select" disabled></select>
+        </label>
+        <label class="field">
+          <span>Model</span>
+          <select id="model_select" disabled>
+            <option value="">(the agent's own model)</option>
+          </select>
+        </label>
+        <button id="run_btn" type="button" disabled>Run tests</button>
+        <button id="delete_agent_btn" class="danger" type="button" disabled>Delete test agent</button>
+        <button id="refresh_btn" class="secondary" type="button">Refresh</button>
+      </div>
+      <div id="run_status" class="status" hidden></div>
+    </div>
+
+    <div class="card" id="lastRunCard">
+      <h2>Last run
+        <span class="spacer"></span>
+        <button id="clear_btn" class="secondary tiny" type="button" disabled
+                title="Empty this page. The saved results file is not touched - Refresh brings the run back.">Clear</button>
+        <button id="save_btn" class="secondary tiny" type="button" disabled
+                title="Write the report to a timestamped text file in the test environment, then offer it to your browser.">Save report</button>
+      </h2>
+      <div id="summary" class="summary">
+        <span class="badge idle">NO RESULTS</span>
+        <span class="empty">Loading evidence log&hellip;</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Evidence</h2>
+      <div id="results" class="results">
+        <div class="empty">Loading evidence log&hellip;</div>
+      </div>
+    </div>
+
+  </main>
+
+  <div class="resize-handle" id="handleRight" role="separator" aria-orientation="vertical" tabindex="0"
+       aria-label="Resize or collapse agent test tools panel"
+       title="Drag to resize; drag to the edge to collapse or back to reopen. Double-click to reset. Arrow keys resize."></div>
+
+  <aside class="test-panel" id="testToolsPanel" aria-label="Agent test tools">
+    <div class="test-panel-header">Agent Test Tools</div>
+    <div class="test-tools-content">
+      <div class="test-grid" aria-label="Agent test actions">
+        <button class="test-func-card" type="button" data-dashboard-action="run_btn">
+          <span class="test-func-icon" aria-hidden="true">▶</span>
+          <span>Run Test Suite</span>
+        </button>
+        <button id="copy_agent_btn" class="test-func-card" type="button" disabled
+                title="Copy the selected test agent into workspace/agents/">
+          <span class="test-func-icon" aria-hidden="true">＋</span>
+          <span>Add Agent to Workspace</span>
+        </button>
+        <button class="test-func-card" type="button" disabled title="Debug Agent is not available yet">
+          <span class="test-func-icon" aria-hidden="true">⌕</span>
+          <span>Debug Agent</span>
+        </button>
+        <button class="test-func-card" type="button" disabled title="Prompt Inspector is not available yet">
+          <span class="test-func-icon" aria-hidden="true">&gt;_</span>
+          <span>Prompt Inspector</span>
+        </button>
+        <button class="test-func-card" type="button" disabled title="Output Evaluator is not available yet">
+          <span class="test-func-icon" aria-hidden="true">✓</span>
+          <span>Output Evaluator</span>
+        </button>
+        <button class="test-func-card" type="button" disabled title="Benchmarking is not available yet">
+          <span class="test-func-icon" aria-hidden="true">◷</span>
+          <span>Benchmark</span>
+        </button>
+        <button class="test-func-card" type="button" disabled title="API logs are not available yet">
+          <span class="test-func-icon" aria-hidden="true">≡</span>
+          <span>API Logs</span>
+        </button>
+        <button class="test-func-card" type="button" data-dashboard-action="refresh_btn">
+          <span class="test-func-icon" aria-hidden="true">↻</span>
+          <span>Refresh Dashboard</span>
+        </button>
+        <button class="test-func-card" type="button" data-dashboard-action="clear_btn" disabled>
+          <span class="test-func-icon" aria-hidden="true">×</span>
+          <span>Clear Results</span>
+        </button>
+        <button class="test-func-card" type="button" data-dashboard-action="save_btn" disabled>
+          <span class="test-func-icon" aria-hidden="true">↓</span>
+          <span>Save Report</span>
+        </button>
+        <button class="test-func-card" type="button" disabled title="Browse saved reports from the Folders panel">
+          <span class="test-func-icon" aria-hidden="true">▤</span>
+          <span>Browse Reports</span>
+        </button>
+      </div>
+      <div id="workspace_agent_status" class="status" hidden></div>
+      <p class="test-panel-note">Unavailable tools are dimmed. Saved reports can be opened from the Folders panel.</p>
+    </div>
+  </aside>
+</div>
+
+<script type="module">
+import Tree from "/static/js/tree.js";
+import Panels from "/static/js/panels.js";
+import { buildReportText, reportFileName } from "/static/js/report.js";
+
+// ============================================================
+// HTTP
+// ============================================================
+
+/* The API client module is deliberately not imported for the dashboard's
+   own calls: this page has to keep working if api.js changes shape, and it
+   makes four. Tree pulls it in as a dependency, but nothing below uses
+   it. The status code rides along on the error so "nothing
+   published yet" (404) can be told from "the server is down" (0) without
+   matching on message text. */
+async function api(path, options = {}) {
+  const res = await fetch(path, options);
+  if (!res.ok) {
+    let detail = '';
+    try {
+      detail = (await res.json()).detail || '';
+    } catch (e) {
+      detail = '';
+    }
+    const error = new Error(detail || `Request failed: ${res.status}`);
+    error.status = res.status;
+    throw error;
+  }
+  return res.json();
+}
+
+const $ = (id) => document.getElementById(id);
+
+function setStatus(message, kind) {
+  const el = $("run_status");
+  if (!message) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.textContent = message;
+  el.className = "status" + (kind ? " " + kind : "");
+}
+
+function setPanelStatus(message, kind) {
+  const el = $("workspace_agent_status");
+  el.hidden = !message;
+  el.textContent = message || "";
+  el.className = "status" + (kind ? " " + kind : "");
+}
+
+// ============================================================
+// REPORT STATE
+// ============================================================
+
+/* The report is held here, not only in the DOM. Clear and Save both need
+   to know whether there is one and what it says, and re-reading it from
+   the rendered rows would mean parsing text back into data. */
+let currentReport = null;
+
+function setReportButtonsEnabled(hasReport) {
+  $("clear_btn").disabled = !hasReport;
+  $("save_btn").disabled = !hasReport;
+  syncDashboardActions();
+}
+
+function syncDashboardActions() {
+  document.querySelectorAll("[data-dashboard-action]").forEach((button) => {
+    const source = $(button.dataset.dashboardAction);
+    if (source) button.disabled = source.disabled;
+  });
+}
+
+function syncAgentActions() {
+  const hasSelection = Boolean($("agent_select").value);
+  $("run_btn").disabled = !hasSelection || running || deletingAgent;
+  $("delete_agent_btn").disabled = !hasSelection || running || deletingAgent;
+  $("copy_agent_btn").disabled = !hasSelection || copyingAgent;
+  syncDashboardActions();
+}
+
+// ============================================================
+// RENDERING
+// ============================================================
+
+const HEADERS = ["role", "user", "purpose", "hallucinations"];
+
+function badge(passed) {
+  const el = document.createElement("span");
+  el.className = "badge " + (passed ? "pass" : "fail");
+  el.textContent = passed ? "PASS" : "FAIL";
+  return el;
+}
+
+function turn(label, text, extraClass) {
+  const box = document.createElement("div");
+  box.className = "turn" + (extraClass ? " " + extraClass : "");
+
+  const caption = document.createElement("div");
+  caption.className = "label";
+  caption.textContent = label;
+
+  const body = document.createElement("pre");
+  body.textContent = (text || "").trim() || "(empty)";
+
+  box.append(caption, body);
+  return box;
+}
+
+function renderRow(row) {
+  const card = document.createElement("div");
+  card.className = "card result " + (row.status === "PASS" ? "pass" : "fail");
+
+  const head = document.createElement("h3");
+  head.textContent = row.section || "unknown";
+  head.append(badge(row.status === "PASS"));
+
+  const reason = document.createElement("p");
+  reason.className = "reason";
+  reason.textContent = row.reason || "";
+
+  card.append(head, reason, turn("Prompt sent", row.prompt, "prompt"));
+
+  /* A model reply is a few hundred characters normally and a few
+     thousand when it narrates a tool loop, so the transcript starts
+     collapsed and is there for anyone who needs to check the verdict
+     against what was actually said. */
+  const details = document.createElement("details");
+  const summary = document.createElement("summary");
+  summary.textContent = "Agent reply (" + (row.response || "").length + " characters)";
+  details.append(summary, turn("Reply", row.response, "reply"));
+  card.appendChild(details);
+
+  return card;
+}
+
+function renderSummary(summary) {
+  const box = $("summary");
+  box.innerHTML = "";
+
+  if (!summary || typeof summary.total !== "number") {
+    const idle = document.createElement("span");
+    idle.className = "badge idle";
+    idle.textContent = "NO RESULTS";
+    const note = document.createElement("span");
+    note.className = "empty";
+    note.textContent = "Run the suite, or publish an agent first.";
+    box.append(idle, note);
+    return;
+  }
+
+  const overall = document.createElement("span");
+  overall.className = "badge " + (summary.failed ? "fail" : "pass");
+  overall.textContent = summary.failed ? "FAIL" : "PASS";
+
+  const counts = document.createElement("span");
+  counts.className = "counts";
+  counts.textContent = summary.passed + " / " + summary.total + " passed";
+
+  const meta = document.createElement("span");
+  meta.className = "meta";
+  const when = summary.ran_at ? new Date(summary.ran_at) : null;
+  meta.textContent = [
+    summary.agent_id ? "agent: " + summary.agent_id : null,
+    summary.model ? "model: " + summary.model : null,
+    when && !isNaN(when) ? "ran: " + when.toLocaleString() : null,
+  ].filter(Boolean).join("  ·  ");
+
+  box.append(overall, counts, meta);
+}
+
+function renderReport(report) {
+  currentReport = report || null;
+  setReportButtonsEnabled(Boolean(currentReport));
+  renderSummary(report && report.summary);
+
+  const host = $("results");
+  host.innerHTML = "";
+
+  const rows = (report && report.results) || [];
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "No evidence yet. Publish an agent from the Prompt "
+      + "Builder, then press Run tests.";
+    host.appendChild(empty);
+    return;
+  }
+
+  /* The report is ordered by the runner; the four headers are rendered
+     in suite order regardless, so a partial report still reads as the
+     four known questions. */
+  for (const name of HEADERS) {
+    const row = rows.find((r) => r.section === name);
+    if (row) host.appendChild(renderRow(row));
+  }
+  for (const row of rows) {
+    if (!HEADERS.includes(row.section)) host.appendChild(renderRow(row));
+  }
+}
+
+function fillSelect(select, items, value, keepFirst) {
+  select.innerHTML = "";
+  if (keepFirst) {
+    const first = document.createElement("option");
+    first.value = "";
+    first.textContent = keepFirst;
+    select.appendChild(first);
+  }
+  for (const item of items) {
+    const option = document.createElement("option");
+    option.value = item.value;
+    option.textContent = item.label;
+    select.appendChild(option);
+  }
+  if (value) select.value = value;
+}
+
+// ============================================================
+// DATA
+// ============================================================
+
+async function loadAgents() {
+  const data = await api("/api/test/agents");
+  const agents = data.agents || [];
+  const wanted = new URLSearchParams(location.search).get("agent");
+
+  fillSelect(
+    $("agent_select"),
+    agents.map((a) => {
+      const id = a.folder || a.id;
+      return { value: id, label: a.name + "  (" + id + ")" };
+    }),
+    wanted && agents.some((a) => (a.folder || a.id) === wanted) ? wanted : null,
+    agents.length ? null : "no published test agents"
+  );
+  $("agent_select").disabled = !agents.length;
+  syncAgentActions();
+  return agents;
+}
+
+async function loadModels() {
+  const data = await api("/api/models");
+  fillSelect(
+    $("model_select"),
+    (data.models || []).map((m) => ({ value: m.id, label: m.name || m.id })),
+    null,
+    "(the agent's own model)"
+  );
+  $("model_select").disabled = false;
+}
+
+async function loadResults() {
+  try {
+    renderReport(await api("/api/test/results"));
+  } catch (error) {
+    /* 404 is the ordinary first visit: no run has happened in this
+       checkout yet, which is an empty dashboard rather than an error. */
+    if (error.status === 404) {
+      renderReport(null);
+      return;
+    }
+    renderReport(null);
+    setStatus("Cannot read the evidence log: " + error.message, "error");
+  }
+}
+
+// ============================================================
+// FILE TREE
+// ============================================================
+
+/* Only the test environment, because only the test environment is what
+   this page has verdicts about. Home omits the same root for the same
+   reason, and the editor keeps both. */
+const TEST_ROOT = "test_environment";
+
+/* The dashboard never edits a file, so a click opens one in the editor.
+   The window is named so a second click lands in the same tab instead of
+   stacking popups, and sized and centred here rather than left to the
+   default 1x1 corner placement. */
+const EDITOR_WINDOW = "header_test_file";
+
+const EDITOR_FEATURES = [
+  "popup=yes",
+  "width=1100",
+  "height=780",
+  "left=" + Math.round((screen.availWidth - 1100) / 2),
+  "top=" + Math.round((screen.availHeight - 780) / 2),
+].join(",");
+
+Tree.onFileSelect = (path) => {
+  window.open(
+    "/editor?path=" + encodeURIComponent(path)
+      + "&root=" + encodeURIComponent(TEST_ROOT),
+    EDITOR_WINDOW,
+    EDITOR_FEATURES
+  );
+};
+
+async function loadTree() {
+  try {
+    await Tree.load([TEST_ROOT]);
+  } catch (error) {
+    /* A blank sidebar reads as an empty test environment, which is a
+       different and wrong answer, so say so in place. */
+    const host = document.getElementById("tree");
+    host.textContent = "Cannot list " + TEST_ROOT + ": " + error.message;
+  }
+}
+
+// ============================================================
+// ACTIONS
+// ============================================================
+
+let running = false;
+let deletingAgent = false;
+let copyingAgent = false;
+
+async function deleteSelectedAgent() {
+  const agentId = $("agent_select").value;
+  if (!agentId || running || deletingAgent) return;
+  if (!confirm(`Delete test agent '${agentId}' from the test environment? This cannot be undone.`)) return;
+
+  deletingAgent = true;
+  syncAgentActions();
+  setStatus(`Deleting test agent '${agentId}'…`, "");
+  let deleted = false;
+  try {
+    await api(`/api/test/agents/${encodeURIComponent(agentId)}`, {
+      method: "DELETE",
+    });
+    deleted = true;
+    $("agent_select").value = "";
+    const query = new URLSearchParams(location.search);
+    if (query.get("agent") === agentId) {
+      query.delete("agent");
+      const suffix = query.toString();
+      history.replaceState(null, "", location.pathname + (suffix ? `?${suffix}` : ""));
+    }
+    await loadAgents();
+    await loadTree();
+    setStatus(`Deleted test agent '${agentId}'.`, "ok");
+  } catch (error) {
+    const message = deleted
+      ? `Deleted test agent '${agentId}', but could not refresh the dashboard: ${error.message}`
+      : `Could not delete test agent '${agentId}': ${error.message}`;
+    setStatus(message, "error");
+  } finally {
+    deletingAgent = false;
+    syncAgentActions();
+  }
+}
+
+async function copySelectedAgentToWorkspace() {
+  const agentId = $("agent_select").value;
+  if (!agentId || copyingAgent) return;
+
+  const workspaceAgentId = prompt(
+    "Workspace agent id / folder name:",
+    agentId
+  );
+  if (workspaceAgentId === null) return;
+  const targetId = workspaceAgentId.trim();
+  if (!/^[A-Za-z0-9_-]+$/.test(targetId)) {
+    setPanelStatus(
+      "Use only letters, numbers, underscore or dash for the workspace agent id.",
+      "error"
+    );
+    return;
+  }
+
+  copyingAgent = true;
+  syncAgentActions();
+  setPanelStatus(`Adding '${agentId}' as '${targetId}' to workspace/agents/…`, "");
+  try {
+    const result = await api(
+      `/api/test/agents/${encodeURIComponent(agentId)}/workspace`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent_id: targetId }),
+      }
+    );
+    setPanelStatus(`Added '${result.source_agent_id}' as '${result.agent_id}' at ${result.path}.`, "ok");
+  } catch (error) {
+    setPanelStatus(`Could not add '${agentId}' to the workspace: ${error.message}`, "error");
+  } finally {
+    copyingAgent = false;
+    syncAgentActions();
+  }
+}
+
+async function runTests() {
+  if (running) return;
+
+  const agentId = $("agent_select").value;
+  if (!agentId) {
+    setStatus("Pick a test agent first.", "warn");
+    return;
+  }
+
+  running = true;
+  $("run_btn").disabled = true;
+  $("run_btn").textContent = "Running…";
+  $("agent_select").disabled = true;
+  syncAgentActions();
+  setStatus(
+    "Asking the agent four questions. Each one is a full model turn, so "
+    + "this takes a moment - a minute or two on a local model.",
+    ""
+  );
+
+  try {
+    const model = $("model_select").value || null;
+    const report = await api("/api/test/run_header_tests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent_id: agentId, model })
+    });
+    renderReport(report);
+    const summary = report.summary || {};
+    setStatus(
+      (summary.passed || 0) + " of " + (summary.total || 0)
+      + " header tests passed.",
+      summary.failed ? "warn" : "ok"
+    );
+  } catch (error) {
+    setStatus("The run failed: " + error.message, "error");
+  } finally {
+    running = false;
+    $("run_btn").textContent = "Run tests";
+    $("agent_select").disabled = false;
+    syncAgentActions();
+  }
+}
+
+async function refresh() {
+  try {
+    await loadAgents();
+    await loadResults();
+    setStatus("Refreshed from the test environment.", "ok");
+  } catch (error) {
+    setStatus("Cannot reach the Project Manager: " + error.message, "error");
+  }
+  /* After the refresh button rather than inside refresh(): a run writes
+     test_results.json into the tree, so this is how a just-finished run
+     becomes visible without a reload. The tree reports its own failure
+     in its own pane and must not take the evidence pane down with it. */
+  await loadTree();
+}
+
+// ============================================================
+// CLEAR
+// ============================================================
+
+/* Deliberately destructive to nothing. Emptying the page is a way of
+   re-reading the report, not of disposing of it: the run is still on
+   disk, and Refresh brings it straight back. Deleting the results file
+   would make this button the only place evidence could be lost by
+   accident, which is a poor trade for a control that sits next to the
+   verdict. */
+function clearReport() {
+  renderReport(null);
+
+  fillSelect($("agent_select"), [], null, "choose an agent");
+  $("agent_select").disabled = true;
+  $("run_btn").disabled = true;
+  fillSelect($("model_select"), [], null, "(the agent's own model)");
+  $("model_select").disabled = false;
+
+  /* Drop ?agent= too, or the next Refresh silently re-selects the agent
+     that was just cleared. */
+  history.replaceState(null, "", location.pathname);
+
+  setStatus(
+    "Cleared. Nothing was deleted - press Refresh to read the last run again.",
+    ""
+  );
+}
+
+// ============================================================
+// SAVE
+// ============================================================
+
+/* Where a saved report lands, under the test root so it shows up in the
+   tree on the left and opens from there like any other file. */
+const REPORT_DIR = "test_environment/output";
+
+/* One press, two destinations, one text. Both copies come from the same
+   string, so the file in the project and the file the browser writes
+   cannot differ - which a server-side export re-derived from the JSON
+   could not promise. */
+async function saveReport() {
+  if (!currentReport) return;
+
+  const text = buildReportText(currentReport);
+  const file = reportFileName(currentReport.summary || {});
+  const path = REPORT_DIR + "/" + file;
+
+  $("save_btn").disabled = true;
+  syncDashboardActions();
+
+  /* The project copy first, in its own try: a refused write must not
+     stop the user getting the report at all. */
+  let wrote = false;
+  let problem = "";
+  try {
+    await api("/api/file/write?path=" + encodeURIComponent(path), {
+      method: "PUT",
+      headers: { "Content-Type": "text/plain" },
+      body: text,
+    });
+    wrote = true;
+  } catch (error) {
+    problem = "\nNot saved to the project: " + error.message;
+  }
+
+  /* Then the browser's own Save As. Appended before the click because a
+     detached anchor's activation is inconsistent between browsers, and
+     revoked immediately after so the blob does not outlive it. */
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = file;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+
+  /* The new file is in the tree now, so the left pane is showing a stale
+     listing until this runs. */
+  if (wrote) await loadTree();
+
+  setReportButtonsEnabled(Boolean(currentReport));
+
+  setStatus(
+    (wrote ? "Saved " + path + "." : "Could not save into the project.")
+    + "\nYour browser was offered " + file + " as well." + problem,
+    wrote ? "ok" : "warn"
+  );
+}
+
+// ============================================================
+// PANELS
+// ============================================================
+
+const panels = Panels.init({
+  container: $("workspace"),
+  left: {
+    element: $("sidebar"),
+    panel: { min: 180, max: 520, default: 260 },
+  },
+  centre: { element: $("centrePanel") },
+  right: {
+    element: $("testToolsPanel"),
+    panel: { min: 300, max: 520, default: 360 },
+  },
+  handleLeft: $("handleLeft"),
+  handleRight: $("handleRight"),
+  storageKey: "testDashboard",
+});
+panels.show("centre");
+
+// ============================================================
+// WIRING
+// ============================================================
+
+$("run_btn").addEventListener("click", runTests);
+$("delete_agent_btn").addEventListener("click", deleteSelectedAgent);
+$("copy_agent_btn").addEventListener("click", copySelectedAgentToWorkspace);
+$("agent_select").addEventListener("change", () => {
+  setPanelStatus("", "");
+  syncAgentActions();
+});
+$("refresh_btn").addEventListener("click", refresh);
+$("clear_btn").addEventListener("click", clearReport);
+$("save_btn").addEventListener("click", saveReport);
+document.querySelectorAll("[data-dashboard-action]").forEach((button) => {
+  button.addEventListener("click", () => {
+    $(button.dataset.dashboardAction)?.click();
+  });
+});
+syncDashboardActions();
+
+/* The agents and the models are independent of the evidence, so a
+   failure in one does not blank the other two. */
+(async function init() {
+  try {
+    await loadModels();
+  } catch (error) {
+    /* The model list is a convenience; the suite resolves a model on
+       its own, so this is not worth an error banner. */
+  }
+  /* refresh() loads the tree too, and the first call is how the tree
+     gets loaded at all -- no separate tree load here. */
+  await refresh();
+})();
+</script>
+</body>
+</html>

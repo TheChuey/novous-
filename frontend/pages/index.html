@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Manager Dashboard</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+            background: #1e1e1e;
+            color: #ffffff;
+        }
+
+        .topbar {
+            height: 48px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 12px;
+            background: #252526;
+            border-bottom: 1px solid #3f3f46;
+        }
+
+        .title {
+            font-weight: bold;
+            margin-right: 12px;
+        }
+
+        button {
+            border: 1px solid #555;
+            background: #333;
+            color: #fff;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #444;
+        }
+
+        button.primary {
+            background: #0e639c;
+            border-color: #1177bb;
+        }
+
+        .container {
+            padding: 24px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: #252526;
+            border: 1px solid #3f3f46;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .card h2 {
+            margin-top: 0;
+            margin-bottom: 12px;
+            font-size: 18px;
+        }
+
+        .agent-controls {
+            display: grid;
+            gap: 10px;
+            max-width: 760px;
+        }
+
+        .agent-controls select,
+        .agent-controls textarea {
+            width: 100%;
+            padding: 9px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #1e1e1e;
+            color: #fff;
+            font: inherit;
+        }
+
+        .agent-controls textarea {
+            min-height: 90px;
+            resize: vertical;
+        }
+
+        .agent-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .agent-description,
+        .agent-status {
+            color: #ccc;
+            font-size: 14px;
+        }
+
+        .agent-reply {
+            margin: 0;
+            padding: 12px;
+            border: 1px solid #3f3f46;
+            border-radius: 4px;
+            background: #1e1e1e;
+            color: #fff;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .orchestrator-intro,
+        .orchestrator-status {
+            color: #ccc;
+            font-size: 14px;
+            line-height: 1.45;
+        }
+
+        .orchestrator-status {
+            min-height: 1.3em;
+        }
+
+        .orchestrator-agents,
+        .orchestrator-queue {
+            max-height: 280px;
+            overflow-y: auto;
+            border: 1px solid #3f3f46;
+            border-radius: 5px;
+            padding: 8px;
+            display: grid;
+            gap: 6px;
+            color: #ccc;
+            font-size: 13px;
+        }
+
+        .orchestrator-agents .agent-option {
+            display: flex;
+            gap: 9px;
+            align-items: center;
+            min-height: 36px;
+            padding: 6px 9px;
+            border: 1px solid #343a46;
+            border-radius: 5px;
+            background: #20232b;
+            cursor: pointer;
+        }
+
+        .orchestrator-agents .agent-option:hover {
+            background: #292e39;
+            border-color: #4b5563;
+        }
+
+        .orchestrator-agents input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            flex: 0 0 auto;
+            margin: 0;
+            accent-color: #0e8acb;
+        }
+
+        .orchestrator-queue .queue-item {
+            display: flex;
+            gap: 7px;
+            align-items: center;
+            min-height: 34px;
+            padding: 4px;
+        }
+
+        .orchestrator-queue .qidx {
+            min-width: 22px;
+            color: #70b7ed;
+        }
+
+        .queue-agent-name {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .orchestrator-queue button {
+            padding: 3px 8px;
+        }
+
+        .orchestrator-field {
+            display: grid;
+            gap: 6px;
+            color: #ccc;
+            font-size: 14px;
+        }
+
+        .orchestrator-field select,
+        .orchestrator-field textarea {
+            width: 100%;
+            padding: 9px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #1e1e1e;
+            color: #fff;
+            font: inherit;
+        }
+
+        .orchestrator-field textarea {
+            min-height: 110px;
+            resize: vertical;
+        }
+
+        .orchestrator-results {
+            display: grid;
+            gap: 10px;
+        }
+
+        .orchestrator-result-item {
+            padding: 12px;
+            border: 1px solid #3f3f46;
+            border-radius: 5px;
+            background: #1e1e1e;
+        }
+
+        .orchestrator-result-item h3 {
+            margin: 0 0 8px;
+            font-size: 14px;
+        }
+
+        .orchestrator-result-item p {
+            margin: 0;
+            color: #ddd;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .tree-item {
+            user-select: none;
+            cursor: pointer;
+            padding: 6px 8px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .tree-item.folder {
+            cursor: pointer;
+        }
+
+        .tree-item.folder .toggle {
+            display: inline-block;
+            width: 12px;
+            font-size: 11px;
+            color: #bbb;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .tree-item:hover {
+            background: #2a2d2e;
+        }
+
+        /* ---- Browser root folders ---- */
+        .tree-item.root {
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+            color: #9ca3af;
+            margin-top: 6px;
+        }
+
+        .tree-item.root.readonly .label {
+            color: #6b7280;
+        }
+
+        .root-lock {
+            font-size: 11px;
+            opacity: 0.7;
+        }
+
+        .tree-item.readonly {
+            opacity: 0.6;
+        }
+
+        .children {
+            margin-left: 16px;
+        }
+
+        .children.collapsed {
+            display: none;
+        }
+
+        .statusbar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 26px;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            background: #007acc;
+            color: white;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="topbar">
+    <div class="title">Project Manager Dashboard</div>
+    <button class="primary" onclick="openEditor()">Editor</button>
+    <button onclick="openEditorPopup()">Editor (Popup)</button>
+    <button onclick="refreshProject()">Refresh</button>
+</div>
+
+<div class="container">
+    <div class="actions">
+        <button class="primary" onclick="openEditor()">Open Full Editor</button>
+        <button onclick="openEditorPopup()">Launch Editor Window</button>
+        <button onclick="submitCreateFilePrompt()">+ New File</button>
+        <button onclick="submitCreateFolderPrompt()">+ New Folder</button>
+    </div>
+
+    <section class="card" aria-labelledby="workspaceAgentsHeading">
+        <h2 id="workspaceAgentsHeading">Workspace AI Agents</h2>
+        <div class="agent-controls">
+            <label for="workspaceAgentSelect">Choose an agent from workspace/agents</label>
+            <select id="workspaceAgentSelect" disabled>
+                <option value="">Loading workspace agents...</option>
+            </select>
+            <div id="workspaceAgentDescription" class="agent-description" aria-live="polite"></div>
+            <div class="agent-actions">
+                <button id="openAgentsFolder" type="button">Open agents folder</button>
+                <button id="openAgentPrompt" type="button" disabled>Open agent.md</button>
+                <button id="openAgentConfig" type="button" disabled>Open agent.json</button>
+            </div>
+            <label for="workspaceAgentMessage">Message</label>
+            <textarea id="workspaceAgentMessage" placeholder="Enter a message for the selected agent"></textarea>
+            <div class="agent-actions">
+                <button id="runWorkspaceAgent" class="primary" type="button" disabled>Run agent</button>
+                <span id="workspaceAgentStatus" class="agent-status" role="status" aria-live="polite"></span>
+            </div>
+            <pre id="workspaceAgentReply" class="agent-reply" aria-live="polite" hidden></pre>
+        </div>
+    </section>
+
+    <section class="card" id="orchestratorCard" aria-labelledby="orchestratorHeading">
+        <h2 id="orchestratorHeading">Agent Orchestrator</h2>
+        <div class="agent-controls">
+            <p class="orchestrator-intro">
+                Multi-agent orchestration is separate from the single-agent runner above.
+                Select and order agents; each receives the original message and earlier agents' replies.
+            </p>
+            <div>
+                <h3>Available agents</h3>
+                <div id="orchestratorAgents" class="orchestrator-agents" aria-label="Available agents">
+                    Loading agents...
+                </div>
+            </div>
+            <div>
+                <h3>Run order</h3>
+                <div id="orchestratorQueue" class="orchestrator-queue" aria-label="Orchestrator run order">
+                    Queue empty.
+                </div>
+                <div class="agent-actions">
+                    <button id="orchestratorClearBtn" type="button">Clear selection</button>
+                </div>
+            </div>
+            <label class="orchestrator-field" for="orchestratorModel">
+                Model override
+                <select id="orchestratorModel">
+                    <option value="">Default agent models</option>
+                </select>
+            </label>
+            <label class="orchestrator-field" for="orchestratorMessage">
+                Message for the agent sequence
+                <textarea id="orchestratorMessage" placeholder="Describe the idea or task for the selected agents"></textarea>
+            </label>
+            <div class="agent-actions">
+                <button id="orchestratorRunBtn" class="primary" type="button">Run orchestrator</button>
+                <span id="orchestratorStatus" class="orchestrator-status" role="status" aria-live="polite"></span>
+            </div>
+            <div id="orchestratorResult" class="orchestrator-results" aria-live="polite" hidden></div>
+        </div>
+    </section>
+
+    <div class="card">
+        <h2>Project Workspace</h2>
+        <div id="projectTree">Loading files...</div>
+    </div>
+</div>
+
+<div class="statusbar">
+    <div id="statusMessage">Ready</div>
+</div>
+
+<script type="module">
+import API from '/static/js/api.js';
+import { initOrchestrator } from '/static/js/orchestrator.js';
+
+let roots = {};
+let workspaceAgents = [];
+const requestedAgentId = new URLSearchParams(window.location.search).get('agent');
+const openOrchestrator = new URLSearchParams(window.location.search).get('panel') === 'orchestrator';
+
+const agentSelect = document.getElementById('workspaceAgentSelect');
+const agentDescription = document.getElementById('workspaceAgentDescription');
+const agentStatus = document.getElementById('workspaceAgentStatus');
+const agentReply = document.getElementById('workspaceAgentReply');
+const runAgentButton = document.getElementById('runWorkspaceAgent');
+const openPromptButton = document.getElementById('openAgentPrompt');
+const openConfigButton = document.getElementById('openAgentConfig');
+
+function selectedWorkspaceAgent() {
+  return workspaceAgents.find(agent => agent.id === agentSelect.value) || null;
+}
+
+function updateAgentSelection() {
+  const agent = selectedWorkspaceAgent();
+  const runnable = Boolean(agent && agent.complete);
+  agentDescription.textContent = agent
+    ? `${agent.description || 'No description'}${agent.complete ? '' : ' (definition is incomplete)' }`
+    : '';
+  runAgentButton.disabled = !runnable;
+  openPromptButton.disabled = !agent || !agent.md_path;
+  openConfigButton.disabled = !agent || !agent.json_path;
+  agentStatus.textContent = agent && !agent.complete
+    ? 'This agent needs both agent.json and agent.md before it can run.'
+    : '';
+  agentReply.hidden = true;
+  agentReply.textContent = '';
+}
+
+async function loadWorkspaceAgents() {
+  agentSelect.disabled = true;
+  agentStatus.textContent = 'Loading workspace agents...';
+  try {
+    const data = await API.agents();
+    workspaceAgents = (data.agents || []).filter(agent => agent.source === 'workspace');
+    agentSelect.replaceChildren();
+    if (!workspaceAgents.length) {
+      agentSelect.add(new Option('No workspace agents found', ''));
+      agentDescription.textContent = 'Create an agent under workspace/agents/ to run it here.';
+      agentStatus.textContent = '';
+      return;
+    }
+    agentSelect.add(new Option('Select a workspace agent', ''));
+    for (const agent of workspaceAgents) {
+      agentSelect.add(new Option(agent.name || agent.id, agent.id));
+    }
+    agentSelect.disabled = false;
+    if (requestedAgentId && workspaceAgents.some(agent => agent.id === requestedAgentId)) {
+      agentSelect.value = requestedAgentId;
+    }
+    agentStatus.textContent = '';
+    updateAgentSelection();
+  } catch (error) {
+    agentSelect.replaceChildren(new Option('Could not load workspace agents', ''));
+    agentStatus.textContent = `Error loading agents: ${error.message}`;
+  }
+}
+
+function openAgentDefinition(kind) {
+  const agent = selectedWorkspaceAgent();
+  const path = agent && agent[`${kind}_path`];
+  if (path) openEditor(`workspace/${path}`);
+}
+
+async function runWorkspaceAgent() {
+  const agent = selectedWorkspaceAgent();
+  const message = document.getElementById('workspaceAgentMessage').value.trim();
+  if (!agent || !agent.complete || runAgentButton.disabled) return;
+  if (!message) {
+    agentStatus.textContent = 'Enter a message before running the agent.';
+    return;
+  }
+  runAgentButton.disabled = true;
+  agentStatus.textContent = `Running ${agent.name || agent.id}...`;
+  agentReply.hidden = true;
+  try {
+    const result = await API.agentRun({ agent_id: agent.id, message });
+    agentReply.textContent = result.reply || '(The agent returned an empty reply.)';
+    agentReply.hidden = false;
+    agentStatus.textContent = `Completed${result.model ? ` using ${result.model}` : ''}.`;
+  } catch (error) {
+    agentStatus.textContent = `Agent failed: ${error.message}`;
+  } finally {
+    runAgentButton.disabled = !agent.complete;
+  }
+}
+
+agentSelect.addEventListener('change', updateAgentSelection);
+document.getElementById('openAgentsFolder').addEventListener('click', () => openEditor('workspace/agents'));
+openPromptButton.addEventListener('click', () => openAgentDefinition('md'));
+openConfigButton.addEventListener('click', () => openAgentDefinition('json'));
+runAgentButton.addEventListener('click', runWorkspaceAgent);
+initOrchestrator();
+if (openOrchestrator) {
+  document.getElementById('orchestratorCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function loadProject() {
+  setStatus('Loading project...');
+  try {
+    const data = await API.project();
+    roots = {};
+    for (const node of data.filesystem || []) {
+      roots[node.name] = node.writable !== false;
+    }
+    renderTree(data.filesystem || []);
+    setStatus('Project loaded');
+  } catch (err) {
+    setStatus('Error: ' + err.message);
+  }
+}
+
+function renderTree(items) {
+  const container = document.getElementById('projectTree');
+  container.innerHTML = '';
+  renderItems(items, container, 0);
+}
+
+function renderItems(items, container, depth) {
+  items.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'tree-item';
+    if (item.type === 'directory') {
+      div.classList.add('folder');
+      div.dataset.path = item.path;
+      const isRoot = depth === 0 && item.root;
+      if (isRoot) {
+        div.classList.add('root');
+        if (item.writable === false) div.classList.add('readonly');
+      }
+      const toggle = document.createElement('span');
+      toggle.className = 'toggle';
+      toggle.textContent = '+';
+      const label = document.createElement('span');
+      label.textContent = (isRoot ? '🗂 ' : '📁 ') + item.name;
+      label.style.flex = '1';
+      label.style.marginLeft = '4px';
+      div.appendChild(toggle);
+      div.appendChild(label);
+      if (isRoot && item.writable === false) {
+        const lock = document.createElement('span');
+        lock.className = 'root-lock';
+        lock.textContent = '🔒';
+        lock.title = 'Read-only';
+        div.appendChild(lock);
+      }
+      div.onclick = (e) => {
+        e.stopPropagation();
+        toggleFolder(div);
+      };
+      container.appendChild(div);
+      if (item.children && item.children.length) {
+        const childrenContainer = document.createElement('div');
+        childrenContainer.className = 'children collapsed';
+        container.appendChild(childrenContainer);
+        renderItems(item.children, childrenContainer, depth + 1);
+      }
+    } else {
+      if (item.editable === false) {
+        div.classList.add('readonly');
+        div.title = 'Read-only';
+      }
+      const label = document.createElement('span');
+      label.textContent = getFileIcon(item.name) + ' ' + item.name;
+      div.appendChild(label);
+      const btnGroup = document.createElement('div');
+      const editBtn = document.createElement('button');
+      editBtn.textContent = 'Edit';
+      editBtn.onclick = (e) => { e.stopPropagation(); openEditor(item.path); };
+      const popupBtn = document.createElement('button');
+      popupBtn.textContent = 'Popup';
+      popupBtn.style.marginLeft = '4px';
+      popupBtn.onclick = (e) => { e.stopPropagation(); openEditorPopup(item.path); };
+      btnGroup.appendChild(editBtn);
+      btnGroup.appendChild(popupBtn);
+      div.appendChild(btnGroup);
+      container.appendChild(div);
+    }
+  });
+}
+
+function getFileIcon(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  const icons = {
+    py: '🐍',
+    html: '🌐', htm: '🌐',
+    css: '🎨',
+    js: '🟨', mjs: '🟨', jsx: '🟨',
+    ts: '🔷', tsx: '🔷',
+    json: '📋',
+    md: '📝',
+    sql: '🗄️',
+    xml: '🧾',
+    sh: '⌨️', bat: '⌨️', ps1: '⌨️',
+    yaml: '⚙️', yml: '⚙️', toml: '⚙️', ini: '⚙️', cfg: '⚙️', env: '⚙️',
+    txt: '📄', csv: '📄'
+  };
+  return icons[ext] || '📄';
+}
+
+function toggleFolder(div) {
+  const toggle = div.querySelector('.toggle');
+  if (toggle) {
+    toggle.classList.toggle('expanded');
+    toggle.textContent = toggle.classList.contains('expanded') ? '−' : '+';
+  }
+  const children = div.nextElementSibling;
+  if (children && children.classList.contains('children')) {
+    children.classList.toggle('collapsed');
+  }
+}
+
+async function submitCreateFilePrompt() {
+  if (!roots[activeRoot()]) {
+    alert(activeRoot() + ' is read-only.');
+    return;
+  }
+  const path = prompt('Enter file path/name:', activeRoot() + '/');
+  if (!path) return;
+  if (!isWritablePath(path)) return;
+  try {
+    await API.fileCreate(path, '');
+    await loadProject();
+    openEditor(path);
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function submitCreateFolderPrompt() {
+  if (!roots[activeRoot()]) {
+    alert(activeRoot() + ' is read-only.');
+    return;
+  }
+  const path = prompt('Enter folder path:', activeRoot() + '/');
+  if (!path) return;
+  if (!isWritablePath(path)) return;
+  try {
+    await API.directoryCreate(path);
+    await loadProject();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function activeRoot() {
+  return Object.keys(roots)[0] ?? '';
+}
+
+function isWritablePath(path) {
+  const head = String(path).split('/')[0];
+  if (head in roots && roots[head] === false) {
+    alert(head + ' is read-only.');
+    return false;
+  }
+  return true;
+}
+
+function openEditor(filePath) {
+  let url = '/editor';
+  if (filePath) url += '?path=' + encodeURIComponent(filePath);
+  const head = filePath ? filePath.split('/')[0] : '';
+  if (head) url += '&root=' + encodeURIComponent(head);
+  window.location.href = url;
+}
+
+function openEditorPopup(filePath) {
+  let url = '/editor';
+  if (filePath) url += '?path=' + encodeURIComponent(filePath);
+  const head = filePath ? filePath.split('/')[0] : '';
+  if (head) url += '&root=' + encodeURIComponent(head);
+  const width = 1200; const height = 800;
+  const left = (window.screen.width - width) / 2;
+  const top = (window.screen.height - height) / 2;
+  window.open(url, 'ProjectManagerEditorPopup', `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes,status=no,toolbar=no,menubar=no`);
+}
+
+function refreshProject() {
+  loadProject();
+  loadWorkspaceAgents();
+}
+
+function setStatus(msg) {
+  document.getElementById('statusMessage').textContent = msg;
+}
+
+window.openEditor = openEditor;
+window.openEditorPopup = openEditorPopup;
+window.refreshProject = refreshProject;
+window.submitCreateFilePrompt = submitCreateFilePrompt;
+window.submitCreateFolderPrompt = submitCreateFolderPrompt;
+
+loadProject();
+loadWorkspaceAgents();
+</script>
+
+</body>
+</html>
