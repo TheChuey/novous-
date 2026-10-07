@@ -1,0 +1,8 @@
+{
+  "id": "pipelines",
+  "name": "Multi-Agent Cascades",
+  "mode": "component_charter",
+  "model": null,
+  "tools": [],
+  "notes": "Component charter only; not registered in the runnable agent library."
+}
