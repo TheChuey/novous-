@@ -1,8 +1,0 @@
-{
-  "id": "test_environment_manager",
-  "name": "Sandbox & Test Agent Publishing",
-  "mode": "component_charter",
-  "model": null,
-  "tools": [],
-  "notes": "Component charter only; not registered in the runnable agent library."
-}
