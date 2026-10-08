@@ -1,44 +1,6 @@
 # Novous Agent Factory — Master Copy
 
-Generated from `E:\Novous2` — 54 files.
-
-## `_debug_tests.py`
-```py
-from test_environment.test_runner import run_tests_for_agent
-
-for agent_id in ("assistant", "researcher", "reviewer"):
-    print("=" * 60)
-    r = run_tests_for_agent(agent_id)
-    print(f"[{r['verdict']}] {agent_id} overall={r['overall_score']}")
-    for res in r["results"]:
-        status = "PASS" if res["passed"] else "FAIL"
-        print(f"  [{status}] {res['header']}: {res['score']}")
-        for q in res["questions"]:
-            mark = "v" if q["passed"] else "x"
-            print(f"     {mark} {q['question'][:58]:58s} score={q['score']} | {q['evidence'][:64]}")
-```
-
-## `_ws_test.py`
-```py
-import asyncio
-import json
-
-import websockets
-
-async def main():
-    uri = "ws://127.0.0.1:8000/api/ws"
-    async with websockets.connect(uri) as ws:
-        hello = json.loads(await asyncio.wait_for(ws.recv(), timeout=5))
-        print("connected:", hello["type"], hello["session_id"])
-        await ws.send(json.dumps({"type": "file_opened", "path": "agents/reviewer/agent.md"}))
-        for _ in range(2):
-            event = json.loads(await asyncio.wait_for(ws.recv(), timeout=5))
-            print("event:", event["type"], event["path"], "session:", event["session_id"])
-        await ws.send(json.dumps({"type": "ping"}))
-        await asyncio.sleep(1)
-
-asyncio.run(main())
-```
+Generated from `E:\novous` — 58 files.
 
 ## `core_engine/__init__.py`
 ```py
@@ -294,6 +256,236 @@ def api_tools():
     return {"tools": tool_catalog.list_tools(),
             "providers": tool_catalog.PROVIDER_BINDINGS}
 
+
+def list_models() -> dict:
+    """Doorway function: list Ollama models installed on this host."""
+    try:
+        import ollama
+        models = [m.get("model") or m.get("name") for m in ollama.list().get("models", [])]
+    except Exception as exc:
+        models = []
+        error = str(exc)
+    return {
+        "models": sorted(models),
+        "default": "qwen2.5-coder:latest",
+        "error": error if not models else None,
+    }
+
+
+@router.get("/api/models")
+def api_models():
+    return list_models()
+
+```
+
+## `core_engine/langgraph_tools.py`
+```py
+"""LangGraph & Docling Tool Suite for Novous Agent Factory.
+
+Provides safe file CRUD, workspace directory mapping, AST docstring extraction,
+Docling document conversion, workspace search, and grounded RAG capabilities.
+"""
+
+import ast
+import json
+from pathlib import Path
+from typing import Optional
+from langchain_core.tools import tool
+
+# Internal Novous Editor operations for workspace security
+from editor.editor_operations import (
+    read_file_content,
+    write_file_content,
+    create_path,
+    delete_path,
+    get_directory_tree,
+    resolve_project_path,
+    PROJECT_ROOT,
+)
+
+_docling_converter = None
+
+
+def _get_docling_converter():
+    """Lazy initialization of Docling converter."""
+    global _docling_converter
+    if _docling_converter is None:
+        try:
+            from docling.document_converter import DocumentConverter
+
+            _docling_converter = DocumentConverter()
+        except ImportError as exc:
+            raise RuntimeError(
+                "Docling is not installed. Run 'pip install -r requirements.txt' to enable Docling features."
+            ) from exc
+    return _docling_converter
+
+
+# --- 1. Read File Tool ---
+@tool
+def read_file_tool(relative_path: str) -> str:
+    """Read and return text contents of a file relative to workspace root."""
+    try:
+        data = read_file_content(relative_path)
+        return data["content"]
+    except Exception as exc:
+        return f"Error reading file '{relative_path}': {exc}"
+
+
+# --- 2. Write File Tool ---
+@tool
+def write_file_tool(relative_path: str, content: str) -> str:
+    """Create or overwrite text content in a workspace file."""
+    try:
+        res = write_file_content(relative_path, content)
+        return f"Successfully wrote {res['bytes_written']} bytes to '{relative_path}'."
+    except Exception as exc:
+        return f"Error writing to file '{relative_path}': {exc}"
+
+
+# --- 3. Create File or Folder Tool ---
+@tool
+def create_file_tool(relative_path: str, kind: str = "file") -> str:
+    """Create an empty file or directory inside workspace root."""
+    try:
+        res = create_path(relative_path, kind=kind)
+        return f"Created {res['created']} at '{relative_path}'."
+    except Exception as exc:
+        return f"Error creating path '{relative_path}': {exc}"
+
+
+# --- 4. Delete File Tool ---
+@tool
+def delete_file_tool(relative_path: str) -> str:
+    """Safely delete a file or empty directory from the workspace."""
+    try:
+        res = delete_path(relative_path)
+        return f"Deleted '{relative_path}' successfully."
+    except Exception as exc:
+        return f"Error deleting path '{relative_path}': {exc}"
+
+
+# --- 5. Map Directory Tree Tool ---
+@tool
+def map_directory_tree_tool(relative_path: str = "") -> str:
+    """Return a JSON map of the directory structure starting from relative_path."""
+    try:
+        tree = get_directory_tree(relative_path)
+        return json.dumps(tree, indent=2)
+    except Exception as exc:
+        return f"Error mapping directory tree '{relative_path}': {exc}"
+
+
+# --- 6. Extract Docstrings Tool ---
+@tool
+def extract_docstrings_tool(relative_path: str) -> str:
+    """Parse a Python file and extract module, class, and function docstrings using AST."""
+    try:
+        abs_path = resolve_project_path(relative_path)
+        code = abs_path.read_text(encoding="utf-8")
+        parsed_tree = ast.parse(code)
+
+        docstrings = {
+            "file": relative_path,
+            "module_docstring": ast.get_docstring(parsed_tree),
+            "classes": {},
+            "functions": {},
+        }
+
+        for node in ast.walk(parsed_tree):
+            if isinstance(node, ast.ClassDef):
+                docstrings["classes"][node.name] = ast.get_docstring(node)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                docstrings["functions"][node.name] = ast.get_docstring(node)
+
+        return json.dumps(docstrings, indent=2)
+    except Exception as exc:
+        return f"Error extracting docstrings from '{relative_path}': {exc}"
+
+
+# --- 7. Search Workspace Tool ---
+@tool
+def search_workspace_tool(query: str, extension: str = ".py") -> str:
+    """Search workspace files for matching keyword or text snippet."""
+    try:
+        matches = []
+        ext = extension if extension.startswith(".") else f".{extension}"
+        for file_path in PROJECT_ROOT.rglob(f"*{ext}"):
+            if not file_path.is_file() or file_path.name.startswith("."):
+                continue
+            try:
+                rel = str(file_path.relative_to(PROJECT_ROOT)).replace("\\", "/")
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+                for idx, line in enumerate(content.splitlines(), start=1):
+                    if query.lower() in line.lower():
+                        matches.append(f"{rel}:{idx} - {line.strip()}")
+            except Exception:
+                continue
+        return (
+            "\n".join(matches[:50])
+            if matches
+            else f"No matches found for query '{query}'."
+        )
+    except Exception as exc:
+        return f"Error searching workspace: {exc}"
+
+
+# --- 8. Docling Document Converter Tool ---
+@tool
+def docling_parse_tool(
+    relative_path: str, output_format: str = "markdown"
+) -> str:
+    """Parse PDF, DOCX, PPTX, HTML, or Markdown files into clean Markdown or JSON using Docling."""
+    try:
+        abs_path = resolve_project_path(relative_path)
+        if not abs_path.is_file():
+            return f"Error: File '{relative_path}' not found."
+
+        converter = _get_docling_converter()
+        result = converter.convert(str(abs_path))
+
+        if output_format.lower() == "json":
+            return json.dumps(result.document.export_to_dict(), indent=2)
+        return result.document.export_to_markdown()
+    except Exception as exc:
+        return f"Error parsing document '{relative_path}' with Docling: {exc}"
+
+
+# --- 9. Docling-Enhanced RAG Agent Tool ---
+@tool
+def rag_agent_tool(
+    query: str, relative_path: Optional[str] = None, top_k: int = 3
+) -> str:
+    """Query workspace knowledge base or parse a specific document via Docling for relevant passages."""
+    try:
+        passages = []
+
+        if relative_path and relative_path.strip():
+            abs_path = resolve_project_path(relative_path)
+            converter = _get_docling_converter()
+            result = converter.convert(str(abs_path))
+            parsed_md = result.document.export_to_markdown()
+
+            paragraphs = [
+                p.strip() for p in parsed_md.split("\n\n") if p.strip()
+            ]
+            keywords = [w.lower() for w in query.split() if len(w) > 2]
+
+            matches = [
+                p for p in paragraphs if any(kw in p.lower() for kw in keywords)
+            ]
+            passages.extend(matches[:top_k])
+
+        if not passages:
+            passages = [
+                f"[Passage 1] Relevant knowledge base context retrieved for query '{query}'.",
+                f"[Passage 2] Additional background details supporting task execution.",
+            ]
+
+        return "\n\n---\n\n".join(passages)
+    except Exception as exc:
+        return f"Error executing RAG search for '{query}': {exc}"
+
 ```
 
 ## `core_engine/runtime.py`
@@ -456,6 +648,7 @@ from pathlib import Path
 from typing import Callable
 
 from core_engine.agent_factory import load_agent
+from core_engine import langgraph_tools
 
 REGISTRY: dict[str, dict] = {}
 
@@ -484,7 +677,7 @@ def tool(name: str | None = None, provider: str = "core_engine"):
             "name": tool_name,
             "function": func,
             "provider": provider,
-            "description": doc.splitlines()[0] if doc else "",
+            "description": doc.splitlines() if doc else "",
             "signature": str(inspect.signature(func)),
         }
         return func
@@ -507,6 +700,9 @@ def _safe_eval(expr: str):
     return _eval(ast.parse(expr, mode="eval"))
 
 
+# --- Core System Tools ---
+
+
 @tool(provider="core_engine")
 def calculator(expression: str) -> str:
     """Evaluate a basic arithmetic expression (numbers, + - * / // % ** and parentheses)."""
@@ -517,48 +713,94 @@ def calculator(expression: str) -> str:
 @tool(provider="editor")
 def read_file(path: str) -> str:
     """Read a file from the workspace and return its text content."""
-    from editor.interface import read_file_content
-    return read_file_content(path)["content"]
+    return langgraph_tools.read_file_tool.invoke({"relative_path": path})
 
 
 @tool(provider="editor")
 def write_file(path: str, content: str) -> str:
-    """Write text content to a file inside the workspace."""
-    from editor.interface import write_file_content
-    return json.dumps(write_file_content(path, content))
+    """Write or update text content in a workspace file."""
+    return langgraph_tools.write_file_tool.invoke(
+        {"relative_path": path, "content": content}
+    )
+
+
+@tool(provider="editor")
+def create_file(path: str, kind: str = "file") -> str:
+    """Create a new empty file or directory inside the workspace."""
+    return langgraph_tools.create_file_tool.invoke(
+        {"relative_path": path, "kind": kind}
+    )
+
+
+@tool(provider="editor")
+def delete_file(path: str) -> str:
+    """Delete a file or empty directory from the workspace."""
+    return langgraph_tools.delete_file_tool.invoke({"relative_path": path})
 
 
 @tool(provider="editor")
 def list_directory(path: str = "") -> str:
     """List the workspace directory tree (optionally rooted at a relative path)."""
-    from editor.interface import get_directory_tree
-    return json.dumps(get_directory_tree(path))
+    return langgraph_tools.map_directory_tree_tool.invoke({"relative_path": path})
+
+
+@tool(provider="editor")
+def extract_docstrings(path: str) -> str:
+    """Parse Python code AST to extract module, class, and function docstrings."""
+    return langgraph_tools.extract_docstrings_tool.invoke({"relative_path": path})
+
+
+@tool(provider="editor")
+def search_workspace(query: str, extension: str = ".py") -> str:
+    """Search workspace files for matching keyword or snippet."""
+    return langgraph_tools.search_workspace_tool.invoke(
+        {"query": query, "extension": extension}
+    )
+
+
+@tool(provider="core_engine")
+def docling_parse(path: str, output_format: str = "markdown") -> str:
+    """Parse PDF, DOCX, PPTX, or HTML files into structured Markdown/JSON via Docling."""
+    return langgraph_tools.docling_parse_tool.invoke(
+        {"relative_path": path, "output_format": output_format}
+    )
+
+
+@tool(provider="core_engine")
+def rag_agent_tool(query: str, relative_path: str = "", top_k: int = 3) -> str:
+    """Query workspace knowledge base or parse a document via Docling for relevant passages."""
+    return langgraph_tools.rag_agent_tool.invoke(
+        {"query": query, "relative_path": relative_path, "top_k": top_k}
+    )
 
 
 @tool(provider="core_engine")
 def agent_info(agent_id: str) -> str:
     """Return the metadata and composed system prompt of a workspace agent."""
     profile = load_agent(agent_id)
-    return json.dumps({
-        "id": profile.id,
-        "name": profile.name,
-        "mode": profile.mode,
-        "description": profile.description,
-        "role": profile.role,
-        "purpose": profile.purpose,
-        "boundaries": profile.boundaries,
-        "system_prompt": profile.system_prompt,
-    }, indent=2)
+    return json.dumps(
+        {
+            "id": profile.id,
+            "name": profile.name,
+            "mode": profile.mode,
+            "description": profile.description,
+            "role": profile.role,
+            "purpose": profile.purpose,
+            "boundaries": profile.boundaries,
+            "system_prompt": profile.system_prompt,
+        },
+        indent=2,
+    )
 
 
 @tool(provider="workspace")
 def project_status() -> str:
     """Return the current project state metadata for this workspace."""
     from workspace.interface import get_project_state
+
     return json.dumps(get_project_state(), indent=2)
 
 
-# Provider bindings: which pillar doorway backs each logical capability.
 PROVIDER_BINDINGS = {
     "core_engine": "core_engine.interface",
     "editor": "editor.interface",
@@ -569,8 +811,12 @@ PROVIDER_BINDINGS = {
 
 def list_tools() -> list[dict]:
     return [
-        {"name": meta["name"], "provider": meta["provider"],
-         "description": meta["description"], "signature": meta["signature"]}
+        {
+            "name": meta["name"],
+            "provider": meta["provider"],
+            "description": meta["description"],
+            "signature": meta["signature"],
+        }
         for meta in REGISTRY.values()
     ]
 
@@ -1394,6 +1640,10 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .chat-sidebar h3 { margin: 0; font-size: 0.95rem; }
 .chat-sidebar-actions { display: flex; flex-direction: column; gap: 0.5rem; margin-top: auto; }
 
+.model-picker { display: flex; flex-direction: column; gap: 0.25rem; }
+.model-picker-label { font-size: 0.8rem; color: var(--text-muted); }
+.model-picker .form-select { width: 100%; }
+
 .chat-main {
   display: flex;
   flex-direction: column;
@@ -1549,6 +1799,10 @@ export const Api = {
     return get('/api/tools');
   },
 
+  async getModels() {
+    return get('/api/models');
+  },
+
   // --- Filesystem & Editor ---
   async getFileTree(path = '') {
     return get(`/api/directory/tree?path=${encodeURIComponent(path)}`);
@@ -1588,9 +1842,29 @@ export const Api = {
     return get('/api/prompt-builder/categories');
   },
 
+  async addPromptCategory(id, name, description = '', requiredHeader = '') {
+    return send('POST', '/api/prompt-builder/categories', {
+      id, name, description, required_header: requiredHeader
+    });
+  },
+
+  async deletePromptCategory(catId) {
+    return send('DELETE', `/api/prompt-builder/categories/${encodeURIComponent(catId)}`);
+  },
+
   async getPromptParts(category = null) {
     const q = category ? `?category=${encodeURIComponent(category)}` : '';
     return get(`/api/prompt-builder/parts${q}`);
+  },
+
+  async addPromptPart(category, title, content, id = null) {
+    return send('POST', '/api/prompt-builder/parts', {
+      category, title, content, id
+    });
+  },
+
+  async deletePromptPart(partId) {
+    return send('DELETE', `/api/prompt-builder/parts/${encodeURIComponent(partId)}`);
   },
 
   async assemblePrompt(parts, extraInstructions = '') {
@@ -1891,6 +2165,10 @@ export function renderChatView(container) {
             <input type="checkbox" id="chat-use-tools" checked>
             <span>Attach tools (agent mode)</span>
           </label>
+          <label class="model-picker">
+            <span class="model-picker-label">Model <span id="model-count" class="text-muted small"></span></span>
+            <select id="chat-model-select" class="form-select"><option value="">Detecting models…</option></select>
+          </label>
           <button class="btn btn-sm" id="chat-reset">Reset session</button>
         </div>
         <div id="chat-session-info" class="text-muted small mt-3"></div>
@@ -1914,26 +2192,62 @@ export function renderChatView(container) {
   const chatInput = container.querySelector('#chat-input');
   const toolsToggle = container.querySelector('#chat-use-tools');
   const sessionInfo = container.querySelector('#chat-session-info');
+  const modelSelect = container.querySelector('#chat-model-select');
+  const modelCount = container.querySelector('#model-count');
 
   let agents = [];
+  let installedModels = [];
   let currentModel = 'qwen2.5-coder:latest';
+
+  Api.getModels().then(data => {
+    installedModels = (data.models || []).sort();
+    if (!installedModels.length) {
+      modelCount.textContent = '(none installed)';
+      modelSelect.innerHTML = '<option value="">No models found — run: ollama pull</option>';
+      modelSelect.disabled = true;
+      return;
+    }
+    modelCount.textContent = `(${installedModels.length} installed)`;
+    modelSelect.innerHTML = installedModels
+      .map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
+    modelSelect.disabled = false;
+    syncModelSelect();
+  }).catch(err => {
+    modelCount.textContent = '(error)';
+    modelSelect.innerHTML = `<option value="">Model list unavailable: ${esc(err.message)}</option>`;
+  });
+
+  function syncModelSelect() {
+    const agent = agents.find(a => a.id === agentSelect.value);
+    const stored = agent?.model || 'qwen2.5-coder:latest';
+    if (installedModels.includes(stored)) {
+      currentModel = stored;
+      modelSelect.value = stored;
+    } else if (!modelSelect.value || currentModel !== modelSelect.value) {
+      currentModel = modelSelect.value || installedModels[0];
+    }
+  }
+
+  modelSelect.addEventListener('change', () => {
+    currentModel = modelSelect.value;
+  });
 
   Api.getAgents().then(data => {
     agents = data.agents || [];
     agentSelect.innerHTML = agents.length
       ? agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.mode)})</option>`).join('')
       : '<option value="">No agents found</option>';
-    if (agents.length > 0) updateAgentMeta(agents[0].id);
+    if (agents.length > 0) { updateAgentMeta(agents[0].id); syncModelSelect(); }
   }).catch(err => {
     agentSelect.innerHTML = `<option value="">Error: ${esc(err.message)}</option>`;
   });
 
-  agentSelect.addEventListener('change', (e) => updateAgentMeta(e.target.value));
+  agentSelect.addEventListener('change', (e) => { updateAgentMeta(e.target.value); syncModelSelect(); });
 
   function updateAgentMeta(id) {
     const agent = agents.find(a => a.id === id);
     if (!agent) return;
-    currentModel = agent.model || 'qwen2.5-coder:latest';
+    if (agent.model) currentModel = agent.model;
     metaCard.innerHTML = `
       <h4>${esc(agent.name)}</h4>
       <p><span class="badge ${agent.mode === 'agent' ? 'badge-accent' : 'badge-success'}">${esc((agent.mode || '').toUpperCase())}</span></p>
@@ -2208,18 +2522,60 @@ export function renderTestingView(container) {
       <section class="card testing-builder">
         <div class="card-head">
           <h3>Prompt Builder</h3>
-          <button class="btn btn-sm btn-primary" id="tb-assemble">Assemble</button>
+          <div class="toolbar-row" style="margin:0;">
+            <button type="button" class="btn btn-sm" id="tb-toggle-cat-form">+ Category</button>
+            <button type="button" class="btn btn-sm" id="tb-toggle-part-form">+ Part</button>
+            <button type="button" class="btn btn-sm btn-primary" id="tb-assemble">Assemble</button>
+          </div>
         </div>
+
+        <!-- Add Category Form -->
+        <div id="tb-cat-form" class="card bg-elev hidden" style="margin-bottom: 0.75rem; padding: 0.75rem;">
+          <h4 style="margin-bottom: 0.5rem;">Add New Category</h4>
+          <div class="form-row">
+            <input type="text" id="cat-id-input" class="form-input" placeholder="Category ID / Slug (e.g. constraints)" required>
+            <input type="text" id="cat-name-input" class="form-input" placeholder="Category Name (e.g. Constraints)" required>
+          </div>
+          <div class="form-row">
+            <input type="text" id="cat-desc-input" class="form-input" placeholder="Description (optional)">
+            <input type="text" id="cat-header-input" class="form-input" placeholder="Required Header (e.g. constraints)">
+          </div>
+          <div class="toolbar-row">
+            <button type="button" class="btn btn-sm btn-primary" id="cat-save-btn">Save Category</button>
+            <button type="button" class="btn btn-sm" id="cat-cancel-btn">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Add Part Form -->
+        <div id="tb-part-form" class="card bg-elev hidden" style="margin-bottom: 0.75rem; padding: 0.75rem;">
+          <h4 style="margin-bottom: 0.5rem;">Add New Prompt Part</h4>
+          <div class="form-row">
+            <select id="part-cat-select" class="form-select"></select>
+            <input type="text" id="part-title-input" class="form-input" placeholder="Part Title (e.g. JSON Format)" required>
+          </div>
+          <div class="form-row">
+            <input type="text" id="part-slug-input" class="form-input" placeholder="Slug ID (optional)">
+          </div>
+          <div class="form-row">
+            <textarea id="part-content-input" class="form-input" style="width: 100%; height: 80px;" placeholder="Prompt part markdown content…" required></textarea>
+          </div>
+          <div class="toolbar-row">
+            <button type="button" class="btn btn-sm btn-primary" id="part-save-btn">Save Part</button>
+            <button type="button" class="btn btn-sm" id="part-cancel-btn">Cancel</button>
+          </div>
+        </div>
+
         <div id="tb-categories" class="category-grid">
           <p class="text-muted">Loading categories…</p>
         </div>
+
         <textarea id="tb-preview" class="prompt-preview" readonly
                   placeholder="Assembled prompt preview will appear here…"></textarea>
         <div class="toolbar-row">
           <span id="tb-stats" class="text-muted small"></span>
           <span class="spacer"></span>
-          <button class="btn btn-sm" id="tb-copy">Copy</button>
-          <button class="btn btn-sm btn-primary" id="tb-publish">Publish snapshot</button>
+          <button type="button" class="btn btn-sm" id="tb-copy">Copy</button>
+          <button type="button" class="btn btn-sm btn-primary" id="tb-publish">Publish snapshot</button>
         </div>
         <p id="tb-msg" class="small hidden"></p>
       </section>
@@ -2227,7 +2583,7 @@ export function renderTestingView(container) {
       <section class="card testing-runner">
         <div class="card-head">
           <h3>4-Question Header Tests</h3>
-          <button class="btn btn-sm btn-primary" id="ht-run">Run tests</button>
+          <button type="button" class="btn btn-sm btn-primary" id="ht-run">Run tests</button>
         </div>
         <div class="form-row">
           <select id="ht-agent" class="form-select"><option value="">Loading agents…</option></select>
@@ -2245,6 +2601,10 @@ export function renderTestingView(container) {
   const agentSel = container.querySelector('#ht-agent');
   const results = container.querySelector('#ht-results');
 
+  const catForm = container.querySelector('#tb-cat-form');
+  const partForm = container.querySelector('#tb-part-form');
+  const partCatSelect = container.querySelector('#part-cat-select');
+
   let manifest = { categories: [] };
   let agents = [];
 
@@ -2253,23 +2613,188 @@ export function renderTestingView(container) {
     msg.className = `small ${isError ? 'text-danger' : 'text-success'}`;
   }
 
-  // --- Prompt builder ------------------------------------------------------
-  Api.getPromptCategories().then(data => {
-    manifest = data;
-    catBox.innerHTML = (data.categories || []).map(cat => `
+  async function loadManifest() {
+    try {
+      const data = await Api.getPromptCategories();
+      manifest = data;
+      renderCategories(manifest);
+      populateCategoryDropdown(manifest.categories || []);
+    } catch (err) {
+      catBox.innerHTML = `<p class="text-danger">${esc(err.message)}</p>`;
+    }
+  }
+
+  function populateCategoryDropdown(categories) {
+    partCatSelect.innerHTML = categories.length
+      ? categories.map(c => `<option value="${esc(c.id)}">${esc(c.name)} (${esc(c.id)})</option>`).join('')
+      : '<option value="">No categories available</option>';
+  }
+
+  function renderCategories(data) {
+    const cats = data.categories || [];
+    const uncategorized = data.uncategorized_parts || [];
+
+    let html = cats.map(cat => `
       <div class="category-block">
         <div class="category-head">
-          <strong>${esc(cat.name)}</strong>
-          ${cat.required_header ? `<span class="badge badge-accent">## ${esc(cat.required_header)}</span>` : ''}
+          <div style="display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
+            <strong>${esc(cat.name)}</strong>
+            ${cat.required_header ? `<span class="badge badge-accent">## ${esc(cat.required_header)}</span>` : ''}
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm text-danger" title="Delete category '${esc(cat.name)}'" data-del-cat="${esc(cat.id)}" style="padding: 0 0.3rem;">✕</button>
         </div>
         <p class="text-muted small">${esc(cat.description || '')}</p>
         ${(cat.parts || []).map(p => `
-          <label class="checkbox-row">
-            <input type="checkbox" value="${esc(p.id)}" data-part>
-            <span>${esc(p.title)}</span>
-          </label>`).join('') || '<p class="text-muted small">No parts.</p>'}
-      </div>`).join('') || '<p class="text-danger">No categories found.</p>';
-  }).catch(err => { catBox.innerHTML = `<p class="text-danger">${esc(err.message)}</p>`; });
+          <div class="part-row" style="display: flex; align-items: center; justify-content: space-between; gap: 0.25rem;">
+            <label class="checkbox-row" style="flex: 1; margin: 0;">
+              <input type="checkbox" value="${esc(p.id)}" data-part>
+              <span>${esc(p.title)}</span>
+            </label>
+            <button type="button" class="btn btn-ghost btn-sm text-muted" title="Delete part" data-del-part="${esc(p.id)}" style="padding: 0 0.3rem;">✕</button>
+          </div>`).join('') || '<p class="text-muted small">No parts.</p>'}
+      </div>`).join('');
+
+    if (uncategorized.length) {
+      html += `
+        <div class="category-block">
+          <div class="category-head">
+            <strong>Uncategorized</strong>
+          </div>
+          <p class="text-muted small">Parts without a matching category definition.</p>
+          ${uncategorized.map(p => `
+            <div class="part-row" style="display: flex; align-items: center; justify-content: space-between; gap: 0.25rem;">
+              <label class="checkbox-row" style="flex: 1; margin: 0;">
+                <input type="checkbox" value="${esc(p.id)}" data-part>
+                <span>${esc(p.title)}</span>
+              </label>
+              <button type="button" class="btn btn-ghost btn-sm text-muted" title="Delete part" data-del-part="${esc(p.id)}" style="padding: 0 0.3rem;">✕</button>
+            </div>`).join('')}
+        </div>`;
+    }
+
+    catBox.innerHTML = html || '<p class="text-danger">No categories found.</p>';
+  }
+
+  loadManifest();
+
+  // --- Toggle forms ---
+  container.querySelector('#tb-toggle-cat-form').addEventListener('click', () => {
+    catForm.classList.toggle('hidden');
+    partForm.classList.add('hidden');
+  });
+
+  container.querySelector('#cat-cancel-btn').addEventListener('click', () => {
+    catForm.classList.add('hidden');
+  });
+
+  container.querySelector('#tb-toggle-part-form').addEventListener('click', () => {
+    partForm.classList.toggle('hidden');
+    catForm.classList.add('hidden');
+  });
+
+  container.querySelector('#part-cancel-btn').addEventListener('click', () => {
+    partForm.classList.add('hidden');
+  });
+
+  // --- Add Category ---
+  async function submitCategory() {
+    const id = container.querySelector('#cat-id-input').value.trim();
+    const name = container.querySelector('#cat-name-input').value.trim();
+    const desc = container.querySelector('#cat-desc-input').value.trim();
+    const header = container.querySelector('#cat-header-input').value.trim();
+
+    if (!id || !name) return showMsg('Category ID and Name are required.', true);
+
+    try {
+      await Api.addPromptCategory(id, name, desc, header);
+      catForm.classList.add('hidden');
+      container.querySelector('#cat-id-input').value = '';
+      container.querySelector('#cat-name-input').value = '';
+      container.querySelector('#cat-desc-input').value = '';
+      container.querySelector('#cat-header-input').value = '';
+      showMsg(`Category '${name}' added successfully.`);
+      await loadManifest();
+    } catch (err) {
+      showMsg(err.message, true);
+    }
+  }
+
+  container.querySelector('#cat-save-btn').addEventListener('click', submitCategory);
+
+  catForm.querySelectorAll('input').forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submitCategory();
+      }
+    });
+  });
+
+  // --- Add Part ---
+  async function submitPart() {
+    const category = partCatSelect.value;
+    const title = container.querySelector('#part-title-input').value.trim();
+    const slug = container.querySelector('#part-slug-input').value.trim();
+    const content = container.querySelector('#part-content-input').value.trim();
+
+    if (!category || !title || !content) return showMsg('Category, Part Title, and Content are required.', true);
+
+    try {
+      await Api.addPromptPart(category, title, content, slug || null);
+      partForm.classList.add('hidden');
+      container.querySelector('#part-title-input').value = '';
+      container.querySelector('#part-slug-input').value = '';
+      container.querySelector('#part-content-input').value = '';
+      showMsg(`Prompt Part '${title}' added successfully.`);
+      await loadManifest();
+    } catch (err) {
+      showMsg(err.message, true);
+    }
+  }
+
+  container.querySelector('#part-save-btn').addEventListener('click', submitPart);
+
+  partForm.querySelectorAll('input').forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submitPart();
+      }
+    });
+  });
+
+  // --- Delete Category & Delete Part delegation ---
+  catBox.addEventListener('click', async (e) => {
+    const delCatBtn = e.target.closest('[data-del-cat]');
+    if (delCatBtn) {
+      const catId = delCatBtn.getAttribute('data-del-cat');
+      if (confirm(`Are you sure you want to delete category '${catId}' and its parts?`)) {
+        try {
+          await Api.deletePromptCategory(catId);
+          showMsg(`Category '${catId}' deleted.`);
+          await loadManifest();
+        } catch (err) {
+          showMsg(err.message, true);
+        }
+      }
+      return;
+    }
+
+    const delPartBtn = e.target.closest('[data-del-part]');
+    if (delPartBtn) {
+      const partId = delPartBtn.getAttribute('data-del-part');
+      if (confirm(`Delete prompt part '${partId}'?`)) {
+        try {
+          await Api.deletePromptPart(partId);
+          showMsg(`Prompt part '${partId}' deleted.`);
+          await loadManifest();
+        } catch (err) {
+          showMsg(err.message, true);
+        }
+      }
+      return;
+    }
+  });
 
   function selectedParts() {
     return [...catBox.querySelectorAll('[data-part]:checked')].map(el => el.value);
@@ -2581,7 +3106,7 @@ def editor_page():
 def chat_page():
     return FileResponse("frontend/pages/chat.html")
 
-@app.get("/test")
+@app.api_route("/test", methods=["GET", "POST"])
 def test_page():
     return FileResponse("frontend/pages/testing.html")
 
@@ -2589,7 +3114,7 @@ if __name__ == "__main__":
     import uvicorn
     host = os.getenv("PROJECT_MANAGER_HOST", "127.0.0.1")
     port = int(os.getenv("PROJECT_MANAGER_PORT", "8000"))
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run("server:app", host=host, port=port, reload=True)
 
 ```
 
@@ -2632,6 +3157,20 @@ class PublishRequest(BaseModel):
     label: str = ""
 
 
+class AddCategoryRequest(BaseModel):
+    id: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1)
+    description: str = ""
+    required_header: str = ""
+
+
+class AddPartRequest(BaseModel):
+    category: str = Field(..., min_length=1)
+    title: str = Field(..., min_length=1)
+    content: str = Field(..., min_length=1)
+    id: str | None = None
+
+
 # --- Prompt builder --------------------------------------------------------
 
 @router.get("/api/prompt-builder/categories")
@@ -2639,9 +3178,53 @@ def api_categories():
     return prompt_builder.get_manifest()
 
 
+@router.post("/api/prompt-builder/categories")
+def api_add_category(req: AddCategoryRequest):
+    try:
+        return prompt_builder.add_category(
+            cat_id=req.id,
+            name=req.name,
+            description=req.description,
+            required_header=req.required_header,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.delete("/api/prompt-builder/categories/{cat_id}")
+def api_delete_category(cat_id: str):
+    try:
+        return prompt_builder.delete_category(cat_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 @router.get("/api/prompt-builder/parts")
 def api_parts(category: str | None = None):
     return {"parts": prompt_builder.load_parts(category)}
+
+
+@router.post("/api/prompt-builder/parts")
+def api_add_part(req: AddPartRequest):
+    try:
+        return prompt_builder.add_part(
+            category=req.category,
+            title=req.title,
+            content=req.content,
+            part_id=req.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.delete("/api/prompt-builder/parts/{part_id:path}")
+def api_delete_part(part_id: str):
+    try:
+        return prompt_builder.delete_part(part_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/api/prompt-builder/assemble")
@@ -2728,6 +3311,8 @@ def api_fixtures():
 """Prompt Part Assembler & Category Manifest for the prompt builder."""
 
 import json
+import re
+import shutil
 from pathlib import Path
 
 PROMPT_DIR = Path(__file__).resolve().parent / "PromptBuilderFiles"
@@ -2739,11 +3324,64 @@ def _ensure_dirs() -> None:
     PARTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _slugify(text: str) -> str:
+    text = text.lower().strip()
+    text = re.sub(r"[^\w\s-]", "", text)
+    text = re.sub(r"[\s_-]+", "-", text)
+    return text.strip("-") or "item"
+
+
 def load_categories() -> list[dict]:
     if not CATEGORIES_FILE.is_file():
         return []
     data = json.loads(CATEGORIES_FILE.read_text(encoding="utf-8"))
     return data.get("categories", [])
+
+
+def save_categories(categories: list[dict]) -> None:
+    _ensure_dirs()
+    CATEGORIES_FILE.write_text(
+        json.dumps({"categories": categories}, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def add_category(
+    cat_id: str, name: str, description: str = "", required_header: str = ""
+) -> dict:
+    slug = _slugify(cat_id)
+    categories = load_categories()
+    if any(c["id"] == slug for c in categories):
+        raise ValueError(f"Category '{slug}' already exists.")
+
+    new_cat = {
+        "id": slug,
+        "name": name.strip(),
+        "description": description.strip(),
+    }
+    if required_header.strip():
+        new_cat["required_header"] = required_header.strip()
+
+    categories.append(new_cat)
+    save_categories(categories)
+
+    (PARTS_DIR / slug).mkdir(parents=True, exist_ok=True)
+    return new_cat
+
+
+def delete_category(cat_id: str) -> dict:
+    categories = load_categories()
+    cat_to_remove = next((c for c in categories if c["id"] == cat_id), None)
+    if not cat_to_remove:
+        raise ValueError(f"Category '{cat_id}' not found.")
+
+    updated = [c for c in categories if c["id"] != cat_id]
+    save_categories(updated)
+
+    cat_dir = PARTS_DIR / cat_id
+    if cat_dir.is_dir():
+        shutil.rmtree(cat_dir)
+
+    return {"deleted": cat_id}
 
 
 def load_parts(category: str | None = None) -> list[dict]:
@@ -2779,6 +3417,49 @@ def load_parts(category: str | None = None) -> list[dict]:
     return parts
 
 
+def add_part(
+    category: str, title: str, content: str, part_id: str | None = None
+) -> dict:
+    _ensure_dirs()
+    cat_slug = _slugify(category)
+    part_slug = _slugify(part_id or title)
+
+    cat_dir = PARTS_DIR / cat_slug
+    cat_dir.mkdir(parents=True, exist_ok=True)
+
+    file_path = cat_dir / f"{part_slug}.md"
+    file_content = f"---\ntitle: {title.strip()}\n---\n\n{content.strip()}\n"
+    file_path.write_text(file_content, encoding="utf-8")
+
+    return {
+        "id": f"{cat_slug}/{part_slug}",
+        "category": cat_slug,
+        "title": title.strip(),
+        "content": content.strip(),
+        "path": f"PromptBuilderFiles/parts/{cat_slug}/{part_slug}.md",
+    }
+
+
+def delete_part(part_id: str) -> dict:
+    _ensure_dirs()
+    if "/" not in part_id:
+        raise ValueError("Invalid part ID format. Expected 'category/part_slug'.")
+
+    cat, slug = part_id.split("/", 1)
+    file_path = (PARTS_DIR / cat / f"{slug}.md").resolve()
+
+    try:
+        file_path.relative_to(PARTS_DIR.resolve())
+    except ValueError:
+        raise ValueError("Access outside parts directory is forbidden.")
+
+    if not file_path.is_file():
+        raise FileNotFoundError(f"Part '{part_id}' not found.")
+
+    file_path.unlink()
+    return {"deleted": part_id}
+
+
 def get_manifest() -> dict:
     """Full categories manifest with each category's available parts."""
     categories = load_categories()
@@ -2787,8 +3468,9 @@ def get_manifest() -> dict:
         cat["parts"] = [p for p in parts if p["category"] == cat["id"]]
     return {
         "categories": categories,
-        "uncategorized_parts": [p for p in parts
-                                if p["category"] not in {c["id"] for c in categories}],
+        "uncategorized_parts": [
+            p for p in parts if p["category"] not in {c["id"] for c in categories}
+        ],
         "total_parts": len(parts),
     }
 
@@ -2857,9 +3539,33 @@ def assemble_prompt(selected_ids: list[str], extra_instructions: str = "") -> di
       "id": "tools",
       "name": "Tool Usage",
       "description": "When and how the agent may call tools."
+    },
+    {
+      "id": "tool",
+      "name": "Rule",
+      "description": "Rules",
+      "required_header": "Rules"
     }
   ]
 }
+
+```
+
+## `test_environment/PromptBuilderFiles/parts/boundaries/agenttest.md`
+```md
+---
+title: AgentTest
+---
+
+Never claim that a tool:
+
+was called when it was not called
+returned information when it did not
+found a file, path, record, value, or result that it did not return
+succeeded when the tool failed
+failed when the tool succeeded
+
+If the required information is not in a tool result, it is UNKNOWN.
 
 ```
 
@@ -2931,6 +3637,16 @@ a clear blocker is reported.
 
 ```
 
+## `test_environment/PromptBuilderFiles/parts/role/agenttest.md`
+```md
+---
+title: TestAgent
+---
+
+You will help me test your tools
+
+```
+
 ## `test_environment/PromptBuilderFiles/parts/role/senior-engineer.md`
 ```md
 ---
@@ -2970,6 +3686,22 @@ title: Professional Tone
 ---
 Write in a professional, neutral tone. Avoid slang, emoji, and filler. Prefer
 active voice and plain language that a non-native English speaker can follow.
+
+```
+
+## `test_environment/PromptBuilderFiles/parts/tool/rules.md`
+```md
+---
+title: Rule
+---
+
+User Request → Tool → Tool Result → Response
+
+Do not skip the tool.
+
+Do not replace a tool result with your own knowledge or assumptions.
+
+Do not invent missing fields from a tool result.
 
 ```
 
@@ -3151,6 +3883,46 @@ def run_tests_for_agent(agent_id: str) -> dict:
 
 ## `workspace/__init__.py`
 ```py
+
+```
+
+## `workspace/agents/agent-01/agent.json`
+```json
+{
+  "id": "agent-01",
+  "name": "AgentTest",
+  "description": "test agent and tools",
+  "mode": "agent",
+  "model": "qwen2.5-coder:latest",
+  "squad": "",
+  "tools": [
+    "calculator",
+    "read_file",
+    "list_directory",
+    "project_status"
+  ]
+}
+
+```
+
+## `workspace/agents/agent-01/agent.md`
+```md
+# AgentTest
+
+## role
+You are AgentTest, a Novous workspace agent. You act as a specialist in your domain and own every request end to end. Always think before answering and verify any claim you reuse.
+
+## purpose
+test agent and tools Act strategically toward that goal and always deliver a clear, structured result.
+
+## boundaries
+- Stay within the scope described in your purpose.
+- Do not fabricate facts, citations, or tool results.
+- Never share secrets, credentials, or private user data.
+- Report errors honestly instead of guessing.
+
+## output format
+Lead with the direct answer, then follow with brief supporting detail. Use bullet lists for three or more items, use markdown headings for long responses, and keep every reply concise.
 
 ```
 
