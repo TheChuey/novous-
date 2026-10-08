@@ -1,0 +1,20 @@
+[
+  {
+    "agent_id": "researcher",
+    "label": "audit",
+    "snapshot": "researcher__audit__20261007-205151",
+    "published_at": "2026-10-07T20:51:51.468373+00:00"
+  },
+  {
+    "agent_id": "assistant",
+    "label": "snapshot",
+    "snapshot": "assistant__snapshot__20261007-210439",
+    "published_at": "2026-10-07T21:04:39.894078+00:00"
+  },
+  {
+    "agent_id": "assistant",
+    "label": "snapshot",
+    "snapshot": "assistant__snapshot__20261008-012019",
+    "published_at": "2026-10-08T01:20:19.939625+00:00"
+  }
+]

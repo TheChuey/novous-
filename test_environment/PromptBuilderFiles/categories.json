@@ -1,25 +1,38 @@
 {
-  "version": 1,
   "categories": [
     {
       "id": "role",
-      "title": "Role"
+      "name": "Role & Identity",
+      "description": "Who the agent is: persona, expertise, stance.",
+      "required_header": "role"
     },
     {
-      "id": "hallucinations",
-      "title": "Hallucination Rules"
+      "id": "purpose",
+      "name": "Purpose & Goals",
+      "description": "What the agent is for and what success looks like.",
+      "required_header": "purpose"
+    },
+    {
+      "id": "boundaries",
+      "name": "Boundaries & Safety",
+      "description": "Hard limits, refusals, and scope guards.",
+      "required_header": "boundaries"
+    },
+    {
+      "id": "output_format",
+      "name": "Output Format",
+      "description": "Structure, tone, and formatting rules for replies.",
+      "required_header": "output format"
+    },
+    {
+      "id": "tone",
+      "name": "Tone & Style",
+      "description": "Voice, reading level, and stylistic preferences."
     },
     {
       "id": "tools",
-      "title": "Tools"
-    },
-    {
-      "id": "user",
-      "title": "User"
-    },
-    {
-      "id": "output",
-      "title": "Output"
+      "name": "Tool Usage",
+      "description": "When and how the agent may call tools."
     }
   ]
 }

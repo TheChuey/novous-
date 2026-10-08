@@ -1,0 +1,9 @@
+{
+  "id": "researcher",
+  "name": "Researcher",
+  "description": "Tool-enabled agent that inspects workspace files and reports findings.",
+  "mode": "agent",
+  "model": "qwen2.5-coder:latest",
+  "squad": "",
+  "tools": ["read_file", "list_directory", "agent_info"]
+}

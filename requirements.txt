@@ -1,5 +1,11 @@
-fastapi==0.115.0
-uvicorn[standard]==0.32.0
-httpx==0.27.2
-websockets==13.1
-langchain-core>=1.0,<2.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+websockets>=12.0
+pydantic>=2.6.0
+ollama>=0.1.7
+langchain-core>=0.1.30
+langgraph>=0.0.25
+docling>=1.0.0
+chromadb>=0.4.24
+jinja2>=3.1.3
+python-multipart>=0.0.9

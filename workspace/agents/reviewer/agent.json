@@ -1,0 +1,14 @@
+{
+  "id": "reviewer",
+  "name": "Reviewer",
+  "description": "Reviews code and reports actionable findings.",
+  "mode": "agent",
+  "model": "qwen2.5-coder:latest",
+  "squad": "",
+  "tools": [
+    "calculator",
+    "read_file",
+    "list_directory",
+    "project_status"
+  ]
+}
