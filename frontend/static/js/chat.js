@@ -7,6 +7,8 @@ function esc(value) {
   }[c]));
 }
 
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 /**
  * Interactive Chat Console Component: agent selection, message history,
  * and tool execution badges.
@@ -164,6 +166,134 @@ export function renderChatView(container) {
     return resetSession('Chat wiped. Send a message to start fresh.');
   }
 
+  let todoFilesLoading = false;
+  async function loadTodoFiles(silent = false) {
+    const select = container.querySelector('#todo-file-select');
+    if (!select || todoFilesLoading) return;
+    todoFilesLoading = true;
+
+    try {
+      const tree = await Api.getFileTree();
+      const workspaceEntries = tree.children || [];
+      const normalizedNames = new Set(['todo list', 'do due list']);
+      const todoDirectories = workspaceEntries.filter(item =>
+        item.type === 'directory' &&
+        normalizedNames.has(item.name.toLowerCase().replace(/\s+/g, ' ').trim())
+      );
+
+      const files = [];
+      function collectFiles(node) {
+        if (node.type === 'file') {
+          if (/\.(md|markdown)$/i.test(node.name) || !node.name.includes('.')) {
+            files.push(node);
+          }
+          return;
+        }
+        (node.children || []).forEach(collectFiles);
+      }
+      workspaceEntries
+        .filter(item => item.type === 'file')
+        .forEach(collectFiles);
+      todoDirectories.forEach(collectFiles);
+      const markdownFiles = [...new Map(files.map(file => [file.path, file])).values()];
+      const selectedPath = select.value;
+
+      select.replaceChildren();
+      if (!markdownFiles.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No Markdown or extensionless lists found in workspace or To Do List folders';
+        select.appendChild(option);
+        select.disabled = true;
+        return;
+      }
+
+      markdownFiles.sort((a, b) => a.path.localeCompare(b.path));
+      markdownFiles.forEach(file => {
+        const option = document.createElement('option');
+        option.value = file.path;
+        option.textContent = file.path;
+        option.title = file.path;
+        select.appendChild(option);
+      });
+      if (markdownFiles.some(file => file.path === selectedPath)) {
+        select.value = selectedPath;
+      }
+      select.disabled = false;
+    } catch (err) {
+      if (!silent) {
+        select.replaceChildren();
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'Error loading files';
+        select.appendChild(option);
+        select.disabled = true;
+        appendMessage('system', `Could not load To-Do files: ${err.message}`);
+      }
+    } finally {
+      todoFilesLoading = false;
+    }
+  }
+
+  async function runTodoSequence() {
+    const select = container.querySelector('#todo-file-select');
+    const selectedPath = select?.value;
+    const agentId = agentSelect.value;
+
+    if (!selectedPath) {
+      appendMessage('system', 'Please select a file from the To-Do dropdown first.');
+      return;
+    }
+    if (!agentId) {
+      appendMessage('system', 'Please select an agent before running To-Do items.');
+      return;
+    }
+
+    const runButton = container.querySelector('[data-test-function="runTestSuite"]');
+    if (runButton) runButton.disabled = true;
+
+    try {
+      const fileData = await Api.readFile(selectedPath);
+      const lines = String(fileData.content ?? '')
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean);
+
+      appendMessage('user', `Starting execution of To-Do items from: ${selectedPath.split('/').pop()}`);
+      if (!lines.length) {
+        appendMessage('system', 'The selected file contains no nonblank task lines.');
+        return;
+      }
+
+      const sessionId = `chat-${agentId}`;
+      const model = currentModel;
+      await delay(1500);
+
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        appendMessage('user', `Task ${index + 1}: ${line}`);
+        const thinkingId = appendMessage('assistant', 'Thinking...', true);
+        try {
+          const response = await Api.sendMessage(line, agentId, model, sessionId);
+          removeMessage(thinkingId);
+          (response.tool_events || []).forEach(event =>
+            appendToolBadge(event.tool, event.status, event.args)
+          );
+          appendMessage('assistant', response.reply);
+        } catch (err) {
+          removeMessage(thinkingId);
+          throw err;
+        }
+
+        if (index < lines.length - 1) await delay(1000);
+      }
+    } catch (err) {
+      appendMessage('system', `Error reading or running To-Do file: ${err.message}`);
+    } finally {
+      if (runButton) runButton.disabled = false;
+    }
+  }
+
   container.querySelector('#chat-reset').addEventListener('click', () => resetSession());
   container.querySelector('#chat-save-log').addEventListener('click', async () => {
     const agentId = agentSelect.value;
@@ -181,7 +311,21 @@ export function renderChatView(container) {
       if (err.name !== 'AbortError') alert(`Failed to save session: ${err.message}`);
     }
   });
-  buildTestPanel('testPanelButtons', { diagnostics: openDiagnostics, wipeChat });
+  buildTestPanel('testPanelButtons', {
+    diagnostics: openDiagnostics,
+    wipeChat,
+    runTestSuite: runTodoSequence
+  });
+  loadTodoFiles();
+  container.querySelector('#todo-file-refresh')
+    ?.addEventListener('click', () => loadTodoFiles());
+  const todoRefreshInterval = setInterval(() => {
+    if (!container.isConnected) {
+      clearInterval(todoRefreshInterval);
+      return;
+    }
+    loadTodoFiles(true);
+  }, 5000);
 
   chatForm.addEventListener('submit', async (e) => {
     e.preventDefault();

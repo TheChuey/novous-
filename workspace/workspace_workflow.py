@@ -8,7 +8,14 @@ from core_engine.agent_factory import AGENTS_ROOT, AGENT_MD_TEMPLATE
 
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
-DEFAULT_TOOLS = ["calculator", "read_file", "list_directory", "project_status"]
+DEFAULT_TOOLS = [
+    "calculator",
+    "read_file",
+    "write_file",
+    "create_file",
+    "list_directory",
+    "project_status",
+]
 
 
 def _validate_id(agent_id: str) -> str:
@@ -39,16 +46,15 @@ def scaffold_agent(agent_id: str, name: str, description: str = "",
         "mode": mode if mode in ("chat", "agent") else "chat",
         "model": "qwen2.5-coder:latest",
         "squad": squad.strip(),
+        "tools": list(DEFAULT_TOOLS) if mode == "agent" else [],
     }
-    if meta["mode"] == "agent":
-        meta["tools"] = list(DEFAULT_TOOLS)
-
-    (agent_dir / "agent.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
     purpose = description.strip() or f"Serve as the {name.strip()} for this workspace."
     purpose += " Act strategically toward that goal and always deliver a clear, structured result."
     (agent_dir / "agent.md").write_text(
         AGENT_MD_TEMPLATE.format(name=name.strip(), purpose=purpose), encoding="utf-8")
+    (agent_dir / "agent.json").write_text(
+        json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
     return {"created": True, "agent_id": agent_id, "path": f"agents/{agent_id}",
             "agent": meta}

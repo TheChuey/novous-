@@ -1,7 +1,7 @@
 Date: 2026-10-07
 Name: Novous Application Snapshot
 Filename: NOVOUS_APP_SNAPSHOT_20261007.md
-Commit: cc8c624
+Commit: b3253c0
 Description: Self-contained reference for an AI agent. Captures Novous app purpose, architecture, file structure, and complete source code. Designed for grounding/understanding without repo access.
 
 # NOVOUS APPLICATION SNAPSHOT
@@ -134,10 +134,21 @@ Key components:
 - workspace/agents/reviewer/agent.json
 - workspace/agents/reviewer/agent.md
 - workspace/Do Due List/
+- workspace/Do Due List/list 3
 - workspace/Do Due List/test steps for tools
 - workspace/documentation/
 - workspace/documentation/hello.txt
+- workspace/documentation/note.md
+- workspace/documentation/Second list
+- workspace/documentation/states.txt
+- workspace/exports/
+- workspace/exports/sessions/
+- workspace/exports/sessions/chat-agent-01_20261007_221450_577212.md
 - workspace/interface.py
+- workspace/list 2
+- workspace/list 3
+- workspace/Markdown/
+- workspace/Markdown/note.md
 - workspace/project.json
 - workspace/squad_manager.py
 - workspace/workspace_workflow.py
@@ -184,6 +195,9 @@ You are {name}, a Novous workspace agent. You act as a specialist in your domain
 ## boundaries
 - Stay within the scope described in your purpose.
 - Do not fabricate facts, citations, or tool results.
+- Treat the workspace directory as the default destination for files. File tool paths are relative to the workspace root: use a bare filename for a file in its root, and do not add a `workspace/` prefix.
+- For file requests, use write_file with the requested content; use create_file only for an intentionally empty file.
+- Treat tool errors as failures, never as success. Claim a file was created or updated only after the write tool reports success.
 - Never share secrets, credentials, or private user data.
 - Report errors honestly instead of guessing.
 
@@ -293,13 +307,18 @@ def list_agents() -> list[dict]:
 `python
 """Core Engine Doorway: Python API & FastAPI Router (/api/chat, /api/agents, /api/tools)."""
 
+import re
 import uuid
+from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from core_engine import agent_factory, tool_catalog
 from core_engine.runtime import Agent, AgentProfile
+from editor.editor_schemas import EditorEventType
+from editor.editor_session import manager as editor_session_manager
 
 router = APIRouter()
 
@@ -320,6 +339,10 @@ class ChatRequest(BaseModel):
     agent_id: str
     model: str = "qwen2.5-coder:latest"
     session_id: str | None = None
+
+
+class ExportSessionRequest(BaseModel):
+    session_id: str = Field(..., min_length=1)
 
 
 def run_single_agent(agent_id: str, message: str, model: str | None = None,
@@ -354,6 +377,7 @@ def run_single_agent(agent_id: str, message: str, model: str | None = None,
         "session_id": session_key,
         "model": agent.model,
         "tool_events": list(agent.tool_events),
+        "tool_stats": agent.tool_stats,
     }
 
 
@@ -399,15 +423,89 @@ def api_delete_agent(agent_id: str):
 
 
 @router.post("/api/chat")
-def api_chat(req: ChatRequest):
+async def api_chat(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message must not be empty.")
-    return run_single_agent(req.agent_id, req.message.strip(), req.model, req.session_id)
+    result = await run_in_threadpool(
+        run_single_agent, req.agent_id, req.message.strip(), req.model, req.session_id
+    )
+    for event in result["tool_events"]:
+        event_data = {
+            "tool": event["tool"],
+            "args": event.get("args", {}),
+            "status": event["status"],
+            "origin": event["origin"],
+        }
+        if event.get("error") is not None:
+            event_data["error"] = event["error"]
+        editor_session_manager.publish(
+            EditorEventType.TOOL_EXECUTED,
+            event["tool"],
+            result["session_id"],
+            **event_data,
+        )
+    return result
 
 
 @router.post("/api/chat/reset")
 def api_chat_reset(session_id: str):
     return {"reset": reset_session(session_id)}
+
+
+@router.post("/api/chat/export")
+def api_export_chat_session(req: ExportSessionRequest):
+    agent = SESSIONS.get(req.session_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"Session '{req.session_id}' not found.")
+
+    now = datetime.now()
+    timestamp = now.strftime("%Y%m%d_%H%M%S_%f")
+    safe_session_id = re.sub(r"[^A-Za-z0-9_.-]", "_", req.session_id).strip("._")
+    if not safe_session_id:
+        safe_session_id = "session"
+    filename = f"novous_{safe_session_id}_{timestamp}.md"
+    exported_at = now.strftime("%Y-%m-%d %H:%M:%S")
+    agent_name = agent.profile.name or req.session_id
+
+    lines = [
+        f"# Novous Chat Session Log — {agent_name}",
+        f"**Agent ID:** `{agent.profile.id}` | **Model:** `{agent.model}` | "
+        f"**Session Key:** `{req.session_id}`",
+        f"**Exported At:** `{exported_at}`",
+        "",
+        "---",
+        "",
+        "## Tool Execution Metrics",
+        "",
+    ]
+
+    if agent.tool_stats:
+        lines.extend([
+            "| Tool Name | Total Calls | Successes | Errors | Success Rate |",
+            "| :--- | :---: | :---: | :---: | :---: |",
+        ])
+        for tool_name, metrics in agent.tool_stats.items():
+            lines.append(
+                f"| `{tool_name}` | {metrics['calls']} | {metrics['successes']} | "
+                f"{metrics['errors']} | {metrics['success_rate']:.1%} |"
+            )
+    else:
+        lines.append("*No tools executed in this session.*")
+
+    lines.extend(["", "---", "", "## Conversation History", ""])
+    for msg in agent.messages:
+        role = str(msg.get("role", "unknown")).upper()
+        if role == "SYSTEM":
+            continue
+        content = msg.get("content") or ""
+        lines.extend([f"### {role.title()}", "", str(content), ""])
+
+    full_markdown = "\n".join(lines)
+    return Response(
+        content=full_markdown,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/api/tools")
@@ -484,7 +582,7 @@ def _get_docling_converter():
 # --- 1. Read File Tool ---
 @tool
 def read_file_tool(relative_path: str) -> str:
-    """Read and return text contents of a file relative to workspace root."""
+    """Read a file relative to workspace root; do not prefix paths with 'workspace/'."""
     try:
         data = read_file_content(relative_path)
         return data["content"]
@@ -495,18 +593,32 @@ def read_file_tool(relative_path: str) -> str:
 # --- 2. Write File Tool ---
 @tool
 def write_file_tool(relative_path: str, content: str) -> str:
-    """Create or overwrite text content in a workspace file."""
-    try:
-        res = write_file_content(relative_path, content)
-        return f"Successfully wrote {res['bytes_written']} bytes to '{relative_path}'."
-    except Exception as exc:
-        return f"Error writing to file '{relative_path}': {exc}"
+    """Write and verify non-empty text at a workspace-root-relative path; bare filenames go in the root.
+
+    Do not prefix paths with 'workspace/'.
+    Supports formats such as .txt, .md, .py, .json, .html, .css, and .js.
+    Use create_file_tool only when an intentionally empty file is requested.
+    """
+    if not content.strip():
+        raise ValueError(
+            "File content is empty; no file was written. Provide content, or use "
+            "create_file_tool only when an empty file is explicitly requested."
+        )
+
+    res = write_file_content(relative_path, content)
+    saved = read_file_content(relative_path)["content"]
+    if saved != content:
+        raise IOError(f"Verification failed after writing '{relative_path}'.")
+    return (
+        f"Successfully wrote and verified {res['bytes_written']} bytes "
+        f"to '{relative_path}'."
+    )
 
 
 # --- 3. Create File or Folder Tool ---
 @tool
 def create_file_tool(relative_path: str, kind: str = "file") -> str:
-    """Create an empty file or directory inside workspace root."""
+    """Create an empty file or directory under workspace root; do not prefix paths with 'workspace/'."""
     try:
         res = create_path(relative_path, kind=kind)
         return f"Created {res['created']} at '{relative_path}'."
@@ -683,6 +795,7 @@ class Agent:
         self.messages: List[dict] = []
         self.session = session
         self.tool_events: List[dict] = []
+        self.tool_stats: dict[str, dict] = {}
 
     def _extract_text_tool_calls(self, content: str) -> List[dict]:
         text = (content or "").strip()
@@ -715,14 +828,23 @@ class Agent:
         if name not in self.tools:
             return f"Error: Tool '{name}' not found."
 
+        stats = self.tool_stats.setdefault(
+            name, {"calls": 0, "successes": 0, "errors": 0, "success_rate": 0.0}
+        )
+        stats["calls"] += 1
+
         tool_func = self.tools[name]
         try:
             if isinstance(args, str):
                 args = json.loads(args)
             result = tool_func(**args) if isinstance(args, dict) else tool_func(args)
+            stats["successes"] += 1
+            stats["success_rate"] = stats["successes"] / stats["calls"]
             self.tool_events.append({"tool": name, "args": args, "status": "success", "origin": origin})
             return result
         except Exception as exc:
+            stats["errors"] += 1
+            stats["success_rate"] = stats["successes"] / stats["calls"]
             err_msg = f"Error executing tool '{name}': {str(exc)}"
             self.tool_events.append({"tool": name, "args": args, "status": "error", "error": str(exc), "origin": origin})
             return err_msg
@@ -874,13 +996,18 @@ def calculator(expression: str) -> str:
 
 @tool(provider="editor")
 def read_file(path: str) -> str:
-    """Read a file from the workspace and return its text content."""
+    """Read a file by workspace-root-relative path; do not prefix paths with 'workspace/'."""
     return langgraph_tools.read_file_tool.invoke({"relative_path": path})
 
 
 @tool(provider="editor")
 def write_file(path: str, content: str) -> str:
-    """Write or update text content in a workspace file."""
+    """Write and verify non-empty text at a workspace-root-relative path; bare filenames go in the root.
+
+    Do not prefix paths with 'workspace/'.
+    Supports formats such as .txt, .md, .py, .json, .html, .css, and .js.
+    Use create_file only when an intentionally empty file is requested.
+    """
     return langgraph_tools.write_file_tool.invoke(
         {"relative_path": path, "content": content}
     )
@@ -888,7 +1015,7 @@ def write_file(path: str, content: str) -> str:
 
 @tool(provider="editor")
 def create_file(path: str, kind: str = "file") -> str:
-    """Create a new empty file or directory inside the workspace."""
+    """Create an empty file or directory by workspace-root-relative path; bare names go in root. Use write_file for content."""
     return langgraph_tools.create_file_tool.invoke(
         {"relative_path": path, "kind": kind}
     )
@@ -1109,6 +1236,7 @@ class EditorEventType(str, Enum):
     FILE_SAVED = "file_saved"
     FILE_CREATED = "file_created"
     FILE_DELETED = "file_deleted"
+    TOOL_EXECUTED = "tool_executed"
     CURSOR_MOVED = "cursor_moved"
     SESSION_JOIN = "session_join"
     SESSION_LEAVE = "session_leave"
@@ -1750,6 +1878,7 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 }
 .sidebar-title { margin: 0 0 0.5rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
 .editor-sidebar .tree-pane { flex: 1; border: none; background: transparent; }
+.event-export { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.6rem; }
 
 .editor-main {
   display: flex;
@@ -1778,6 +1907,23 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .editor-textarea:focus { outline: none; }
 .editor-status { display: flex; padding: 0.35rem 0.75rem; font-size: 0.75rem; color: var(--text-muted); border-top: 1px solid var(--border-color); }
 
+.workspace-save-dialog {
+  width: min(440px, calc(100vw - 2rem));
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  background: var(--bg-card);
+  color: var(--text-main);
+}
+.workspace-save-dialog form { margin: 0; }
+.workspace-save-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
+.workspace-save-dialog h2 { margin: 0 0 0.5rem; font-size: 1.1rem; }
+.workspace-save-dialog p { margin: 0 0 0.9rem; }
+.workspace-save-dialog label { display: block; margin: 0.75rem 0 0.35rem; font-size: 0.85rem; }
+.workspace-save-dialog .form-select,
+.workspace-save-dialog .form-input { width: 100%; }
+.workspace-save-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+
 .event-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.3rem; }
 .event-item {
   background: var(--bg-elev);
@@ -1796,6 +1942,8 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .event-item.session_join, .event-item.session_leave { border-left: 3px solid var(--warning); }
 .event-type { font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; }
 .event-path { font-family: Consolas, monospace; overflow: hidden; text-overflow: ellipsis; }
+.event-details { color: var(--text-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.event-copy-btn { align-self: flex-end; padding: 0.1rem 0.35rem; font-size: 0.68rem; }
 
 /* --- Chat ----------------------------------------------------------------- */
 .chat-layout {
@@ -1834,6 +1982,10 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .messages-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; padding-bottom: 0.75rem; }
 
 .message {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
   padding: 0.75rem 1rem;
   border-radius: 8px;
   max-width: 80%;
@@ -1842,6 +1994,14 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
   font-size: 0.92rem;
   line-height: 1.5;
 }
+.msg-copy-btn {
+  align-self: flex-end;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.4rem;
+  opacity: 0.7;
+  color: inherit;
+}
+.msg-copy-btn:hover { opacity: 1; color: inherit; }
 .user-msg { background: var(--primary); color: #fff; align-self: flex-end; }
 .assistant-msg { background: var(--bg-elev); border: 1px solid var(--border-color); align-self: flex-start; }
 .system-msg { background: transparent; border: 1px dashed var(--border-color); color: var(--text-muted); align-self: center; font-size: 0.85rem; }
@@ -1955,6 +2115,17 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
   gap: 10px;
 }
 
+.todo-selector-section {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.todo-selector-section .form-select {
+  width: 100%;
+}
+
 .test-function {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -2040,6 +2211,32 @@ function send(method, url, body) {
 }
 
 export const Api = {
+  async saveMarkdown(content, filename) {
+    if (typeof window.showSaveFilePicker === 'function') {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{
+          description: 'Markdown file',
+          accept: { 'text/markdown': ['.md'] }
+        }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(new Blob([content], { type: 'text/markdown;charset=utf-8' }));
+      await writable.close();
+      return { filename, locationChosen: true };
+    }
+
+    const objectUrl = URL.createObjectURL(
+      new Blob([content], { type: 'text/markdown;charset=utf-8' })
+    );
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    return { filename, locationChosen: false };
+  },
+
   // --- Workspace & Health ---
   async getHealth() {
     return get('/api/health');
@@ -2076,6 +2273,49 @@ export const Api = {
 
   async resetChat(sessionId) {
     return send('POST', `/api/chat/reset?session_id=${encodeURIComponent(sessionId)}`);
+  },
+
+  async exportSession(sessionId) {
+    const safeSessionId = String(sessionId).replace(/[^A-Za-z0-9_.-]/g, '_');
+    const suggestedName = `novous_${safeSessionId}_${new Date().toISOString().replace(/[:.]/g, '-')}.md`;
+    let pickerResult = null;
+    if (typeof window.showSaveFilePicker === 'function') {
+      pickerResult = window.showSaveFilePicker({
+        suggestedName,
+        types: [{
+          description: 'Markdown file',
+          accept: { 'text/markdown': ['.md'] }
+        }]
+      }).then(handle => ({ handle }), error => ({ error }));
+    }
+
+    const res = await fetch('/api/chat/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId })
+    });
+    if (!res.ok) await jsonOrThrow(res);
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+    const filename = filenameMatch ? filenameMatch[1] : suggestedName;
+
+    if (pickerResult) {
+      const result = await pickerResult;
+      if (result.error) throw result.error;
+      const writable = await result.handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return { filename, locationChosen: true };
+    }
+
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    return { filename, locationChosen: false };
   },
 
   async getTools() {
@@ -2433,6 +2673,8 @@ function esc(value) {
   }[c]));
 }
 
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
 /**
  * Interactive Chat Console Component: agent selection, message history,
  * and tool execution badges.
@@ -2453,6 +2695,7 @@ export function renderChatView(container) {
             <input type="checkbox" id="chat-use-tools" checked>
             <span>Attach tools (agent mode)</span>
           </label>
+          <button class="btn btn-sm btn-primary" id="chat-save-log">Save Session Log (.md)</button>
           <label class="model-picker">
             <span class="model-picker-label">Model <span id="model-count" class="text-muted small"></span></span>
             <select id="chat-model-select" class="form-select"><option value="">Detecting models…</option></select>
@@ -2589,8 +2832,166 @@ export function renderChatView(container) {
     return resetSession('Chat wiped. Send a message to start fresh.');
   }
 
+  let todoFilesLoading = false;
+  async function loadTodoFiles(silent = false) {
+    const select = container.querySelector('#todo-file-select');
+    if (!select || todoFilesLoading) return;
+    todoFilesLoading = true;
+
+    try {
+      const tree = await Api.getFileTree();
+      const workspaceEntries = tree.children || [];
+      const normalizedNames = new Set(['todo list', 'do due list']);
+      const todoDirectories = workspaceEntries.filter(item =>
+        item.type === 'directory' &&
+        normalizedNames.has(item.name.toLowerCase().replace(/\s+/g, ' ').trim())
+      );
+
+      const files = [];
+      function collectFiles(node) {
+        if (node.type === 'file') {
+          if (/\.(md|markdown)$/i.test(node.name) || !node.name.includes('.')) {
+            files.push(node);
+          }
+          return;
+        }
+        (node.children || []).forEach(collectFiles);
+      }
+      workspaceEntries
+        .filter(item => item.type === 'file')
+        .forEach(collectFiles);
+      todoDirectories.forEach(collectFiles);
+      const markdownFiles = [...new Map(files.map(file => [file.path, file])).values()];
+      const selectedPath = select.value;
+
+      select.replaceChildren();
+      if (!markdownFiles.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No Markdown or extensionless lists found in workspace or To Do List folders';
+        select.appendChild(option);
+        select.disabled = true;
+        return;
+      }
+
+      markdownFiles.sort((a, b) => a.path.localeCompare(b.path));
+      markdownFiles.forEach(file => {
+        const option = document.createElement('option');
+        option.value = file.path;
+        option.textContent = file.path;
+        option.title = file.path;
+        select.appendChild(option);
+      });
+      if (markdownFiles.some(file => file.path === selectedPath)) {
+        select.value = selectedPath;
+      }
+      select.disabled = false;
+    } catch (err) {
+      if (!silent) {
+        select.replaceChildren();
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'Error loading files';
+        select.appendChild(option);
+        select.disabled = true;
+        appendMessage('system', `Could not load To-Do files: ${err.message}`);
+      }
+    } finally {
+      todoFilesLoading = false;
+    }
+  }
+
+  async function runTodoSequence() {
+    const select = container.querySelector('#todo-file-select');
+    const selectedPath = select?.value;
+    const agentId = agentSelect.value;
+
+    if (!selectedPath) {
+      appendMessage('system', 'Please select a file from the To-Do dropdown first.');
+      return;
+    }
+    if (!agentId) {
+      appendMessage('system', 'Please select an agent before running To-Do items.');
+      return;
+    }
+
+    const runButton = container.querySelector('[data-test-function="runTestSuite"]');
+    if (runButton) runButton.disabled = true;
+
+    try {
+      const fileData = await Api.readFile(selectedPath);
+      const lines = String(fileData.content ?? '')
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean);
+
+      appendMessage('user', `Starting execution of To-Do items from: ${selectedPath.split('/').pop()}`);
+      if (!lines.length) {
+        appendMessage('system', 'The selected file contains no nonblank task lines.');
+        return;
+      }
+
+      const sessionId = `chat-${agentId}`;
+      const model = currentModel;
+      await delay(1500);
+
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        appendMessage('user', `Task ${index + 1}: ${line}`);
+        const thinkingId = appendMessage('assistant', 'Thinking...', true);
+        try {
+          const response = await Api.sendMessage(line, agentId, model, sessionId);
+          removeMessage(thinkingId);
+          (response.tool_events || []).forEach(event =>
+            appendToolBadge(event.tool, event.status, event.args)
+          );
+          appendMessage('assistant', response.reply);
+        } catch (err) {
+          removeMessage(thinkingId);
+          throw err;
+        }
+
+        if (index < lines.length - 1) await delay(1000);
+      }
+    } catch (err) {
+      appendMessage('system', `Error reading or running To-Do file: ${err.message}`);
+    } finally {
+      if (runButton) runButton.disabled = false;
+    }
+  }
+
   container.querySelector('#chat-reset').addEventListener('click', () => resetSession());
-  buildTestPanel('testPanelButtons', { diagnostics: openDiagnostics, wipeChat });
+  container.querySelector('#chat-save-log').addEventListener('click', async () => {
+    const agentId = agentSelect.value;
+    if (!agentId) {
+      alert('Select an agent before saving the session log.');
+      return;
+    }
+
+    try {
+      const res = await Api.exportSession(`chat-${agentId}`);
+      alert(res.locationChosen
+        ? `Session log saved as ${res.filename} in the location you selected.`
+        : `Session log download started: ${res.filename}\n\nChoose the save location in your browser's download settings.`);
+    } catch (err) {
+      if (err.name !== 'AbortError') alert(`Failed to save session: ${err.message}`);
+    }
+  });
+  buildTestPanel('testPanelButtons', {
+    diagnostics: openDiagnostics,
+    wipeChat,
+    runTestSuite: runTodoSequence
+  });
+  loadTodoFiles();
+  container.querySelector('#todo-file-refresh')
+    ?.addEventListener('click', () => loadTodoFiles());
+  const todoRefreshInterval = setInterval(() => {
+    if (!container.isConnected) {
+      clearInterval(todoRefreshInterval);
+      return;
+    }
+    loadTodoFiles(true);
+  }, 5000);
 
   chatForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -2624,7 +3025,28 @@ export function renderChatView(container) {
     const id = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4);
     msgDiv.id = id;
     msgDiv.className = `message ${role}-msg ${isTemporary ? 'pulse' : ''}`;
-    msgDiv.innerText = content;
+    const body = document.createElement('div');
+    body.className = 'msg-body';
+    body.innerText = content;
+    msgDiv.appendChild(body);
+
+    if (!isTemporary && role !== 'system') {
+      const copyButton = document.createElement('button');
+      copyButton.type = 'button';
+      copyButton.className = 'btn btn-sm btn-ghost msg-copy-btn';
+      copyButton.innerText = 'Copy';
+      copyButton.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(content);
+          copyButton.innerText = 'Copied!';
+          setTimeout(() => { copyButton.innerText = 'Copy'; }, 2000);
+        } catch (err) {
+          copyButton.innerText = 'Copy failed';
+        }
+      });
+      msgDiv.appendChild(copyButton);
+    }
+
     messagesBox.appendChild(msgDiv);
     messagesBox.scrollTop = messagesBox.scrollHeight;
     return id;
@@ -2699,11 +3121,31 @@ export function renderEditorView(container, initialPath = null) {
 
       <aside class="editor-events">
         <h3 class="sidebar-title">Session Events</h3>
+        <div class="event-export">
+          <button class="btn btn-sm btn-primary" id="event-save-log">Save Events Log (.md)</button>
+        </div>
         <div id="event-log" class="event-log">
           <p class="text-muted">Connecting to event bus…</p>
         </div>
       </aside>
     </div>`;
+
+  container.insertAdjacentHTML('beforeend', `
+    <dialog id="editor-save-dialog" class="workspace-save-dialog">
+      <form id="editor-save-form">
+        <h2>Save to Workspace</h2>
+        <p class="text-muted">Choose a workspace folder and file name.</p>
+        <label for="editor-save-directory">Folder</label>
+        <select id="editor-save-directory" class="form-select"></select>
+        <label for="editor-save-filename">File name</label>
+        <input id="editor-save-filename" class="form-input" type="text" required>
+        <p id="editor-save-error" class="text-danger hidden" role="alert"></p>
+        <div class="workspace-save-actions">
+          <button id="editor-save-cancel" class="btn" type="button">Cancel</button>
+          <button id="editor-save-confirm" class="btn btn-primary" type="submit">Save</button>
+        </div>
+      </form>
+    </dialog>`);
 
   const textarea = container.querySelector('#editor-textarea');
   const pathLabel = container.querySelector('#editor-path');
@@ -2712,8 +3154,48 @@ export function renderEditorView(container, initialPath = null) {
   const posLabel = container.querySelector('#editor-pos');
   const eventLog = container.querySelector('#event-log');
   const wsBadge = container.querySelector('#editor-ws');
+  const saveLogButton = container.querySelector('#event-save-log');
+  const saveDialog = container.querySelector('#editor-save-dialog');
+  const saveDirectory = container.querySelector('#editor-save-directory');
+  const saveFilename = container.querySelector('#editor-save-filename');
+  const saveError = container.querySelector('#editor-save-error');
+  const saveConfirm = container.querySelector('#editor-save-confirm');
+  const sessionEvents = [];
+  let saveDialogFiles = new Set();
 
-  renderTree(container.querySelector('#editor-tree'), {
+  saveLogButton.addEventListener('click', async () => {
+    saveLogButton.disabled = true;
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const rows = sessionEvents.map(event => {
+        const escapeCell = value => String(value || '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+        const details = event.data && Object.keys(event.data).length
+          ? JSON.stringify(event.data)
+          : '';
+        return `| ${escapeCell(event.type.replace(/_/g, ' '))} | ${escapeCell(event.path)} | ${escapeCell(event.session_id)} | ${escapeCell(details)} |`;
+      });
+      const markdown = [
+        '# Novous Session Events Log',
+        '',
+        `Exported: ${new Date().toLocaleString()}`,
+        '',
+        '| Event | Path / Tool | Session | Details |',
+        '| --- | --- | --- | --- |',
+        ...(rows.length ? rows : ['| No events recorded | | | |']),
+        ''
+      ].join('\n');
+      const result = await Api.saveMarkdown(markdown, `novous-session-events-${timestamp}.md`);
+      alert(result.locationChosen
+        ? `Events log saved as ${result.filename} in the location you selected.`
+        : `Events log download started: ${result.filename}\n\nChoose the save location in your browser's download settings.`);
+    } catch (err) {
+      if (err.name !== 'AbortError') alert(`Failed to save events log: ${err.message}`);
+    } finally {
+      saveLogButton.disabled = false;
+    }
+  });
+
+  const workspaceTree = renderTree(container.querySelector('#editor-tree'), {
     onSelect: (path) => openFile(path)
   });
 
@@ -2736,16 +3218,86 @@ export function renderEditorView(container, initialPath = null) {
     }
   }
 
-  async function saveFile() {
-    if (!state.path) return alert('No file open.');
+  async function openSaveDialog() {
     try {
-      await Api.writeFile(state.path, textarea.value);
+      const tree = await Api.getFileTree();
+      const folders = [];
+      const files = new Set();
+      function collect(node) {
+        if (node.type === 'directory') {
+          if (node.path) folders.push(node.path);
+          (node.children || []).forEach(collect);
+        } else {
+          files.add(node.path);
+        }
+      }
+      collect(tree);
+      folders.sort((a, b) => a.localeCompare(b));
+
+      saveDirectory.replaceChildren();
+      const rootOption = document.createElement('option');
+      rootOption.value = '';
+      rootOption.textContent = '/ (workspace root)';
+      saveDirectory.appendChild(rootOption);
+      folders.forEach(path => {
+        const option = document.createElement('option');
+        option.value = path;
+        option.textContent = path;
+        saveDirectory.appendChild(option);
+      });
+
+      const currentParts = (state.path || '').split('/');
+      const currentFilename = currentParts.pop() || 'untitled.txt';
+      const currentDirectory = currentParts.join('/');
+      saveDirectory.value = folders.includes(currentDirectory) ? currentDirectory : '';
+      saveFilename.value = currentFilename;
+      saveError.textContent = '';
+      saveError.classList.add('hidden');
+      saveDialog.showModal();
+      saveFilename.focus();
+      saveFilename.select();
+      saveDialogFiles = files;
+    } catch (err) {
+      alert(`Could not open the workspace save picker: ${err.message}`);
+    }
+  }
+
+  async function saveFile() {
+    if (!saveDialog.open) {
+      await openSaveDialog();
+      return;
+    }
+
+    const filename = saveFilename.value.trim();
+    if (!filename || filename === '.' || filename === '..' || /[\\/]/.test(filename)) {
+      saveError.textContent = 'Enter a file name without folder separators.';
+      saveError.classList.remove('hidden');
+      saveFilename.focus();
+      return;
+    }
+
+    const targetPath = [saveDirectory.value, filename].filter(Boolean).join('/');
+    if (saveDialogFiles.has(targetPath) && targetPath !== state.path &&
+        !confirm(`"${targetPath}" already exists. Overwrite it?`)) {
+      return;
+    }
+
+    saveConfirm.disabled = true;
+    try {
+      await Api.writeFile(targetPath, textarea.value);
+      state.path = targetPath;
       state.dirty = false;
       dirtyBadge.classList.add('hidden');
-      appendEvent({ type: 'file_saved', path: state.path, session_id: 'you' });
+      pathLabel.textContent = targetPath;
+      appendEvent({ type: 'file_saved', path: targetPath, session_id: 'you' });
       updateBytes();
+      saveDialog.close();
+      workspaceTree.reload();
     } catch (err) {
-      alert(err.message);
+      saveError.textContent = `Save failed: ${err.message}`;
+      saveError.classList.remove('hidden');
+    } finally {
+      saveConfirm.disabled = false;
     }
   }
 
@@ -2769,7 +3321,12 @@ export function renderEditorView(container, initialPath = null) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(); }
   });
 
-  container.querySelector('#editor-save').addEventListener('click', saveFile);
+  container.querySelector('#editor-save').addEventListener('click', openSaveDialog);
+  container.querySelector('#editor-save-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    saveFile();
+  });
+  container.querySelector('#editor-save-cancel').addEventListener('click', () => saveDialog.close());
   container.querySelector('#editor-reload').addEventListener('click', () => {
     if (state.path) openFile(state.path);
   });
@@ -2792,7 +3349,9 @@ export function renderEditorView(container, initialPath = null) {
       try {
         const data = JSON.parse(msg.data);
         if (data.type === 'connected') {
-          eventLog.innerHTML = `<p class="text-muted small">Connected as session ${esc(data.session_id)}</p>`;
+          if (!sessionEvents.length) {
+            eventLog.innerHTML = `<p class="text-muted small">Connected as session ${esc(data.session_id)}</p>`;
+          }
         } else if (data.type !== 'pong') {
           appendEvent(data);
         }
@@ -2813,11 +3372,49 @@ export function renderEditorView(container, initialPath = null) {
     }
     const el = document.createElement('div');
     el.className = `event-item ${data.type}`;
-    el.innerHTML = `<span class="event-type">${esc(data.type.replace(/_/g, ' '))}</span>
-      <span class="event-path">${esc(data.path || '')}</span>
-      <span class="event-who text-muted">${esc(data.session_id || '')}</span>`;
+    const eventData = {
+      type: String(data.type || 'unknown'),
+      path: data.path || '',
+      session_id: data.session_id || '',
+      data: data.data || {}
+    };
+    sessionEvents.push(eventData);
+    const detailText = eventData.type === 'tool_executed'
+      ? `${eventData.data.status || 'unknown'}${eventData.data.origin ? ` · ${eventData.data.origin}` : ''}\nArgs: ${JSON.stringify(eventData.data.args || {})}${eventData.data.error ? `\nError: ${eventData.data.error}` : ''}`
+      : '';
+    const eventText = [
+      eventData.type.replace(/_/g, ' '),
+      eventData.path,
+      eventData.session_id,
+      detailText
+    ].filter(Boolean).join('\n');
+    const detailElement = detailText
+      ? `<span class="event-details">${esc(detailText)}</span>`
+      : '';
+    el.innerHTML = `<span class="event-type">${esc(eventData.type.replace(/_/g, ' '))}</span>
+      <span class="event-path">${esc(eventData.path)}</span>
+      <span class="event-who text-muted">${esc(eventData.session_id)}</span>${detailElement}`;
+    const copyButton = document.createElement('button');
+    copyButton.type = 'button';
+    copyButton.className = 'btn btn-sm btn-ghost event-copy-btn';
+    copyButton.textContent = 'Copy';
+    copyButton.setAttribute('aria-label', `Copy ${eventData.type.replace(/_/g, ' ')} event`);
+    copyButton.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(eventText);
+        copyButton.textContent = 'Copied!';
+        setTimeout(() => { copyButton.textContent = 'Copy'; }, 2000);
+      } catch (err) {
+        copyButton.textContent = 'Copy failed';
+      }
+    });
+    el.appendChild(copyButton);
     eventLog.appendChild(el);
-    while (eventLog.children.length > 60) eventLog.removeChild(eventLog.firstChild);
+    while (sessionEvents.length > 60) {
+      sessionEvents.shift();
+      const firstEvent = eventLog.querySelector('.event-item');
+      if (firstEvent) firstEvent.remove();
+    }
     eventLog.scrollTop = eventLog.scrollHeight;
   }
 
@@ -3289,6 +3886,34 @@ export function buildTestPanel(containerId, actions = {}) {
 
     container.appendChild(button);
   });
+
+  const todoSection = document.createElement('div');
+  todoSection.className = 'todo-selector-section';
+
+  const todoLabel = document.createElement('label');
+  todoLabel.className = 'model-picker-label small text-muted';
+  todoLabel.htmlFor = 'todo-file-select';
+  todoLabel.textContent = 'Select To-Do File';
+
+  const todoSelect = document.createElement('select');
+  todoSelect.id = 'todo-file-select';
+  todoSelect.className = 'form-select';
+  todoSelect.setAttribute('aria-label', 'Select a To-Do file');
+
+  const refreshTodoFiles = document.createElement('button');
+  refreshTodoFiles.id = 'todo-file-refresh';
+  refreshTodoFiles.className = 'btn btn-sm';
+  refreshTodoFiles.type = 'button';
+  refreshTodoFiles.textContent = 'Refresh lists';
+  refreshTodoFiles.title = 'Refresh Markdown to-do lists';
+
+  const loadingOption = document.createElement('option');
+  loadingOption.value = '';
+  loadingOption.textContent = 'Loading Markdown lists...';
+  todoSelect.appendChild(loadingOption);
+
+  todoSection.append(todoLabel, todoSelect, refreshTodoFiles);
+  container.appendChild(todoSection);
 
   if (typeof globalThis.lucide?.createIcons === 'function') {
     globalThis.lucide.createIcons();
@@ -4886,6 +5511,8 @@ def run_tests_for_agent(agent_id: str) -> dict:
   "tools": [
     "calculator",
     "read_file",
+    "write_file",
+    "create_file",
     "list_directory",
     "project_status"
   ]
@@ -4970,9 +5597,17 @@ Do not invent missing fields from a tool result.
   "id": "assistant",
   "name": "Assistant",
   "description": "General-purpose chat agent for answering questions and drafting content.",
-  "mode": "chat",
+  "mode": "agent",
   "model": "qwen2.5-coder:latest",
-  "squad": ""
+  "squad": "",
+  "tools": [
+    "calculator",
+    "read_file",
+    "write_file",
+    "create_file",
+    "list_directory",
+    "project_status"
+  ]
 }
 
 `
@@ -4986,11 +5621,14 @@ Do not invent missing fields from a tool result.
 You are Novous Assistant, a precise and helpful general-purpose agent in this workspace. You are a proven communicator who owns every request end to end. Always think before answering, and verify any claim you reuse before presenting it.
 
 ## purpose
-Your purpose is to answer user questions, summarize material, and draft clear written content that the team can act on immediately. You deliver a direct, useful answer on the first attempt and stay on task until the request is complete.
+Your purpose is to answer user questions, summarize material, draft clear written content, and create or update workspace files when requested. Use the file tools for requested changes, including text-based files with formats such as TXT, Markdown, Python, JSON, HTML, CSS, and JavaScript. You deliver a direct, useful answer on the first attempt and stay on task until the request is complete.
 
 ## boundaries
 - Never invent facts, citations, or figures that you were not given or cannot verify.
-- Do not claim to have executed tools when running in chat mode.
+- Never claim to have executed a tool unless it actually ran, and report its result accurately.
+- Treat the workspace directory as the default destination for files. File tool paths are relative to the workspace root: use a bare filename for a file in its root, and do not add a `workspace/` prefix.
+- For file requests, use write_file with the requested content; use create_file only for an intentionally empty file.
+- Treat tool errors as failures, never as success. Claim a file was created or updated only after the write tool reports success.
 - Must not share secrets, credentials, or private user data.
 - Only ask a clarifying question if information genuinely is missing.
 - Keep every reply within the scope of the request.
@@ -5085,6 +5723,46 @@ My name is Jesus
 I am a software developer
 Learning about AI agents
 I have built this app. 
+`
+
+### workspace/documentation/note.md
+
+`markdown
+# User Note
+Your name is Jesus and you like blue.
+`
+
+### workspace/documentation/states.txt
+
+`text
+Alabama, Alaska, Arizona, Arkansas, California, Colorado, Connecticut, Delaware, Florida, Georgia, Hawaii, Idaho, Illinois, Indiana, Iowa, Kansas, Kentucky, Louisiana, Maine, Maryland, Massachusetts, Michigan, Minnesota, Mississippi, Missouri, Montana, Nebraska, Nevada, New Hampshire, New Jersey, New Mexico, New York, North Carolina, North Dakota, Ohio, Oklahoma, Oregon, Pennsylvania, Rhode Island, South Carolina, South Dakota, Tennessee, Texas, Utah, Vermont, Virginia, Washington, West Virginia, Wisconsin, Wyoming.
+`
+
+### workspace/exports/sessions/chat-agent-01_20261007_221450_577212.md
+
+`markdown
+# Novous Chat Session Log — AgentTest
+**Agent ID:** `agent-01` | **Model:** `qwen2.5-coder:latest` | **Session Key:** `chat-agent-01`
+**Exported At:** `2026-10-07 22:14:50`
+
+---
+
+## Tool Execution Metrics
+
+*No tools executed in this session.*
+
+---
+
+## Conversation History
+
+### User
+
+sdfsd
+
+### Assistant
+
+UNKNOWN
+
 `
 
 ### workspace/interface.py
@@ -5266,6 +5944,13 @@ def api_delete_squad(req: SquadRequest):
 
 `
 
+### workspace/Markdown/note.md
+
+`markdown
+# User Note
+Your name is Jesus and you like blue.
+`
+
 ### workspace/project.json
 
 `json
@@ -5392,7 +6077,14 @@ from core_engine.agent_factory import AGENTS_ROOT, AGENT_MD_TEMPLATE
 
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
-DEFAULT_TOOLS = ["calculator", "read_file", "list_directory", "project_status"]
+DEFAULT_TOOLS = [
+    "calculator",
+    "read_file",
+    "write_file",
+    "create_file",
+    "list_directory",
+    "project_status",
+]
 
 
 def _validate_id(agent_id: str) -> str:
@@ -5423,16 +6115,15 @@ def scaffold_agent(agent_id: str, name: str, description: str = "",
         "mode": mode if mode in ("chat", "agent") else "chat",
         "model": "qwen2.5-coder:latest",
         "squad": squad.strip(),
+        "tools": list(DEFAULT_TOOLS) if mode == "agent" else [],
     }
-    if meta["mode"] == "agent":
-        meta["tools"] = list(DEFAULT_TOOLS)
-
-    (agent_dir / "agent.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
     purpose = description.strip() or f"Serve as the {name.strip()} for this workspace."
     purpose += " Act strategically toward that goal and always deliver a clear, structured result."
     (agent_dir / "agent.md").write_text(
         AGENT_MD_TEMPLATE.format(name=name.strip(), purpose=purpose), encoding="utf-8")
+    (agent_dir / "agent.json").write_text(
+        json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
     return {"created": True, "agent_id": agent_id, "path": f"agents/{agent_id}",
             "agent": meta}

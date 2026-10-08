@@ -77,13 +77,18 @@ def calculator(expression: str) -> str:
 
 @tool(provider="editor")
 def read_file(path: str) -> str:
-    """Read a file from the workspace and return its text content."""
+    """Read a file by workspace-root-relative path; do not prefix paths with 'workspace/'."""
     return langgraph_tools.read_file_tool.invoke({"relative_path": path})
 
 
 @tool(provider="editor")
 def write_file(path: str, content: str) -> str:
-    """Write or update text content in a workspace file."""
+    """Write and verify non-empty text at a workspace-root-relative path; bare filenames go in the root.
+
+    Do not prefix paths with 'workspace/'.
+    Supports formats such as .txt, .md, .py, .json, .html, .css, and .js.
+    Use create_file only when an intentionally empty file is requested.
+    """
     return langgraph_tools.write_file_tool.invoke(
         {"relative_path": path, "content": content}
     )
@@ -91,7 +96,7 @@ def write_file(path: str, content: str) -> str:
 
 @tool(provider="editor")
 def create_file(path: str, kind: str = "file") -> str:
-    """Create a new empty file or directory inside the workspace."""
+    """Create an empty file or directory by workspace-root-relative path; bare names go in root. Use write_file for content."""
     return langgraph_tools.create_file_tool.invoke(
         {"relative_path": path, "kind": kind}
     )

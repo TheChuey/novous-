@@ -46,6 +46,34 @@ export function buildTestPanel(containerId, actions = {}) {
     container.appendChild(button);
   });
 
+  const todoSection = document.createElement('div');
+  todoSection.className = 'todo-selector-section';
+
+  const todoLabel = document.createElement('label');
+  todoLabel.className = 'model-picker-label small text-muted';
+  todoLabel.htmlFor = 'todo-file-select';
+  todoLabel.textContent = 'Select To-Do File';
+
+  const todoSelect = document.createElement('select');
+  todoSelect.id = 'todo-file-select';
+  todoSelect.className = 'form-select';
+  todoSelect.setAttribute('aria-label', 'Select a To-Do file');
+
+  const refreshTodoFiles = document.createElement('button');
+  refreshTodoFiles.id = 'todo-file-refresh';
+  refreshTodoFiles.className = 'btn btn-sm';
+  refreshTodoFiles.type = 'button';
+  refreshTodoFiles.textContent = 'Refresh lists';
+  refreshTodoFiles.title = 'Refresh Markdown to-do lists';
+
+  const loadingOption = document.createElement('option');
+  loadingOption.value = '';
+  loadingOption.textContent = 'Loading Markdown lists...';
+  todoSelect.appendChild(loadingOption);
+
+  todoSection.append(todoLabel, todoSelect, refreshTodoFiles);
+  container.appendChild(todoSection);
+
   if (typeof globalThis.lucide?.createIcons === 'function') {
     globalThis.lucide.createIcons();
   }

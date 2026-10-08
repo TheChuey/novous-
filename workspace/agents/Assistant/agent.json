@@ -2,7 +2,15 @@
   "id": "assistant",
   "name": "Assistant",
   "description": "General-purpose chat agent for answering questions and drafting content.",
-  "mode": "chat",
+  "mode": "agent",
   "model": "qwen2.5-coder:latest",
-  "squad": ""
+  "squad": "",
+  "tools": [
+    "calculator",
+    "read_file",
+    "write_file",
+    "create_file",
+    "list_directory",
+    "project_status"
+  ]
 }

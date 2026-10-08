@@ -42,7 +42,7 @@ def _get_docling_converter():
 # --- 1. Read File Tool ---
 @tool
 def read_file_tool(relative_path: str) -> str:
-    """Read and return text contents of a file relative to workspace root."""
+    """Read a file relative to workspace root; do not prefix paths with 'workspace/'."""
     try:
         data = read_file_content(relative_path)
         return data["content"]
@@ -53,18 +53,32 @@ def read_file_tool(relative_path: str) -> str:
 # --- 2. Write File Tool ---
 @tool
 def write_file_tool(relative_path: str, content: str) -> str:
-    """Create or overwrite text content in a workspace file."""
-    try:
-        res = write_file_content(relative_path, content)
-        return f"Successfully wrote {res['bytes_written']} bytes to '{relative_path}'."
-    except Exception as exc:
-        return f"Error writing to file '{relative_path}': {exc}"
+    """Write and verify non-empty text at a workspace-root-relative path; bare filenames go in the root.
+
+    Do not prefix paths with 'workspace/'.
+    Supports formats such as .txt, .md, .py, .json, .html, .css, and .js.
+    Use create_file_tool only when an intentionally empty file is requested.
+    """
+    if not content.strip():
+        raise ValueError(
+            "File content is empty; no file was written. Provide content, or use "
+            "create_file_tool only when an empty file is explicitly requested."
+        )
+
+    res = write_file_content(relative_path, content)
+    saved = read_file_content(relative_path)["content"]
+    if saved != content:
+        raise IOError(f"Verification failed after writing '{relative_path}'.")
+    return (
+        f"Successfully wrote and verified {res['bytes_written']} bytes "
+        f"to '{relative_path}'."
+    )
 
 
 # --- 3. Create File or Folder Tool ---
 @tool
 def create_file_tool(relative_path: str, kind: str = "file") -> str:
-    """Create an empty file or directory inside workspace root."""
+    """Create an empty file or directory under workspace root; do not prefix paths with 'workspace/'."""
     try:
         res = create_path(relative_path, kind=kind)
         return f"Created {res['created']} at '{relative_path}'."

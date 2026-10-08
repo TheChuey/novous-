@@ -238,6 +238,23 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .editor-textarea:focus { outline: none; }
 .editor-status { display: flex; padding: 0.35rem 0.75rem; font-size: 0.75rem; color: var(--text-muted); border-top: 1px solid var(--border-color); }
 
+.workspace-save-dialog {
+  width: min(440px, calc(100vw - 2rem));
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  background: var(--bg-card);
+  color: var(--text-main);
+}
+.workspace-save-dialog form { margin: 0; }
+.workspace-save-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
+.workspace-save-dialog h2 { margin: 0 0 0.5rem; font-size: 1.1rem; }
+.workspace-save-dialog p { margin: 0 0 0.9rem; }
+.workspace-save-dialog label { display: block; margin: 0.75rem 0 0.35rem; font-size: 0.85rem; }
+.workspace-save-dialog .form-select,
+.workspace-save-dialog .form-input { width: 100%; }
+.workspace-save-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+
 .event-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.3rem; }
 .event-item {
   background: var(--bg-elev);

@@ -55,6 +55,23 @@ export function renderEditorView(container, initialPath = null) {
       </aside>
     </div>`;
 
+  container.insertAdjacentHTML('beforeend', `
+    <dialog id="editor-save-dialog" class="workspace-save-dialog">
+      <form id="editor-save-form">
+        <h2>Save to Workspace</h2>
+        <p class="text-muted">Choose a workspace folder and file name.</p>
+        <label for="editor-save-directory">Folder</label>
+        <select id="editor-save-directory" class="form-select"></select>
+        <label for="editor-save-filename">File name</label>
+        <input id="editor-save-filename" class="form-input" type="text" required>
+        <p id="editor-save-error" class="text-danger hidden" role="alert"></p>
+        <div class="workspace-save-actions">
+          <button id="editor-save-cancel" class="btn" type="button">Cancel</button>
+          <button id="editor-save-confirm" class="btn btn-primary" type="submit">Save</button>
+        </div>
+      </form>
+    </dialog>`);
+
   const textarea = container.querySelector('#editor-textarea');
   const pathLabel = container.querySelector('#editor-path');
   const dirtyBadge = container.querySelector('#editor-dirty');
@@ -63,7 +80,13 @@ export function renderEditorView(container, initialPath = null) {
   const eventLog = container.querySelector('#event-log');
   const wsBadge = container.querySelector('#editor-ws');
   const saveLogButton = container.querySelector('#event-save-log');
+  const saveDialog = container.querySelector('#editor-save-dialog');
+  const saveDirectory = container.querySelector('#editor-save-directory');
+  const saveFilename = container.querySelector('#editor-save-filename');
+  const saveError = container.querySelector('#editor-save-error');
+  const saveConfirm = container.querySelector('#editor-save-confirm');
   const sessionEvents = [];
+  let saveDialogFiles = new Set();
 
   saveLogButton.addEventListener('click', async () => {
     saveLogButton.disabled = true;
@@ -97,7 +120,7 @@ export function renderEditorView(container, initialPath = null) {
     }
   });
 
-  renderTree(container.querySelector('#editor-tree'), {
+  const workspaceTree = renderTree(container.querySelector('#editor-tree'), {
     onSelect: (path) => openFile(path)
   });
 
@@ -120,16 +143,86 @@ export function renderEditorView(container, initialPath = null) {
     }
   }
 
-  async function saveFile() {
-    if (!state.path) return alert('No file open.');
+  async function openSaveDialog() {
     try {
-      await Api.writeFile(state.path, textarea.value);
+      const tree = await Api.getFileTree();
+      const folders = [];
+      const files = new Set();
+      function collect(node) {
+        if (node.type === 'directory') {
+          if (node.path) folders.push(node.path);
+          (node.children || []).forEach(collect);
+        } else {
+          files.add(node.path);
+        }
+      }
+      collect(tree);
+      folders.sort((a, b) => a.localeCompare(b));
+
+      saveDirectory.replaceChildren();
+      const rootOption = document.createElement('option');
+      rootOption.value = '';
+      rootOption.textContent = '/ (workspace root)';
+      saveDirectory.appendChild(rootOption);
+      folders.forEach(path => {
+        const option = document.createElement('option');
+        option.value = path;
+        option.textContent = path;
+        saveDirectory.appendChild(option);
+      });
+
+      const currentParts = (state.path || '').split('/');
+      const currentFilename = currentParts.pop() || 'untitled.txt';
+      const currentDirectory = currentParts.join('/');
+      saveDirectory.value = folders.includes(currentDirectory) ? currentDirectory : '';
+      saveFilename.value = currentFilename;
+      saveError.textContent = '';
+      saveError.classList.add('hidden');
+      saveDialog.showModal();
+      saveFilename.focus();
+      saveFilename.select();
+      saveDialogFiles = files;
+    } catch (err) {
+      alert(`Could not open the workspace save picker: ${err.message}`);
+    }
+  }
+
+  async function saveFile() {
+    if (!saveDialog.open) {
+      await openSaveDialog();
+      return;
+    }
+
+    const filename = saveFilename.value.trim();
+    if (!filename || filename === '.' || filename === '..' || /[\\/]/.test(filename)) {
+      saveError.textContent = 'Enter a file name without folder separators.';
+      saveError.classList.remove('hidden');
+      saveFilename.focus();
+      return;
+    }
+
+    const targetPath = [saveDirectory.value, filename].filter(Boolean).join('/');
+    if (saveDialogFiles.has(targetPath) && targetPath !== state.path &&
+        !confirm(`"${targetPath}" already exists. Overwrite it?`)) {
+      return;
+    }
+
+    saveConfirm.disabled = true;
+    try {
+      await Api.writeFile(targetPath, textarea.value);
+      state.path = targetPath;
       state.dirty = false;
       dirtyBadge.classList.add('hidden');
-      appendEvent({ type: 'file_saved', path: state.path, session_id: 'you' });
+      pathLabel.textContent = targetPath;
+      appendEvent({ type: 'file_saved', path: targetPath, session_id: 'you' });
       updateBytes();
+      saveDialog.close();
+      workspaceTree.reload();
     } catch (err) {
-      alert(err.message);
+      saveError.textContent = `Save failed: ${err.message}`;
+      saveError.classList.remove('hidden');
+    } finally {
+      saveConfirm.disabled = false;
     }
   }
 
@@ -153,7 +246,12 @@ export function renderEditorView(container, initialPath = null) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(); }
   });
 
-  container.querySelector('#editor-save').addEventListener('click', saveFile);
+  container.querySelector('#editor-save').addEventListener('click', openSaveDialog);
+  container.querySelector('#editor-save-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    saveFile();
+  });
+  container.querySelector('#editor-save-cancel').addEventListener('click', () => saveDialog.close());
   container.querySelector('#editor-reload').addEventListener('click', () => {
     if (state.path) openFile(state.path);
   });

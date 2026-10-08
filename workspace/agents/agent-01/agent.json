@@ -8,6 +8,8 @@
   "tools": [
     "calculator",
     "read_file",
+    "write_file",
+    "create_file",
     "list_directory",
     "project_status"
   ]
