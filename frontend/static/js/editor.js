@@ -46,6 +46,9 @@ export function renderEditorView(container, initialPath = null) {
 
       <aside class="editor-events">
         <h3 class="sidebar-title">Session Events</h3>
+        <div class="event-export">
+          <button class="btn btn-sm btn-primary" id="event-save-log">Save Events Log (.md)</button>
+        </div>
         <div id="event-log" class="event-log">
           <p class="text-muted">Connecting to event bus…</p>
         </div>
@@ -59,6 +62,40 @@ export function renderEditorView(container, initialPath = null) {
   const posLabel = container.querySelector('#editor-pos');
   const eventLog = container.querySelector('#event-log');
   const wsBadge = container.querySelector('#editor-ws');
+  const saveLogButton = container.querySelector('#event-save-log');
+  const sessionEvents = [];
+
+  saveLogButton.addEventListener('click', async () => {
+    saveLogButton.disabled = true;
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const rows = sessionEvents.map(event => {
+        const escapeCell = value => String(value || '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+        const details = event.data && Object.keys(event.data).length
+          ? JSON.stringify(event.data)
+          : '';
+        return `| ${escapeCell(event.type.replace(/_/g, ' '))} | ${escapeCell(event.path)} | ${escapeCell(event.session_id)} | ${escapeCell(details)} |`;
+      });
+      const markdown = [
+        '# Novous Session Events Log',
+        '',
+        `Exported: ${new Date().toLocaleString()}`,
+        '',
+        '| Event | Path / Tool | Session | Details |',
+        '| --- | --- | --- | --- |',
+        ...(rows.length ? rows : ['| No events recorded | | | |']),
+        ''
+      ].join('\n');
+      const result = await Api.saveMarkdown(markdown, `novous-session-events-${timestamp}.md`);
+      alert(result.locationChosen
+        ? `Events log saved as ${result.filename} in the location you selected.`
+        : `Events log download started: ${result.filename}\n\nChoose the save location in your browser's download settings.`);
+    } catch (err) {
+      if (err.name !== 'AbortError') alert(`Failed to save events log: ${err.message}`);
+    } finally {
+      saveLogButton.disabled = false;
+    }
+  });
 
   renderTree(container.querySelector('#editor-tree'), {
     onSelect: (path) => openFile(path)
@@ -139,7 +176,9 @@ export function renderEditorView(container, initialPath = null) {
       try {
         const data = JSON.parse(msg.data);
         if (data.type === 'connected') {
-          eventLog.innerHTML = `<p class="text-muted small">Connected as session ${esc(data.session_id)}</p>`;
+          if (!sessionEvents.length) {
+            eventLog.innerHTML = `<p class="text-muted small">Connected as session ${esc(data.session_id)}</p>`;
+          }
         } else if (data.type !== 'pong') {
           appendEvent(data);
         }
@@ -160,11 +199,49 @@ export function renderEditorView(container, initialPath = null) {
     }
     const el = document.createElement('div');
     el.className = `event-item ${data.type}`;
-    el.innerHTML = `<span class="event-type">${esc(data.type.replace(/_/g, ' '))}</span>
-      <span class="event-path">${esc(data.path || '')}</span>
-      <span class="event-who text-muted">${esc(data.session_id || '')}</span>`;
+    const eventData = {
+      type: String(data.type || 'unknown'),
+      path: data.path || '',
+      session_id: data.session_id || '',
+      data: data.data || {}
+    };
+    sessionEvents.push(eventData);
+    const detailText = eventData.type === 'tool_executed'
+      ? `${eventData.data.status || 'unknown'}${eventData.data.origin ? ` · ${eventData.data.origin}` : ''}\nArgs: ${JSON.stringify(eventData.data.args || {})}${eventData.data.error ? `\nError: ${eventData.data.error}` : ''}`
+      : '';
+    const eventText = [
+      eventData.type.replace(/_/g, ' '),
+      eventData.path,
+      eventData.session_id,
+      detailText
+    ].filter(Boolean).join('\n');
+    const detailElement = detailText
+      ? `<span class="event-details">${esc(detailText)}</span>`
+      : '';
+    el.innerHTML = `<span class="event-type">${esc(eventData.type.replace(/_/g, ' '))}</span>
+      <span class="event-path">${esc(eventData.path)}</span>
+      <span class="event-who text-muted">${esc(eventData.session_id)}</span>${detailElement}`;
+    const copyButton = document.createElement('button');
+    copyButton.type = 'button';
+    copyButton.className = 'btn btn-sm btn-ghost event-copy-btn';
+    copyButton.textContent = 'Copy';
+    copyButton.setAttribute('aria-label', `Copy ${eventData.type.replace(/_/g, ' ')} event`);
+    copyButton.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(eventText);
+        copyButton.textContent = 'Copied!';
+        setTimeout(() => { copyButton.textContent = 'Copy'; }, 2000);
+      } catch (err) {
+        copyButton.textContent = 'Copy failed';
+      }
+    });
+    el.appendChild(copyButton);
     eventLog.appendChild(el);
-    while (eventLog.children.length > 60) eventLog.removeChild(eventLog.firstChild);
+    while (sessionEvents.length > 60) {
+      sessionEvents.shift();
+      const firstEvent = eventLog.querySelector('.event-item');
+      if (firstEvent) firstEvent.remove();
+    }
     eventLog.scrollTop = eventLog.scrollHeight;
   }
 

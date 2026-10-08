@@ -27,6 +27,7 @@ export function renderChatView(container) {
             <input type="checkbox" id="chat-use-tools" checked>
             <span>Attach tools (agent mode)</span>
           </label>
+          <button class="btn btn-sm btn-primary" id="chat-save-log">Save Session Log (.md)</button>
           <label class="model-picker">
             <span class="model-picker-label">Model <span id="model-count" class="text-muted small"></span></span>
             <select id="chat-model-select" class="form-select"><option value="">Detecting models…</option></select>
@@ -164,6 +165,22 @@ export function renderChatView(container) {
   }
 
   container.querySelector('#chat-reset').addEventListener('click', () => resetSession());
+  container.querySelector('#chat-save-log').addEventListener('click', async () => {
+    const agentId = agentSelect.value;
+    if (!agentId) {
+      alert('Select an agent before saving the session log.');
+      return;
+    }
+
+    try {
+      const res = await Api.exportSession(`chat-${agentId}`);
+      alert(res.locationChosen
+        ? `Session log saved as ${res.filename} in the location you selected.`
+        : `Session log download started: ${res.filename}\n\nChoose the save location in your browser's download settings.`);
+    } catch (err) {
+      if (err.name !== 'AbortError') alert(`Failed to save session: ${err.message}`);
+    }
+  });
   buildTestPanel('testPanelButtons', { diagnostics: openDiagnostics, wipeChat });
 
   chatForm.addEventListener('submit', async (e) => {
@@ -198,7 +215,28 @@ export function renderChatView(container) {
     const id = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4);
     msgDiv.id = id;
     msgDiv.className = `message ${role}-msg ${isTemporary ? 'pulse' : ''}`;
-    msgDiv.innerText = content;
+    const body = document.createElement('div');
+    body.className = 'msg-body';
+    body.innerText = content;
+    msgDiv.appendChild(body);
+
+    if (!isTemporary && role !== 'system') {
+      const copyButton = document.createElement('button');
+      copyButton.type = 'button';
+      copyButton.className = 'btn btn-sm btn-ghost msg-copy-btn';
+      copyButton.innerText = 'Copy';
+      copyButton.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(content);
+          copyButton.innerText = 'Copied!';
+          setTimeout(() => { copyButton.innerText = 'Copy'; }, 2000);
+        } catch (err) {
+          copyButton.innerText = 'Copy failed';
+        }
+      });
+      msgDiv.appendChild(copyButton);
+    }
+
     messagesBox.appendChild(msgDiv);
     messagesBox.scrollTop = messagesBox.scrollHeight;
     return id;

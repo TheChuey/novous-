@@ -21,6 +21,32 @@ function send(method, url, body) {
 }
 
 export const Api = {
+  async saveMarkdown(content, filename) {
+    if (typeof window.showSaveFilePicker === 'function') {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{
+          description: 'Markdown file',
+          accept: { 'text/markdown': ['.md'] }
+        }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(new Blob([content], { type: 'text/markdown;charset=utf-8' }));
+      await writable.close();
+      return { filename, locationChosen: true };
+    }
+
+    const objectUrl = URL.createObjectURL(
+      new Blob([content], { type: 'text/markdown;charset=utf-8' })
+    );
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    return { filename, locationChosen: false };
+  },
+
   // --- Workspace & Health ---
   async getHealth() {
     return get('/api/health');
@@ -57,6 +83,49 @@ export const Api = {
 
   async resetChat(sessionId) {
     return send('POST', `/api/chat/reset?session_id=${encodeURIComponent(sessionId)}`);
+  },
+
+  async exportSession(sessionId) {
+    const safeSessionId = String(sessionId).replace(/[^A-Za-z0-9_.-]/g, '_');
+    const suggestedName = `novous_${safeSessionId}_${new Date().toISOString().replace(/[:.]/g, '-')}.md`;
+    let pickerResult = null;
+    if (typeof window.showSaveFilePicker === 'function') {
+      pickerResult = window.showSaveFilePicker({
+        suggestedName,
+        types: [{
+          description: 'Markdown file',
+          accept: { 'text/markdown': ['.md'] }
+        }]
+      }).then(handle => ({ handle }), error => ({ error }));
+    }
+
+    const res = await fetch('/api/chat/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId })
+    });
+    if (!res.ok) await jsonOrThrow(res);
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+    const filename = filenameMatch ? filenameMatch[1] : suggestedName;
+
+    if (pickerResult) {
+      const result = await pickerResult;
+      if (result.error) throw result.error;
+      const writable = await result.handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return { filename, locationChosen: true };
+    }
+
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    return { filename, locationChosen: false };
   },
 
   async getTools() {

@@ -209,6 +209,7 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 }
 .sidebar-title { margin: 0 0 0.5rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
 .editor-sidebar .tree-pane { flex: 1; border: none; background: transparent; }
+.event-export { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.6rem; }
 
 .editor-main {
   display: flex;
@@ -255,6 +256,8 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .event-item.session_join, .event-item.session_leave { border-left: 3px solid var(--warning); }
 .event-type { font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; }
 .event-path { font-family: Consolas, monospace; overflow: hidden; text-overflow: ellipsis; }
+.event-details { color: var(--text-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.event-copy-btn { align-self: flex-end; padding: 0.1rem 0.35rem; font-size: 0.68rem; }
 
 /* --- Chat ----------------------------------------------------------------- */
 .chat-layout {
@@ -293,6 +296,10 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .messages-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; padding-bottom: 0.75rem; }
 
 .message {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
   padding: 0.75rem 1rem;
   border-radius: 8px;
   max-width: 80%;
@@ -301,6 +308,14 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
   font-size: 0.92rem;
   line-height: 1.5;
 }
+.msg-copy-btn {
+  align-self: flex-end;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.4rem;
+  opacity: 0.7;
+  color: inherit;
+}
+.msg-copy-btn:hover { opacity: 1; color: inherit; }
 .user-msg { background: var(--primary); color: #fff; align-self: flex-end; }
 .assistant-msg { background: var(--bg-elev); border: 1px solid var(--border-color); align-self: flex-start; }
 .system-msg { background: transparent; border: 1px dashed var(--border-color); color: var(--text-muted); align-self: center; font-size: 0.85rem; }

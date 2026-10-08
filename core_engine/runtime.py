@@ -30,6 +30,7 @@ class Agent:
         self.messages: List[dict] = []
         self.session = session
         self.tool_events: List[dict] = []
+        self.tool_stats: dict[str, dict] = {}
 
     def _extract_text_tool_calls(self, content: str) -> List[dict]:
         text = (content or "").strip()
@@ -62,14 +63,23 @@ class Agent:
         if name not in self.tools:
             return f"Error: Tool '{name}' not found."
 
+        stats = self.tool_stats.setdefault(
+            name, {"calls": 0, "successes": 0, "errors": 0, "success_rate": 0.0}
+        )
+        stats["calls"] += 1
+
         tool_func = self.tools[name]
         try:
             if isinstance(args, str):
                 args = json.loads(args)
             result = tool_func(**args) if isinstance(args, dict) else tool_func(args)
+            stats["successes"] += 1
+            stats["success_rate"] = stats["successes"] / stats["calls"]
             self.tool_events.append({"tool": name, "args": args, "status": "success", "origin": origin})
             return result
         except Exception as exc:
+            stats["errors"] += 1
+            stats["success_rate"] = stats["successes"] / stats["calls"]
             err_msg = f"Error executing tool '{name}': {str(exc)}"
             self.tool_events.append({"tool": name, "args": args, "status": "error", "error": str(exc), "origin": origin})
             return err_msg

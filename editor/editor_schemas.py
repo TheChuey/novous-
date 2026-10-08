@@ -17,6 +17,7 @@ class EditorEventType(str, Enum):
     FILE_SAVED = "file_saved"
     FILE_CREATED = "file_created"
     FILE_DELETED = "file_deleted"
+    TOOL_EXECUTED = "tool_executed"
     CURSOR_MOVED = "cursor_moved"
     SESSION_JOIN = "session_join"
     SESSION_LEAVE = "session_leave"
