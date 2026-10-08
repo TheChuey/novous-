@@ -1,4 +1,5 @@
 import { Api } from './api.js';
+import { buildTestPanel } from './test_panel.js';
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -44,6 +45,15 @@ export function renderChatView(container) {
           <button type="submit" class="btn btn-primary">Send</button>
         </form>
       </section>
+
+      <aside class="test-panel">
+        <div class="test-panel-header">
+          <span class="test-panel-title">Test</span>
+        </div>
+        <div class="test-panel-content">
+          <div id="testPanelButtons" class="test-grid"></div>
+        </div>
+      </aside>
     </div>`;
 
   const agentSelect = container.querySelector('#chat-agent-select');
@@ -120,14 +130,41 @@ export function renderChatView(container) {
     sessionInfo.textContent = `Session: chat-${agent.id}`;
   }
 
-  container.querySelector('#chat-reset').addEventListener('click', async () => {
+  async function resetSession(message = 'Session reset. Send a message to start fresh.') {
+    const agentId = agentSelect.value;
+    if (!agentId) {
+      appendMessage('system', 'Select an agent before resetting the chat.');
+      return;
+    }
+
     try {
-      await Api.resetChat(`chat-${agentSelect.value}`);
-      messagesBox.innerHTML = '<div class="message system-msg">Session reset. Send a message to start fresh.</div>';
+      await Api.resetChat(`chat-${agentId}`);
+      messagesBox.innerHTML = `<div class="message system-msg">${esc(message)}</div>`;
     } catch (err) {
       appendMessage('system', 'Reset failed: ' + err.message);
     }
-  });
+  }
+
+  async function openDiagnostics() {
+    try {
+      const health = await Api.getHealth();
+      const ollamaStatus = health.ollama?.reachable ? 'connected' : 'offline';
+      const details = health.ollama?.detail ? `\nOllama details: ${health.ollama.detail}` : '';
+      appendMessage(
+        'system',
+        `Diagnostics: API reachable\nOllama: ${ollamaStatus}\nUptime: ${health.uptime_seconds ?? 'unknown'} seconds${details}`
+      );
+    } catch (err) {
+      appendMessage('system', `Diagnostics failed: ${err.message}`);
+    }
+  }
+
+  function wipeChat() {
+    return resetSession('Chat wiped. Send a message to start fresh.');
+  }
+
+  container.querySelector('#chat-reset').addEventListener('click', () => resetSession());
+  buildTestPanel('testPanelButtons', { diagnostics: openDiagnostics, wipeChat });
 
   chatForm.addEventListener('submit', async (e) => {
     e.preventDefault();

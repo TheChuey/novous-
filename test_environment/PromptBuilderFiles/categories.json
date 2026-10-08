@@ -33,6 +33,12 @@
       "id": "tools",
       "name": "Tool Usage",
       "description": "When and how the agent may call tools."
+    },
+    {
+      "id": "tool",
+      "name": "Rule",
+      "description": "Rules",
+      "required_header": "Rules"
     }
   ]
 }

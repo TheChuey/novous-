@@ -2,6 +2,7 @@ import { Api } from './api.js';
 import { renderTree } from './tree.js';
 import { renderEditorView } from './editor.js';
 import { renderChatView } from './chat.js';
+import { renderPromptCreationView } from './prompt_creation.js';
 import { renderTestingView } from './testing.js';
 
 export const AppState = {
@@ -16,6 +17,7 @@ const views = {
   dashboard: renderDashboardView,
   editor: renderEditorView,
   chat: renderChatView,
+  'prompt-creation': renderPromptCreationView,
   testing: renderTestingView
 };
 

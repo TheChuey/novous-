@@ -16,5 +16,23 @@
     "label": "snapshot",
     "snapshot": "assistant__snapshot__20261008-012019",
     "published_at": "2026-10-08T01:20:19.939625+00:00"
+  },
+  {
+    "agent_id": "agent-01",
+    "label": "snapshot",
+    "snapshot": "agent-01__snapshot__20261008-033519",
+    "published_at": "2026-10-08T03:35:19.740242+00:00"
+  },
+  {
+    "agent_id": "agent-01",
+    "label": "snapshot",
+    "snapshot": "agent-01__snapshot__20261008-041810",
+    "published_at": "2026-10-08T04:18:10.205805+00:00"
+  },
+  {
+    "agent_id": "agent-01",
+    "label": "snapshot",
+    "snapshot": "agent-01__snapshot__20261008-042917",
+    "published_at": "2026-10-08T04:29:17.034009+00:00"
   }
 ]

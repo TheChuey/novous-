@@ -145,8 +145,8 @@ export const Api = {
     return send('POST', '/api/testing/evaluate_markdown', { markdown, agent_id: agentId });
   },
 
-  async publishAgent(agentId, label = '') {
-    return send('POST', '/api/testing/publish', { agent_id: agentId, label });
+  async publishAgent(agentId, label = '', markdown) {
+    return send('POST', '/api/testing/publish', { agent_id: agentId, label, markdown });
   },
 
   async getTestFixtures() {

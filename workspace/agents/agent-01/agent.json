@@ -1,0 +1,14 @@
+{
+  "id": "agent-01",
+  "name": "AgentTest",
+  "description": "test agent and tools",
+  "mode": "agent",
+  "model": "qwen2.5-coder:latest",
+  "squad": "",
+  "tools": [
+    "calculator",
+    "read_file",
+    "list_directory",
+    "project_status"
+  ]
+}

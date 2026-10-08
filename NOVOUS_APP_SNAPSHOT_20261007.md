@@ -1,7 +1,7 @@
 Date: 2026-10-07
 Name: Novous Application Snapshot
 Filename: NOVOUS_APP_SNAPSHOT_20261007.md
-Commit: 0df6e32
+Commit: cc8c624
 Description: Self-contained reference for an AI agent. Captures Novous app purpose, architecture, file structure, and complete source code. Designed for grounding/understanding without repo access.
 
 # NOVOUS APPLICATION SNAPSHOT
@@ -55,11 +55,14 @@ Key components:
 - frontend/static/
 - frontend/static/css/
 - frontend/static/css/style.css
+- frontend/static/css/test_panel.css
 - frontend/static/js/
 - frontend/static/js/api.js
 - frontend/static/js/app.js
 - frontend/static/js/chat.js
 - frontend/static/js/editor.js
+- frontend/static/js/prompt_creation.js
+- frontend/static/js/test_panel.js
 - frontend/static/js/testing.js
 - frontend/static/js/tree.js
 - requirements.txt
@@ -101,6 +104,12 @@ Key components:
 - test_environment/test_agents/agent-01__snapshot__20261008-033519/
 - test_environment/test_agents/agent-01__snapshot__20261008-033519/agent.json
 - test_environment/test_agents/agent-01__snapshot__20261008-033519/agent.md
+- test_environment/test_agents/agent-01__snapshot__20261008-041810/
+- test_environment/test_agents/agent-01__snapshot__20261008-041810/agent.json
+- test_environment/test_agents/agent-01__snapshot__20261008-041810/agent.md
+- test_environment/test_agents/agent-01__snapshot__20261008-042917/
+- test_environment/test_agents/agent-01__snapshot__20261008-042917/agent.json
+- test_environment/test_agents/agent-01__snapshot__20261008-042917/agent.md
 - test_environment/test_agents/assistant__snapshot__20261007-210439/
 - test_environment/test_agents/assistant__snapshot__20261007-210439/agent.json
 - test_environment/test_agents/assistant__snapshot__20261007-210439/agent.md
@@ -124,6 +133,8 @@ Key components:
 - workspace/agents/reviewer/
 - workspace/agents/reviewer/agent.json
 - workspace/agents/reviewer/agent.md
+- workspace/Do Due List/
+- workspace/Do Due List/test steps for tools
 - workspace/documentation/
 - workspace/documentation/hello.txt
 - workspace/interface.py
@@ -1365,6 +1376,7 @@ async def api_ws(websocket: WebSocket):
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chat Console — Novous Agent Factory</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/test_panel.css">
 </head>
 <body class="bg-dark text-light">
   <div class="app-container">
@@ -1387,6 +1399,7 @@ async def api_ws(websocket: WebSocket):
     </main>
   </div>
 
+  <script src="https://unpkg.com/lucide@latest" defer></script>
   <script type="module">
     import { renderChatView } from '/static/js/chat.js';
     renderChatView(document.getElementById('view-container'));
@@ -1448,6 +1461,7 @@ async def api_ws(websocket: WebSocket):
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Novous Agent Factory</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/test_panel.css">
 </head>
 <body class="bg-dark text-light">
   <div id="app" class="app-container">
@@ -1461,6 +1475,7 @@ async def api_ws(websocket: WebSocket):
         <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
         <button class="nav-btn" data-tab="editor">File & Agent Editor</button>
         <button class="nav-btn" data-tab="chat">Chat Console</button>
+        <button class="nav-btn" data-tab="prompt-creation">Prompt Creation</button>
         <button class="nav-btn" data-tab="testing">Prompt Testing</button>
       </nav>
       <div id="health-badge" class="badge badge-success">System Ready</div>
@@ -1473,6 +1488,7 @@ async def api_ws(websocket: WebSocket):
     </main>
   </div>
 
+  <script src="https://unpkg.com/lucide@latest" defer></script>
   <script type="module" src="/static/js/app.js"></script>
 </body>
 </html>
@@ -1784,7 +1800,7 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 /* --- Chat ----------------------------------------------------------------- */
 .chat-layout {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 280px minmax(0, 1fr) 330px;
   height: calc(100vh - 110px);
   gap: 0.75rem;
 }
@@ -1889,6 +1905,111 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
   .navbar { flex-wrap: wrap; }
   .chat-layout { grid-template-columns: 1fr; height: auto; }
   .messages-scroll { max-height: 50vh; }
+}
+
+`
+
+### frontend/static/css/test_panel.css
+
+`css
+.test-panel {
+  width: 330px;
+  min-width: 280px;
+  background: var(--bg-card);
+  border-left: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+}
+
+.test-panel-header {
+  height: 48px;
+  min-height: 48px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-card);
+}
+
+.test-panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.test-panel-content {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.test-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.test-function {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.test-function:hover {
+  background: var(--bg-elev);
+  border-color: var(--primary);
+  transform: translateY(-2px);
+}
+
+.test-function i,
+.test-function svg {
+  width: 20px;
+  height: 20px;
+  color: var(--primary);
+}
+
+.test-function span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.test-function.disabled,
+.test-function:disabled {
+  opacity: 0.45;
+  filter: grayscale(1);
+  cursor: not-allowed;
+}
+
+.test-function.disabled:hover,
+.test-function:disabled:hover {
+  background: var(--bg-card);
+  border-color: var(--border-color);
+  transform: none;
+}
+
+@media (max-width: 820px) {
+  .test-panel {
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 `
@@ -2043,8 +2164,8 @@ export const Api = {
     return send('POST', '/api/testing/evaluate_markdown', { markdown, agent_id: agentId });
   },
 
-  async publishAgent(agentId, label = '') {
-    return send('POST', '/api/testing/publish', { agent_id: agentId, label });
+  async publishAgent(agentId, label = '', markdown) {
+    return send('POST', '/api/testing/publish', { agent_id: agentId, label, markdown });
   },
 
   async getTestFixtures() {
@@ -2061,6 +2182,7 @@ import { Api } from './api.js';
 import { renderTree } from './tree.js';
 import { renderEditorView } from './editor.js';
 import { renderChatView } from './chat.js';
+import { renderPromptCreationView } from './prompt_creation.js';
 import { renderTestingView } from './testing.js';
 
 export const AppState = {
@@ -2075,6 +2197,7 @@ const views = {
   dashboard: renderDashboardView,
   editor: renderEditorView,
   chat: renderChatView,
+  'prompt-creation': renderPromptCreationView,
   testing: renderTestingView
 };
 
@@ -2302,6 +2425,7 @@ boot();
 
 `javascript
 import { Api } from './api.js';
+import { buildTestPanel } from './test_panel.js';
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -2347,6 +2471,15 @@ export function renderChatView(container) {
           <button type="submit" class="btn btn-primary">Send</button>
         </form>
       </section>
+
+      <aside class="test-panel">
+        <div class="test-panel-header">
+          <span class="test-panel-title">Test</span>
+        </div>
+        <div class="test-panel-content">
+          <div id="testPanelButtons" class="test-grid"></div>
+        </div>
+      </aside>
     </div>`;
 
   const agentSelect = container.querySelector('#chat-agent-select');
@@ -2423,14 +2556,41 @@ export function renderChatView(container) {
     sessionInfo.textContent = `Session: chat-${agent.id}`;
   }
 
-  container.querySelector('#chat-reset').addEventListener('click', async () => {
+  async function resetSession(message = 'Session reset. Send a message to start fresh.') {
+    const agentId = agentSelect.value;
+    if (!agentId) {
+      appendMessage('system', 'Select an agent before resetting the chat.');
+      return;
+    }
+
     try {
-      await Api.resetChat(`chat-${agentSelect.value}`);
-      messagesBox.innerHTML = '<div class="message system-msg">Session reset. Send a message to start fresh.</div>';
+      await Api.resetChat(`chat-${agentId}`);
+      messagesBox.innerHTML = `<div class="message system-msg">${esc(message)}</div>`;
     } catch (err) {
       appendMessage('system', 'Reset failed: ' + err.message);
     }
-  });
+  }
+
+  async function openDiagnostics() {
+    try {
+      const health = await Api.getHealth();
+      const ollamaStatus = health.ollama?.reachable ? 'connected' : 'offline';
+      const details = health.ollama?.detail ? `\nOllama details: ${health.ollama.detail}` : '';
+      appendMessage(
+        'system',
+        `Diagnostics: API reachable\nOllama: ${ollamaStatus}\nUptime: ${health.uptime_seconds ?? 'unknown'} seconds${details}`
+      );
+    } catch (err) {
+      appendMessage('system', `Diagnostics failed: ${err.message}`);
+    }
+  }
+
+  function wipeChat() {
+    return resetSession('Chat wiped. Send a message to start fresh.');
+  }
+
+  container.querySelector('#chat-reset').addEventListener('click', () => resetSession());
+  buildTestPanel('testPanelButtons', { diagnostics: openDiagnostics, wipeChat });
 
   chatForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -2668,7 +2828,7 @@ export function renderEditorView(container, initialPath = null) {
 
 `
 
-### frontend/static/js/testing.js
+### frontend/static/js/prompt_creation.js
 
 `javascript
 import { Api } from './api.js';
@@ -2679,15 +2839,12 @@ function esc(value) {
   }[c]));
 }
 
-/**
- * Prompt Builder & Header Test Runner Component.
- */
-export function renderTestingView(container) {
+export function renderPromptCreationView(container) {
   container.innerHTML = `
     <div class="testing-layout">
       <section class="card testing-builder">
         <div class="card-head">
-          <h3>Prompt Builder</h3>
+          <h3>Prompt Creation & Assembly</h3>
           <div class="toolbar-row" style="margin:0;">
             <button type="button" class="btn btn-sm" id="tb-toggle-cat-form">+ Category</button>
             <button type="button" class="btn btn-sm" id="tb-toggle-part-form">+ Part</button>
@@ -2695,7 +2852,6 @@ export function renderTestingView(container) {
           </div>
         </div>
 
-        <!-- Add Category Form -->
         <div id="tb-cat-form" class="card bg-elev hidden" style="margin-bottom: 0.75rem; padding: 0.75rem;">
           <h4 style="margin-bottom: 0.5rem;">Add New Category</h4>
           <div class="form-row">
@@ -2712,7 +2868,6 @@ export function renderTestingView(container) {
           </div>
         </div>
 
-        <!-- Add Part Form -->
         <div id="tb-part-form" class="card bg-elev hidden" style="margin-bottom: 0.75rem; padding: 0.75rem;">
           <h4 style="margin-bottom: 0.5rem;">Add New Prompt Part</h4>
           <div class="form-row">
@@ -2735,27 +2890,30 @@ export function renderTestingView(container) {
           <p class="text-muted">Loading categories…</p>
         </div>
 
-        <textarea id="tb-preview" class="prompt-preview" readonly
-                  placeholder="Assembled prompt preview will appear here…"></textarea>
+        <textarea id="tb-preview" class="prompt-preview" readonly placeholder="Assembled prompt preview will appear here…"></textarea>
         <div class="toolbar-row">
           <span id="tb-stats" class="text-muted small"></span>
           <span class="spacer"></span>
+          <select id="tb-publish-agent" class="form-select" style="max-width: 180px;">
+            <option value="">Select agent…</option>
+          </select>
           <button type="button" class="btn btn-sm" id="tb-copy">Copy</button>
-          <button type="button" class="btn btn-sm btn-primary" id="tb-publish">Publish snapshot</button>
+          <button type="button" class="btn btn-sm btn-primary" id="tb-publish">Save to Agent</button>
         </div>
         <p id="tb-msg" class="small hidden"></p>
       </section>
 
-      <section class="card testing-runner">
+      <section class="card">
         <div class="card-head">
-          <h3>4-Question Header Tests</h3>
-          <button type="button" class="btn btn-sm btn-primary" id="ht-run">Run tests</button>
+          <h3>Available Core Engine Tools</h3>
+          <button type="button" class="btn btn-sm" id="btn-refresh-tools">Refresh Tools</button>
         </div>
-        <div class="form-row">
-          <select id="ht-agent" class="form-select"><option value="">Loading agents…</option></select>
-        </div>
-        <div id="ht-results" class="ht-results">
-          <p class="text-muted">Select an agent and run the section-header battery.</p>
+        <p class="text-muted small">Tools retrieved from <code>core_engine/interface.py</code> for prompt reference.</p>
+        <button type="button" class="btn btn-sm btn-primary" id="btn-add-tools-to-prompt">
+          Add Selected Tools to Prompt
+        </button>
+        <div id="tools-list-container" style="overflow-y: auto; max-height: 500px;" class="mt-2">
+          <p class="text-muted">Loading available tools...</p>
         </div>
       </section>
     </div>`;
@@ -2764,19 +2922,82 @@ export function renderTestingView(container) {
   const preview = container.querySelector('#tb-preview');
   const stats = container.querySelector('#tb-stats');
   const msg = container.querySelector('#tb-msg');
-  const agentSel = container.querySelector('#ht-agent');
-  const results = container.querySelector('#ht-results');
+  const toolsContainer = container.querySelector('#tools-list-container');
+  const publishAgentSel = container.querySelector('#tb-publish-agent');
 
   const catForm = container.querySelector('#tb-cat-form');
   const partForm = container.querySelector('#tb-part-form');
   const partCatSelect = container.querySelector('#part-cat-select');
 
   let manifest = { categories: [] };
-  let agents = [];
+  let availableTools = [];
+  let promptBase = '';
+  let promptPartCount = 0;
+  const promptTools = new Map();
 
   function showMsg(text, isError = false) {
     msg.textContent = text;
     msg.className = `small ${isError ? 'text-danger' : 'text-success'}`;
+  }
+
+  async function loadCoreTools() {
+    try {
+      toolsContainer.innerHTML = '<p class="text-muted">Fetching tools from core_engine...</p>';
+      const res = await Api.getTools();
+      availableTools = res.tools || [];
+
+      if (!availableTools.length) {
+        toolsContainer.innerHTML = '<p class="text-muted">No tools currently registered in core engine.</p>';
+        return;
+      }
+
+      toolsContainer.innerHTML = availableTools.map((t, index) => `
+        <div class="category-block mt-2">
+          <div class="category-head">
+            <label class="checkbox-row" style="margin:0;">
+              <input type="checkbox" value="${index}" data-tool>
+              <strong>🛠️ ${esc(t.name)}</strong>
+            </label>
+            <span class="badge badge-accent">${esc(t.provider)}</span>
+          </div>
+          <p class="text-muted small mt-2"><code>${esc(t.signature)}</code></p>
+          <p class="small text-light">${esc(Array.isArray(t.description) ? t.description.join(' ') : t.description)}</p>
+        </div>
+      `).join('');
+    } catch (err) {
+      toolsContainer.innerHTML = `<p class="text-danger">Failed to retrieve tools: ${esc(err.message)}</p>`;
+    }
+  }
+
+  function updatePromptPreview() {
+    const toolSection = [...promptTools.values()].map(tool => {
+      const description = Array.isArray(tool.description)
+        ? tool.description.join(' ')
+        : tool.description;
+      return [
+        `### ${tool.name}`,
+        `- Provider: ${tool.provider}`,
+        `- Signature: ${tool.signature}`,
+        description ? `- Description: ${description}` : ''
+      ].filter(Boolean).join('\n');
+    }).join('\n\n');
+
+    preview.value = [promptBase, toolSection ? `## Available Tools\n\n${toolSection}` : '']
+      .filter(Boolean)
+      .join('\n\n');
+    stats.textContent = `${promptPartCount} parts · ${preview.value.length} chars`;
+  }
+
+  async function loadPromptAgents() {
+    try {
+      const data = await Api.getAgents();
+      const agents = data.agents || [];
+      publishAgentSel.innerHTML = agents.length
+        ? agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.id)})</option>`).join('')
+        : '<option value="">No agents found</option>';
+    } catch (err) {
+      publishAgentSel.innerHTML = `<option value="">${esc(err.message)}</option>`;
+    }
   }
 
   async function loadManifest() {
@@ -2841,9 +3062,24 @@ export function renderTestingView(container) {
     catBox.innerHTML = html || '<p class="text-danger">No categories found.</p>';
   }
 
+  loadCoreTools();
   loadManifest();
+  loadPromptAgents();
 
-  // --- Toggle forms ---
+  container.querySelector('#btn-refresh-tools').addEventListener('click', loadCoreTools);
+
+  container.querySelector('#btn-add-tools-to-prompt').addEventListener('click', () => {
+    const selected = [...toolsContainer.querySelectorAll('[data-tool]:checked')];
+    if (!selected.length) return showMsg('Select at least one core engine tool.', true);
+
+    selected.forEach(input => {
+      const tool = availableTools[Number(input.value)];
+      if (tool) promptTools.set(tool.name, tool);
+    });
+    updatePromptPreview();
+    showMsg(`${selected.length} selected tool${selected.length === 1 ? '' : 's'} added to the prompt.`);
+  });
+
   container.querySelector('#tb-toggle-cat-form').addEventListener('click', () => {
     catForm.classList.toggle('hidden');
     partForm.classList.add('hidden');
@@ -2862,7 +3098,6 @@ export function renderTestingView(container) {
     partForm.classList.add('hidden');
   });
 
-  // --- Add Category ---
   async function submitCategory() {
     const id = container.querySelector('#cat-id-input').value.trim();
     const name = container.querySelector('#cat-name-input').value.trim();
@@ -2896,7 +3131,6 @@ export function renderTestingView(container) {
     });
   });
 
-  // --- Add Part ---
   async function submitPart() {
     const category = partCatSelect.value;
     const title = container.querySelector('#part-title-input').value.trim();
@@ -2920,16 +3154,15 @@ export function renderTestingView(container) {
 
   container.querySelector('#part-save-btn').addEventListener('click', submitPart);
 
-  partForm.querySelectorAll('input').forEach(input => {
+  partForm.querySelectorAll('input, textarea').forEach(input => {
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
         e.preventDefault();
         submitPart();
       }
     });
   });
 
-  // --- Delete Category & Delete Part delegation ---
   catBox.addEventListener('click', async (e) => {
     const delCatBtn = e.target.closest('[data-del-cat]');
     if (delCatBtn) {
@@ -2958,7 +3191,6 @@ export function renderTestingView(container) {
           showMsg(err.message, true);
         }
       }
-      return;
     }
   });
 
@@ -2971,71 +3203,180 @@ export function renderTestingView(container) {
     if (!parts.length) return showMsg('Select at least one prompt part.', true);
     try {
       const res = await Api.assemblePrompt(parts);
-      preview.value = res.prompt;
-      stats.textContent = `${res.part_count} parts · ${res.char_count} chars`;
+      promptBase = res.prompt;
+      promptPartCount = res.part_count;
+      updatePromptPreview();
       showMsg('Prompt assembled.');
-    } catch (err) { showMsg(err.message, true); }
+    } catch (err) {
+      showMsg(err.message, true);
+    }
   });
 
   container.querySelector('#tb-copy').addEventListener('click', async () => {
     if (!preview.value) return;
-    try { await navigator.clipboard.writeText(preview.value); showMsg('Copied to clipboard.'); }
-    catch (_) { preview.select(); document.execCommand('copy'); showMsg('Copied.'); }
+    try {
+      await navigator.clipboard.writeText(preview.value);
+      showMsg('Copied to clipboard.');
+    } catch (_) {
+      preview.select();
+      document.execCommand('copy');
+      showMsg('Copied.');
+    }
   });
 
   container.querySelector('#tb-publish').addEventListener('click', async () => {
-    const agentId = agentSel.value;
+    const agentId = publishAgentSel.value;
     if (!agentId) return showMsg('Select an agent to publish first.', true);
+    if (!preview.value.trim()) return showMsg('Assemble a prompt before saving it to an agent.', true);
     try {
-      const res = await Api.publishAgent(agentId, 'snapshot');
-      showMsg(`Published: ${res.snapshot} (headers ${res.header_report.verdict})`);
-    } catch (err) { showMsg(err.message, true); }
+      const res = await Api.publishAgent(agentId, 'snapshot', preview.value);
+      showMsg(`Saved to ${res.path} and ${res.metadata_path} (headers ${res.header_report.verdict}; snapshot ${res.snapshot}).`);
+    } catch (err) {
+      showMsg(err.message, true);
+    }
+  });
+}
+
+`
+
+### frontend/static/js/test_panel.js
+
+`javascript
+const TEST_FUNCTIONS = [
+  { id: 'runTestSuite', label: 'Run Test Suite', icon: 'play-circle', action: null },
+  { id: 'debugAgent', label: 'Debug Agent', icon: 'bug', action: null },
+  { id: 'promptInspector', label: 'Prompt Inspector', icon: 'terminal', action: null },
+  { id: 'outputEvaluator', label: 'Output Evaluator', icon: 'check-square', action: null },
+  { id: 'benchmark', label: 'Benchmark', icon: 'gauge', action: null },
+  { id: 'apiLogs', label: 'API Logs', icon: 'file-code', action: null },
+  { id: 'diagnostics', label: 'Diagnostics', icon: 'activity', action: null },
+  { id: 'wipeChat', label: 'Wipe Chat', icon: 'trash-2', action: null }
+];
+
+export function buildTestPanel(containerId, actions = {}) {
+  const container = typeof containerId === 'string'
+    ? document.getElementById(containerId)
+    : containerId;
+
+  if (!container) {
+    console.error('Test panel container not found:', containerId);
+    return;
+  }
+
+  container.replaceChildren();
+
+  TEST_FUNCTIONS.forEach((test) => {
+    const action = actions[test.id] || test.action;
+    const button = document.createElement('button');
+    const icon = document.createElement('i');
+    const label = document.createElement('span');
+
+    button.className = 'test-function';
+    button.type = 'button';
+    button.dataset.testFunction = test.id;
+    icon.setAttribute('data-lucide', test.icon);
+    label.textContent = test.label;
+    button.append(icon, label);
+
+    if (typeof action !== 'function') {
+      button.classList.add('disabled');
+      button.disabled = true;
+      button.title = 'Not implemented yet';
+    } else {
+      button.title = test.label;
+      button.addEventListener('click', action);
+    }
+
+    container.appendChild(button);
   });
 
-  // --- Header test runner --------------------------------------------------
-  Api.getAgents().then(data => {
-    agents = data.agents || [];
-    agentSel.innerHTML = agents.length
-      ? agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')
-      : '<option value="">No agents</option>';
-  }).catch(err => { agentSel.innerHTML = `<option value="">${esc(err.message)}</option>`; });
+  if (typeof globalThis.lucide?.createIcons === 'function') {
+    globalThis.lucide.createIcons();
+  }
+}
 
-  container.querySelector('#ht-run').addEventListener('click', async () => {
-    if (!agentSel.value) return;
-    results.innerHTML = '<p class="text-muted">Running battery…</p>';
-    try {
-      const report = await Api.runHeaderTests(agentSel.value);
-      results.innerHTML = renderReport(report);
-    } catch (err) {
-      results.innerHTML = `<p class="text-danger">${esc(err.message)}</p>`;
-    }
+`
+
+### frontend/static/js/testing.js
+
+`javascript
+import { Api } from './api.js';
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+export function renderTestingView(container) {
+  container.innerHTML = `
+    <div class="card testing-runner">
+      <div class="card-head">
+        <h3>Prompt Header Evaluation Battery</h3>
+        <button type="button" class="btn btn-sm btn-primary" id="ht-run">Run Header Tests</button>
+      </div>
+      <div class="form-row">
+        <select id="ht-agent" class="form-select">
+          <option value="">Loading workspace agents…</option>
+        </select>
+      </div>
+      <div id="ht-results" class="ht-results mt-3">
+        <p class="text-muted">Select an agent profile to run section-header verification (role, purpose, boundaries, output format).</p>
+      </div>
+    </div>`;
+
+  const agentSel = container.querySelector('#ht-agent');
+  const results = container.querySelector('#ht-results');
+
+  Api.getAgents().then(data => {
+    const agents = data.agents || [];
+    agentSel.innerHTML = agents.length
+      ? agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.id)})</option>`).join('')
+      : '<option value="">No agents found</option>';
+  }).catch(err => {
+    agentSel.innerHTML = `<option value="">Error: ${esc(err.message)}</option>`;
   });
 
   function renderReport(report) {
     const header = `
       <div class="ht-summary ${report.passed ? 'pass' : 'fail'}">
-        <strong>${esc(report.verdict)}</strong>
-        <span>score ${esc(report.overall_score)} · ${esc(report.headers_passed)}/${esc(report.headers_total)} headers</span>
+        <strong>Verdict: ${esc(report.verdict)}</strong>
+        <span>Overall Score: ${esc(report.overall_score)} (${esc(report.headers_passed)}/${esc(report.headers_total)} headers passed)</span>
       </div>`;
-    const rows = report.results.map(r => `
+
+    const rows = (report.results || []).map(r => `
       <div class="ht-header ${r.passed ? 'pass' : 'fail'}">
         <div class="ht-header-head">
           <span class="ht-hash">## ${esc(r.header)}</span>
-          <span class="badge ${r.passed ? 'badge-success' : 'badge-danger'}">${esc((r.score).toFixed(2))}</span>
+          <span class="badge ${r.passed ? 'badge-success' : 'badge-danger'}">${esc(Number(r.score || 0).toFixed(2))}</span>
         </div>
-        ${r.questions.map(q => `
+        ${((r.questions || []).map(q => `
           <div class="ht-question">
             <span class="ht-q-status ${q.passed ? 'pass' : 'fail'}">${q.passed ? '✓' : '✗'}</span>
             <div>
               <div>${esc(q.question)}</div>
               <div class="text-muted small">${esc(q.evidence)} · score ${esc(q.score)}</div>
             </div>
-          </div>`).join('')}
+          </div>`).join(''))}
       </div>`).join('');
+
     const extras = report.extra_headers?.length
-      ? `<p class="text-muted small">Extra headers: ${esc(report.extra_headers.join(', '))}</p>` : '';
+      ? `<p class="text-muted small">Extra headers: ${esc(report.extra_headers.join(', '))}</p>`
+      : '';
+
     return header + rows + extras;
   }
+
+  container.querySelector('#ht-run').addEventListener('click', async () => {
+    if (!agentSel.value) return;
+    results.innerHTML = '<p class="text-muted">Executing header battery evaluation...</p>';
+    try {
+      const report = await Api.runHeaderTests(agentSel.value);
+      results.innerHTML = renderReport(report);
+    } catch (err) {
+      results.innerHTML = `<p class="text-danger">Error: ${esc(err.message)}</p>`;
+    }
+  });
 }
 
 `
@@ -3425,6 +3766,7 @@ if __name__ == "__main__":
 (/api/testing/*, /api/prompt-builder/*)."""
 
 import json
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -3451,6 +3793,7 @@ class AssembleRequest(BaseModel):
 class PublishRequest(BaseModel):
     agent_id: str = Field(..., min_length=1)
     label: str = ""
+    markdown: str = Field(..., min_length=1)
 
 
 class AddCategoryRequest(BaseModel):
@@ -3554,14 +3897,38 @@ def api_evaluate_markdown(payload: dict):
 
 @router.post("/api/testing/publish")
 def api_publish(req: PublishRequest):
-    """Snapshot an agent definition into the isolated test_agents/ fixture store."""
-    from core_engine.agent_factory import find_agent_dir
+    """Save a prompt to its agent profile and archive the updated definition."""
+    from core_engine.agent_factory import find_agent_dir, parse_markdown_sections
+
     agent_dir = find_agent_dir(req.agent_id)
     if not agent_dir:
         raise HTTPException(status_code=404, detail=f"Agent not found: {req.agent_id}")
 
+    json_path = agent_dir / "agent.json"
+    try:
+        metadata = json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail=f"Could not read agent metadata: {exc}")
+    if not isinstance(metadata, dict):
+        raise HTTPException(status_code=500, detail="Agent metadata must be a JSON object.")
+
+    markdown = req.markdown.strip()
+    if not markdown:
+        raise HTTPException(status_code=400, detail="Prompt content must not be empty.")
+
+    purpose = parse_markdown_sections(markdown).get("purpose", "").strip()
+    if purpose:
+        metadata["description"] = purpose
+
+    try:
+        (agent_dir / "agent.md").write_text(markdown + "\n", encoding="utf-8")
+        json_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not save agent files: {exc}")
+
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    label = (req.label or req.agent_id).strip()
+    label = re.sub(r"[^A-Za-z0-9_-]+", "-", (req.label or req.agent_id).strip()).strip("-_")
+    label = label or req.agent_id
     dest = TEST_AGENTS_DIR / f"{req.agent_id}__{label}__{stamp}"
     dest.mkdir(parents=True, exist_ok=True)
     for src in agent_dir.iterdir():
@@ -3584,7 +3951,9 @@ def api_publish(req: PublishRequest):
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     report = test_runner.run_tests_for_agent(req.agent_id)
-    return {"published": True, "snapshot": dest.name, "path": f"test_agents/{dest.name}",
+    return {"saved": True, "path": f"agents/{req.agent_id}/agent.md",
+            "metadata_path": f"agents/{req.agent_id}/agent.json",
+            "snapshot": dest.name, "snapshot_path": f"test_agents/{dest.name}",
             "header_report": report}
 
 
@@ -4070,6 +4439,152 @@ Lead with the direct answer, then follow with brief supporting detail. Use bulle
 
 `
 
+### test_environment/test_agents/agent-01__snapshot__20261008-041810/agent.json
+
+`json
+{
+  "id": "agent-01",
+  "name": "AgentTest",
+  "description": "test agent and tools",
+  "mode": "agent",
+  "model": "qwen2.5-coder:latest",
+  "squad": "",
+  "tools": [
+    "calculator",
+    "read_file",
+    "list_directory",
+    "project_status"
+  ]
+}
+
+`
+
+### test_environment/test_agents/agent-01__snapshot__20261008-041810/agent.md
+
+`markdown
+## TestAgent
+
+You will help me test your tools
+
+## AgentTest
+
+Never claim that a tool:
+
+was called when it was not called
+returned information when it did not
+found a file, path, record, value, or result that it did not return
+succeeded when the tool failed
+failed when the tool succeeded
+
+If the required information is not in a tool result, it is UNKNOWN.
+
+## Tool Usage Rules
+
+Call a tool whenever the answer depends on live workspace state. State which
+tool you are calling and why before calling it, then summarize the tool result
+in plain language. Never claim a tool ran if it did not.
+
+## Rule
+
+User Request → Tool → Tool Result → Response
+
+Do not skip the tool.
+
+Do not replace a tool result with your own knowledge or assumptions.
+
+Do not invent missing fields from a tool result.
+`
+
+### test_environment/test_agents/agent-01__snapshot__20261008-042917/agent.json
+
+`json
+{
+  "id": "agent-01",
+  "name": "AgentTest",
+  "description": "test agent and tools",
+  "mode": "agent",
+  "model": "qwen2.5-coder:latest",
+  "squad": "",
+  "tools": [
+    "calculator",
+    "read_file",
+    "list_directory",
+    "project_status"
+  ]
+}
+
+`
+
+### test_environment/test_agents/agent-01__snapshot__20261008-042917/agent.md
+
+`markdown
+## TestAgent
+
+You will help me test your tools
+
+## AgentTest
+
+Never claim that a tool:
+
+was called when it was not called
+returned information when it did not
+found a file, path, record, value, or result that it did not return
+succeeded when the tool failed
+failed when the tool succeeded
+
+If the required information is not in a tool result, it is UNKNOWN.
+
+## Concise Bulleted Replies
+
+Keep every reply short. Start with a one-sentence answer, then follow with
+bulleted details. Never exceed five bullets unless the user explicitly asks
+for more depth.
+
+## Tool Usage Rules
+
+Call a tool whenever the answer depends on live workspace state. State which
+tool you are calling and why before calling it, then summarize the tool result
+in plain language. Never claim a tool ran if it did not.
+
+## Rule
+
+User Request → Tool → Tool Result → Response
+
+Do not skip the tool.
+
+Do not replace a tool result with your own knowledge or assumptions.
+
+Do not invent missing fields from a tool result.
+
+## Available Tools
+
+### calculator
+- Provider: core_engine
+- Signature: (expression: str) -> str
+- Description: Evaluate a basic arithmetic expression (numbers, + - * / // % ** and parentheses).
+
+### read_file
+- Provider: editor
+- Signature: (path: str) -> str
+- Description: Read a file from the workspace and return its text content.
+
+### write_file
+- Provider: editor
+- Signature: (path: str, content: str) -> str
+- Description: Write or update text content in a workspace file.
+
+### create_file
+- Provider: editor
+- Signature: (path: str, kind: str = 'file') -> str
+- Description: Create a new empty file or directory inside the workspace.
+
+### list_directory
+- Provider: editor
+- Signature: (path: str = '') -> str
+- Description: List the workspace directory tree (optionally rooted at a relative path).
+
+`
+
 ### test_environment/test_agents/assistant__snapshot__20261007-210439/agent.json
 
 `json
@@ -4169,6 +4684,18 @@ Lead with the direct answer, then follow with brief supporting detail. Use markd
     "label": "snapshot",
     "snapshot": "agent-01__snapshot__20261008-033519",
     "published_at": "2026-10-08T03:35:19.740242+00:00"
+  },
+  {
+    "agent_id": "agent-01",
+    "label": "snapshot",
+    "snapshot": "agent-01__snapshot__20261008-041810",
+    "published_at": "2026-10-08T04:18:10.205805+00:00"
+  },
+  {
+    "agent_id": "agent-01",
+    "label": "snapshot",
+    "snapshot": "agent-01__snapshot__20261008-042917",
+    "published_at": "2026-10-08T04:29:17.034009+00:00"
   }
 ]
 
@@ -4385,6 +4912,12 @@ failed when the tool succeeded
 
 If the required information is not in a tool result, it is UNKNOWN.
 
+## Concise Bulleted Replies
+
+Keep every reply short. Start with a one-sentence answer, then follow with
+bulleted details. Never exceed five bullets unless the user explicitly asks
+for more depth.
+
 ## Tool Usage Rules
 
 Call a tool whenever the answer depends on live workspace state. State which
@@ -4400,6 +4933,34 @@ Do not skip the tool.
 Do not replace a tool result with your own knowledge or assumptions.
 
 Do not invent missing fields from a tool result.
+
+## Available Tools
+
+### calculator
+- Provider: core_engine
+- Signature: (expression: str) -> str
+- Description: Evaluate a basic arithmetic expression (numbers, + - * / // % ** and parentheses).
+
+### read_file
+- Provider: editor
+- Signature: (path: str) -> str
+- Description: Read a file from the workspace and return its text content.
+
+### write_file
+- Provider: editor
+- Signature: (path: str, content: str) -> str
+- Description: Write or update text content in a workspace file.
+
+### create_file
+- Provider: editor
+- Signature: (path: str, kind: str = 'file') -> str
+- Description: Create a new empty file or directory inside the workspace.
+
+### list_directory
+- Provider: editor
+- Signature: (path: str = '') -> str
+- Description: List the workspace directory tree (optionally rooted at a relative path).
+
 `
 
 ### workspace/agents/assistant/agent.json
