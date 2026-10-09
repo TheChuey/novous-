@@ -6,11 +6,12 @@ import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from test_environment import prompt_builder, test_runner
+from test_environment import prompt_builder, test_runner, tool_workbench
 
 router = APIRouter()
 
@@ -19,6 +20,16 @@ TEST_AGENTS_DIR = Path(__file__).resolve().parent / "test_agents"
 
 class HeaderTestRequest(BaseModel):
     agent_id: str = Field(..., min_length=1)
+
+
+class ToolWorkbenchRequest(BaseModel):
+    tool_code: str = Field(..., min_length=1, max_length=50000)
+    function_input: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolWorkbenchLLMRequest(ToolWorkbenchRequest):
+    model: str = Field(..., min_length=1, max_length=120)
+    user_prompt: str = Field(..., min_length=1, max_length=5000)
 
 
 class AssembleRequest(BaseModel):
@@ -114,6 +125,85 @@ def api_assemble(req: AssembleRequest):
 
 
 # --- Test runner -----------------------------------------------------------
+
+@router.post("/api/testing/tool-workbench/execute")
+def api_execute_tool_test(req: ToolWorkbenchRequest):
+    return tool_workbench.run_python_tool(req.tool_code, req.function_input)
+
+
+@router.post("/api/testing/tool-workbench/test-with-llm")
+def api_test_tool_with_llm(req: ToolWorkbenchLLMRequest):
+    try:
+        function = tool_workbench.get_function_definition(req.tool_code)
+        schema = tool_workbench.get_tool_schema(function)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        import ollama
+        response = ollama.chat(
+            model=req.model,
+            messages=[{"role": "user", "content": req.user_prompt}],
+            tools=[schema],
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"LLM tool-call request failed: {exc}") from exc
+
+    message = response.get("message", {})
+    tool_calls = message.get("tool_calls") or []
+    if not tool_calls:
+        return {
+            "status": "ERROR",
+            "error_code": "ERR_NO_TOOL_CALL",
+            "message": "The selected model did not return a tool call.",
+            "llm_text_response": message.get("content", ""),
+        }
+
+    call = tool_calls[0].get("function", {})
+    if call.get("name") != function.name:
+        raise HTTPException(
+            status_code=422, detail="The model called an unexpected tool function."
+        )
+    arguments = call.get("arguments", {})
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=422, detail="The model returned invalid JSON tool arguments."
+            ) from exc
+    if not isinstance(arguments, dict):
+        raise HTTPException(
+            status_code=422, detail="The model's tool arguments must be a JSON object."
+        )
+
+    execution = tool_workbench.run_python_tool(req.tool_code, arguments)
+    return {
+        "status": execution["status"],
+        "error_code": execution["error_code"],
+        "llm_text_response": message.get("content", ""),
+        "tool_calls_detected": tool_calls,
+        "tool_execution_result": execution,
+    }
+
+
+@router.post("/api/testing/tool-workbench/promote")
+def api_promote_tool(req: ToolWorkbenchRequest):
+    try:
+        function = tool_workbench.get_function_definition(req.tool_code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    execution = tool_workbench.run_python_tool(req.tool_code, req.function_input)
+    if execution["status"] != "SUCCESS":
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "The tool must pass its test before promotion.",
+                    "test_result": execution},
+        )
+
+    promoted = tool_workbench.promote_python_tool(req.tool_code, function.name)
+    return {"promoted": promoted, "test_result": execution}
+
 
 @router.post("/api/testing/run_header_tests")
 def api_run_header_tests(req: HeaderTestRequest):

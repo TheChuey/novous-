@@ -175,7 +175,7 @@ export function renderChatView(container) {
     try {
       const tree = await Api.getFileTree();
       const workspaceEntries = tree.children || [];
-      const normalizedNames = new Set(['todo list', 'do due list']);
+      const normalizedNames = new Set(['todo list', 'to due list', 'do due list']);
       const todoDirectories = workspaceEntries.filter(item =>
         item.type === 'directory' &&
         normalizedNames.has(item.name.toLowerCase().replace(/\s+/g, ' ').trim())

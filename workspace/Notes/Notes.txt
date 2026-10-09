@@ -1,0 +1,12 @@
+Plan 1
+
+New component
+
+file structure 
+Data
+Interface
+
+Plan 2
+
+I need to develop a way to make new tools.
+First add 

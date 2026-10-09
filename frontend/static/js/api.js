@@ -210,6 +210,24 @@ export const Api = {
     return send('POST', '/api/testing/run_header_tests', { agent_id: agentId });
   },
 
+  async executeToolTest(toolCode, functionInput = {}) {
+    return send('POST', '/api/testing/tool-workbench/execute', {
+      tool_code: toolCode, function_input: functionInput
+    });
+  },
+
+  async testToolWithLlm(model, toolCode, userPrompt) {
+    return send('POST', '/api/testing/tool-workbench/test-with-llm', {
+      model, tool_code: toolCode, user_prompt: userPrompt
+    });
+  },
+
+  async promoteTestedTool(toolCode, functionInput = {}) {
+    return send('POST', '/api/testing/tool-workbench/promote', {
+      tool_code: toolCode, function_input: functionInput
+    });
+  },
+
   async evaluateMarkdown(markdown, agentId = 'draft') {
     return send('POST', '/api/testing/evaluate_markdown', { markdown, agent_id: agentId });
   },

@@ -70,8 +70,12 @@ def get_directory_tree(relative_path: str = "") -> dict:
             return {"name": p.name, "type": "file", "path": rel}
         children = []
         for child in sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
-            if not child.name.startswith("."):
-                children.append(_build_tree(child))
+            is_python_cache = child.is_dir() and child.name.lower() in {"__pycache__", "_pycache__"}
+            if child.name.startswith(".") or is_python_cache or (
+                child.is_file() and child.suffix.lower() == ".py"
+            ):
+                continue
+            children.append(_build_tree(child))
         return {"name": p.name, "type": "directory", "path": rel, "children": children}
 
     if not target_dir.exists():

@@ -30,15 +30,16 @@
       "description": "Voice, reading level, and stylistic preferences."
     },
     {
-      "id": "tools",
-      "name": "Tool Usage",
-      "description": "When and how the agent may call tools."
-    },
-    {
       "id": "tool",
       "name": "Rule",
       "description": "Rules",
       "required_header": "Rules"
+    },
+    {
+      "id": "1",
+      "name": "Thought Process",
+      "description": "",
+      "required_header": "Thinking"
     }
   ]
 }

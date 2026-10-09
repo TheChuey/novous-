@@ -385,6 +385,45 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .ht-q-status.pass { color: var(--success); }
 .ht-q-status.fail { color: var(--danger); }
 
+.tool-workbench { display: flex; flex-direction: column; gap: 0.8rem; }
+.tool-workbench .card-head { margin-bottom: 0; }
+.tool-workbench .card-head p { margin: 0.35rem 0 0; }
+.tool-workbench-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.tool-workbench-field { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; font-size: 0.86rem; }
+.tool-workbench-field textarea { width: 100%; }
+.tool-workbench-wide { grid-column: 1 / -1; }
+.tool-workbench-model { display: flex; gap: 0.45rem; }
+.tool-workbench-model .form-select { flex: 1; min-width: 0; }
+.tool-workbench-editor {
+  width: 100%;
+  resize: vertical;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  tab-size: 4;
+  white-space: pre;
+}
+.tool-workbench-editor:focus { outline: 1px solid var(--primary); }
+.tool-workbench-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.tool-workbench-output {
+  min-height: 5rem;
+  max-height: 20rem;
+  overflow: auto;
+  margin: 0;
+  padding: 0.75rem;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  color: var(--text-main);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tool-workbench-library { border-top: 1px solid var(--border-color); padding-top: 0.75rem; }
+.tool-workbench-library h4 { margin: 0 0 0.4rem; font-size: 0.9rem; }
+.tool-workbench-library-item { display: flex; gap: 0.5rem; padding: 0.2rem 0; }
+.tool-workbench-library-item code { color: var(--primary); }
+.tool-workbench-library-item span { color: var(--text-muted); overflow-wrap: anywhere; }
+
 /* --- Responsive ------------------------------------------------------------ */
 @media (max-width: 1100px) {
   .editor-layout { grid-template-columns: 220px 1fr; }
@@ -396,4 +435,6 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
   .navbar { flex-wrap: wrap; }
   .chat-layout { grid-template-columns: 1fr; height: auto; }
   .messages-scroll { max-height: 50vh; }
+  .tool-workbench-grid { grid-template-columns: 1fr; }
+  .tool-workbench-wide { grid-column: auto; }
 }

@@ -1,9 +1,11 @@
 """Generate a single markdown master copy of the entire Novous source tree."""
 
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "MASTER_COPY.md"
+TODAY = datetime.now().strftime("%Y%m%d")
+OUT = ROOT / "app_documentation" / f"MASTER_COPY_{TODAY}.md"
 
 INCLUDE = {".py", ".js", ".css", ".html", ".json", ".md", ".bat", ".sh"}
 EXCLUDE_DIRS = {"venv", "__pycache__", ".git", "node_modules", "test_agents"}
@@ -15,7 +17,7 @@ def collect() -> list[Path]:
     for path in sorted(ROOT.rglob("*")):
         if not path.is_file():
             continue
-        if path.name == "MASTER_COPY.md" or path.name == "novous-ai-builder-prompt-v2.md":
+        if path.name.startswith("MASTER_COPY") or path.name == "novous-ai-builder-prompt-v2.md":
             continue
         if path.suffix not in INCLUDE:
             continue

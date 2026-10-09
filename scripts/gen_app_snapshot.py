@@ -14,7 +14,7 @@ EXCLUDE_DIRS = {"venv", "__pycache__", ".git", "node_modules", "dist", "build"}
 INCLUDE_EXT = {".py", ".js", ".css", ".html", ".json", ".md", ".txt", ".bat", ".sh", ".yaml", ".yml", ".cfg", ".ini"}
 SKIP_FILES = {"MASTER_COPY.md", "novous-ai-builder-prompt-v2.md"}
 
-OUT = ROOT / f"NOVOUS_APP_SNAPSHOT_{TODAY}.md"
+OUT = ROOT / "app_documentation" / f"NOVOUS_APP_SNAPSHOT_{TODAY}_new.md"
 
 
 def get_lang(ext: str) -> str:
@@ -43,7 +43,7 @@ def collect_files():
             continue
         if any(part in EXCLUDE_DIRS for part in path.parts):
             continue
-        if path.name in SKIP_FILES or path.name.startswith("NOVOUS_APP_SNAPSHOT"):
+        if path.name in SKIP_FILES or path.name.startswith("NOVOUS_APP_SNAPSHOT") or path.name.startswith("MASTER_COPY"):
             continue
         if path.suffix.lower() not in INCLUDE_EXT and path.name in {"Dockerfile", "Procfile"}:
             pass
@@ -59,7 +59,7 @@ def write_tree(f):
         if any(part in EXCLUDE_DIRS for part in path.parts):
             continue
         rel = path.relative_to(ROOT).as_posix()
-        if path.name in SKIP_FILES or path.name.startswith("NOVOUS_APP_SNAPSHOT"):
+        if path.name in SKIP_FILES or path.name.startswith("NOVOUS_APP_SNAPSHOT") or path.name.startswith("MASTER_COPY"):
             continue
         f.write(f"- {rel}{'/' if path.is_dir() else ''}\n")
     f.write("\n")

@@ -2,13 +2,16 @@
 
 Tools are plain Python functions decorated with @tool. Each tool declares a
 provider (the pillar doorway that owns the capability). Providers are resolved
-lazily so importing this module never creates circular imports.
+lazily so importing this module never creates circular imports. Promoted
+workspace tools are loaded from workspace/tools/ when the registry is queried.
 """
 
 import ast
+import importlib.util
 import inspect
 import json
 import operator
+import sys
 from pathlib import Path
 from typing import Callable
 
@@ -16,6 +19,8 @@ from core_engine.agent_factory import load_agent
 from core_engine import langgraph_tools
 
 REGISTRY: dict[str, dict] = {}
+CUSTOM_TOOLS_DIR = Path(__file__).resolve().parent.parent / "workspace" / "tools"
+_LOADED_CUSTOM_TOOLS: set[Path] = set()
 
 _OPERATORS = {
     ast.Add: operator.add,
@@ -180,6 +185,7 @@ PROVIDER_BINDINGS = {
 
 
 def list_tools() -> list[dict]:
+    load_custom_tools()
     return [
         {
             "name": meta["name"],
@@ -193,6 +199,7 @@ def list_tools() -> list[dict]:
 
 def get_tools(names: list[str] | None = None) -> list[Callable]:
     """Resolve registered tool callables, filtered by an optional allow-list."""
+    load_custom_tools()
     if not names:
         return [meta["function"] for meta in REGISTRY.values()]
     resolved = []
@@ -201,3 +208,47 @@ def get_tools(names: list[str] | None = None) -> list[Callable]:
         if meta:
             resolved.append(meta["function"])
     return resolved
+
+
+def load_custom_tools() -> None:
+    """Load promoted workspace tools into the runtime registry."""
+    if not CUSTOM_TOOLS_DIR.is_dir():
+        return
+
+    for path in sorted(CUSTOM_TOOLS_DIR.glob("*.py")):
+        resolved_path = path.resolve()
+        if resolved_path in _LOADED_CUSTOM_TOOLS:
+            continue
+        if path.stem in REGISTRY:
+            raise ValueError(f"Custom tool '{path.stem}' conflicts with a registered tool.")
+
+        module_name = f"novous_workspace_tool_{path.stem}"
+        spec = importlib.util.spec_from_file_location(module_name, resolved_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not load custom tool module '{path}'.")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            sys.modules.pop(module_name, None)
+            raise
+
+        function = getattr(module, path.stem, None)
+        if not inspect.isfunction(function) or function.__module__ != module_name:
+            sys.modules.pop(module_name, None)
+            raise ValueError(
+                f"Custom tool module '{path.name}' must define a function named '{path.stem}'."
+            )
+
+        doc = inspect.getdoc(function) or ""
+        function.name = path.stem
+        function.provider = "core_engine"
+        REGISTRY[path.stem] = {
+            "name": path.stem,
+            "function": function,
+            "provider": "core_engine",
+            "description": doc.splitlines() if doc else "",
+            "signature": str(inspect.signature(function)),
+        }
+        _LOADED_CUSTOM_TOOLS.add(resolved_path)
