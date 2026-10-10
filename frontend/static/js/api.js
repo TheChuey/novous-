@@ -132,6 +132,14 @@ export const Api = {
     return get('/api/tools');
   },
 
+  async getWorkbenchTool(toolName) {
+    return get(`/api/testing/tool-workbench/tools/${encodeURIComponent(toolName)}`);
+  },
+
+  async deleteWorkbenchTool(toolName) {
+    return send('DELETE', `/api/testing/tool-workbench/tools/${encodeURIComponent(toolName)}`);
+  },
+
   async getModels() {
     return get('/api/models');
   },

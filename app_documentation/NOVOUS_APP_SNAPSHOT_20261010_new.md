@@ -1,7 +1,7 @@
-Date: 2026-10-07
+Date: 2026-10-10
 Name: Novous Application Snapshot
-Filename: NOVOUS_APP_SNAPSHOT_20261007.md
-Commit: b3253c0
+Filename: NOVOUS_APP_SNAPSHOT_20261010_new.md
+Commit: 35d8ddf
 Description: Self-contained reference for an AI agent. Captures Novous app purpose, architecture, file structure, and complete source code. Designed for grounding/understanding without repo access.
 
 # NOVOUS APPLICATION SNAPSHOT
@@ -33,6 +33,7 @@ Key components:
 - .pytest_cache/v/
 - .pytest_cache/v/cache/
 - .pytest_cache/v/cache/nodeids
+- app_documentation/
 - core_engine/
 - core_engine/__init__.py
 - core_engine/agent_factory.py
@@ -79,6 +80,8 @@ Key components:
 - test_environment/PromptBuilderFiles/
 - test_environment/PromptBuilderFiles/categories.json
 - test_environment/PromptBuilderFiles/parts/
+- test_environment/PromptBuilderFiles/parts/1/
+- test_environment/PromptBuilderFiles/parts/1/1.md
 - test_environment/PromptBuilderFiles/parts/boundaries/
 - test_environment/PromptBuilderFiles/parts/boundaries/agenttest.md
 - test_environment/PromptBuilderFiles/parts/boundaries/safety.md
@@ -98,8 +101,6 @@ Key components:
 - test_environment/PromptBuilderFiles/parts/tone/professional.md
 - test_environment/PromptBuilderFiles/parts/tool/
 - test_environment/PromptBuilderFiles/parts/tool/rules.md
-- test_environment/PromptBuilderFiles/parts/tools/
-- test_environment/PromptBuilderFiles/parts/tools/tool-rules.md
 - test_environment/test_agents/
 - test_environment/test_agents/agent-01__snapshot__20261008-033519/
 - test_environment/test_agents/agent-01__snapshot__20261008-033519/agent.json
@@ -118,6 +119,8 @@ Key components:
 - test_environment/test_agents/assistant__snapshot__20261008-012019/agent.md
 - test_environment/test_agents/manifest.json
 - test_environment/test_runner.py
+- test_environment/test_tool_workbench.py
+- test_environment/tool_workbench.py
 - workspace/
 - workspace/__init__.py
 - workspace/agents/
@@ -133,24 +136,27 @@ Key components:
 - workspace/agents/reviewer/
 - workspace/agents/reviewer/agent.json
 - workspace/agents/reviewer/agent.md
-- workspace/Do Due List/
-- workspace/Do Due List/list 3
-- workspace/Do Due List/test steps for tools
 - workspace/documentation/
-- workspace/documentation/hello.txt
-- workspace/documentation/note.md
-- workspace/documentation/Second list
-- workspace/documentation/states.txt
+- workspace/documentation/Markdown/
+- workspace/documentation/user_notes.md
 - workspace/exports/
 - workspace/exports/sessions/
 - workspace/exports/sessions/chat-agent-01_20261007_221450_577212.md
 - workspace/interface.py
-- workspace/list 2
-- workspace/list 3
-- workspace/Markdown/
-- workspace/Markdown/note.md
+- workspace/Markdown
+- workspace/Notes/
+- workspace/Notes/MAMA-chat-agent-01_20261007_221450_577212.md
+- workspace/Notes/Notes.txt
 - workspace/project.json
 - workspace/squad_manager.py
+- workspace/states.txt
+- workspace/testcal
+- workspace/To Due List/
+- workspace/To Due List/list 2
+- workspace/To Due List/list 3
+- workspace/To Due List/test steps for tools
+- workspace/tools/
+- workspace/tools/tool_library.py
 - workspace/workspace_workflow.py
 
 ## 4) Complete Source Code (by file)
@@ -921,13 +927,16 @@ class Agent:
 
 Tools are plain Python functions decorated with @tool. Each tool declares a
 provider (the pillar doorway that owns the capability). Providers are resolved
-lazily so importing this module never creates circular imports.
+lazily so importing this module never creates circular imports. Promoted
+workspace tools are loaded from workspace/tools/ when the registry is queried.
 """
 
 import ast
+import importlib.util
 import inspect
 import json
 import operator
+import sys
 from pathlib import Path
 from typing import Callable
 
@@ -935,6 +944,8 @@ from core_engine.agent_factory import load_agent
 from core_engine import langgraph_tools
 
 REGISTRY: dict[str, dict] = {}
+CUSTOM_TOOLS_DIR = Path(__file__).resolve().parent.parent / "workspace" / "tools"
+_LOADED_CUSTOM_TOOLS: set[Path] = set()
 
 _OPERATORS = {
     ast.Add: operator.add,
@@ -1099,12 +1110,16 @@ PROVIDER_BINDINGS = {
 
 
 def list_tools() -> list[dict]:
+    load_custom_tools()
     return [
         {
             "name": meta["name"],
             "provider": meta["provider"],
             "description": meta["description"],
             "signature": meta["signature"],
+            "custom": meta["function"].__module__.startswith(
+                "novous_workspace_tool_"
+            ),
         }
         for meta in REGISTRY.values()
     ]
@@ -1112,6 +1127,7 @@ def list_tools() -> list[dict]:
 
 def get_tools(names: list[str] | None = None) -> list[Callable]:
     """Resolve registered tool callables, filtered by an optional allow-list."""
+    load_custom_tools()
     if not names:
         return [meta["function"] for meta in REGISTRY.values()]
     resolved = []
@@ -1120,6 +1136,90 @@ def get_tools(names: list[str] | None = None) -> list[Callable]:
         if meta:
             resolved.append(meta["function"])
     return resolved
+
+
+def load_custom_tools(reload: bool = False) -> None:
+    """Load promoted workspace tools into the runtime registry."""
+    if reload:
+        custom_names = [
+            name for name, meta in REGISTRY.items()
+            if meta["function"].__module__.startswith("novous_workspace_tool_")
+        ]
+        for name in custom_names:
+            REGISTRY.pop(name, None)
+        for module_name in list(sys.modules):
+            if module_name.startswith("novous_workspace_tool_"):
+                sys.modules.pop(module_name, None)
+        _LOADED_CUSTOM_TOOLS.clear()
+
+    if not CUSTOM_TOOLS_DIR.is_dir():
+        return
+
+    for path in sorted(CUSTOM_TOOLS_DIR.glob("*.py")):
+        resolved_path = path.resolve()
+        if resolved_path in _LOADED_CUSTOM_TOOLS:
+            continue
+
+        module_name = f"novous_workspace_tool_{path.stem}"
+        spec = importlib.util.spec_from_file_location(module_name, resolved_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not load custom tool module '{path}'.")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            sys.modules.pop(module_name, None)
+            raise
+
+        if path.name == "tool_library.py":
+            functions = []
+            function_names = set()
+            for node in ast.parse(path.read_text(encoding="utf-8")).body:
+                if isinstance(node, ast.AsyncFunctionDef) and not node.name.startswith("_"):
+                    raise ValueError(
+                        f"Tool library function '{node.name}' must be synchronous."
+                    )
+                if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
+                    if node.name in function_names:
+                        raise ValueError(
+                            f"Tool library defines '{node.name}' more than once."
+                        )
+                    function_names.add(node.name)
+                    function = getattr(module, node.name, None)
+                    if not inspect.isfunction(function) or function.__module__ != module_name:
+                        raise ValueError(
+                            f"Could not load tool library function '{node.name}'."
+                        )
+                    functions.append((node.name, function))
+        else:
+            function = getattr(module, path.stem, None)
+            if not inspect.isfunction(function) or function.__module__ != module_name:
+                sys.modules.pop(module_name, None)
+                raise ValueError(
+                    f"Custom tool module '{path.name}' must define a function named '{path.stem}'."
+                )
+            functions = [(path.stem, function)]
+
+        conflicts = [name for name, _ in functions if name in REGISTRY]
+        if conflicts:
+            sys.modules.pop(module_name, None)
+            raise ValueError(
+                f"Custom tool '{conflicts[0]}' conflicts with a registered tool."
+            )
+
+        for name, function in functions:
+            doc = inspect.getdoc(function) or ""
+            function.name = name
+            function.provider = "core_engine"
+            REGISTRY[name] = {
+                "name": name,
+                "function": function,
+                "provider": "core_engine",
+                "description": doc.splitlines() if doc else "",
+                "signature": str(inspect.signature(function)),
+            }
+        _LOADED_CUSTOM_TOOLS.add(resolved_path)
 
 `
 
@@ -1204,8 +1304,12 @@ def get_directory_tree(relative_path: str = "") -> dict:
             return {"name": p.name, "type": "file", "path": rel}
         children = []
         for child in sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
-            if not child.name.startswith("."):
-                children.append(_build_tree(child))
+            is_python_cache = child.is_dir() and child.name.lower() in {"__pycache__", "_pycache__"}
+            if child.name.startswith(".") or is_python_cache or (
+                child.is_file() and child.suffix.lower() == ".py"
+            ):
+                continue
+            children.append(_build_tree(child))
         return {"name": p.name, "type": "directory", "path": rel, "children": children}
 
     if not target_dir.exists():
@@ -2054,6 +2158,45 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .ht-q-status.pass { color: var(--success); }
 .ht-q-status.fail { color: var(--danger); }
 
+.tool-workbench { display: flex; flex-direction: column; gap: 0.8rem; }
+.tool-workbench .card-head { margin-bottom: 0; }
+.tool-workbench .card-head p { margin: 0.35rem 0 0; }
+.tool-workbench-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.tool-workbench-field { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; font-size: 0.86rem; }
+.tool-workbench-field textarea { width: 100%; }
+.tool-workbench-wide { grid-column: 1 / -1; }
+.tool-workbench-model { display: flex; gap: 0.45rem; }
+.tool-workbench-model .form-select { flex: 1; min-width: 0; }
+.tool-workbench-editor {
+  width: 100%;
+  resize: vertical;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  tab-size: 4;
+  white-space: pre;
+}
+.tool-workbench-editor:focus { outline: 1px solid var(--primary); }
+.tool-workbench-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.tool-workbench-output {
+  min-height: 5rem;
+  max-height: 20rem;
+  overflow: auto;
+  margin: 0;
+  padding: 0.75rem;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  color: var(--text-main);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tool-workbench-library { border-top: 1px solid var(--border-color); padding-top: 0.75rem; }
+.tool-workbench-library h4 { margin: 0 0 0.4rem; font-size: 0.9rem; }
+.tool-workbench-library-item { display: flex; gap: 0.5rem; padding: 0.2rem 0; }
+.tool-workbench-library-item code { color: var(--primary); }
+.tool-workbench-library-item span { color: var(--text-muted); overflow-wrap: anywhere; }
+
 /* --- Responsive ------------------------------------------------------------ */
 @media (max-width: 1100px) {
   .editor-layout { grid-template-columns: 220px 1fr; }
@@ -2065,6 +2208,8 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
   .navbar { flex-wrap: wrap; }
   .chat-layout { grid-template-columns: 1fr; height: auto; }
   .messages-scroll { max-height: 50vh; }
+  .tool-workbench-grid { grid-template-columns: 1fr; }
+  .tool-workbench-wide { grid-column: auto; }
 }
 
 `
@@ -2322,6 +2467,14 @@ export const Api = {
     return get('/api/tools');
   },
 
+  async getWorkbenchTool(toolName) {
+    return get(`/api/testing/tool-workbench/tools/${encodeURIComponent(toolName)}`);
+  },
+
+  async deleteWorkbenchTool(toolName) {
+    return send('DELETE', `/api/testing/tool-workbench/tools/${encodeURIComponent(toolName)}`);
+  },
+
   async getModels() {
     return get('/api/models');
   },
@@ -2398,6 +2551,24 @@ export const Api = {
 
   async runHeaderTests(agentId) {
     return send('POST', '/api/testing/run_header_tests', { agent_id: agentId });
+  },
+
+  async executeToolTest(toolCode, functionInput = {}) {
+    return send('POST', '/api/testing/tool-workbench/execute', {
+      tool_code: toolCode, function_input: functionInput
+    });
+  },
+
+  async testToolWithLlm(model, toolCode, userPrompt) {
+    return send('POST', '/api/testing/tool-workbench/test-with-llm', {
+      model, tool_code: toolCode, user_prompt: userPrompt
+    });
+  },
+
+  async promoteTestedTool(toolCode, functionInput = {}) {
+    return send('POST', '/api/testing/tool-workbench/promote', {
+      tool_code: toolCode, function_input: functionInput
+    });
   },
 
   async evaluateMarkdown(markdown, agentId = 'draft') {
@@ -2841,7 +3012,7 @@ export function renderChatView(container) {
     try {
       const tree = await Api.getFileTree();
       const workspaceEntries = tree.children || [];
-      const normalizedNames = new Set(['todo list', 'do due list']);
+      const normalizedNames = new Set(['todo list', 'to due list', 'do due list']);
       const todoDirectories = workspaceEntries.filter(item =>
         item.type === 'directory' &&
         normalizedNames.has(item.name.toLowerCase().replace(/\s+/g, ' ').trim())
@@ -4002,6 +4173,491 @@ export function renderTestingView(container) {
       results.innerHTML = `<p class="text-danger">Error: ${esc(err.message)}</p>`;
     }
   });
+
+  renderToolWorkbench(container);
+}
+
+function renderToolWorkbench(container) {
+  container.insertAdjacentHTML('beforeend', `
+    <section class="card tool-workbench mt-3" aria-labelledby="tool-workbench-title">
+      <div class="card-head">
+        <div>
+          <h3 id="tool-workbench-title">Tool Function Testing Workbench</h3>
+          <p class="text-muted small">Tests run on this computer using the local Python interpreter. Only run code you trust: tested code can access files, network, and resources available to your user account. Each run has a 5-second timeout.</p>
+        </div>
+        <button type="button" class="btn btn-sm" id="tw-reset">Reset</button>
+      </div>
+      <div class="tool-workbench-grid">
+        <label class="tool-workbench-field">
+          <span>LLM model</span>
+          <span class="tool-workbench-model">
+            <select id="tw-model" class="form-select" aria-label="LLM model">
+              <option value="">Loading models…</option>
+            </select>
+            <button type="button" class="btn btn-sm" id="tw-refresh-models">Refresh</button>
+          </span>
+        </label>
+        <label class="tool-workbench-field tool-workbench-wide">
+          <span>Function code</span>
+          <textarea id="tw-code" class="tool-workbench-editor" rows="12" spellcheck="false"></textarea>
+        </label>
+        <label class="tool-workbench-field">
+          <span>Function input (JSON)</span>
+          <textarea id="tw-input" class="tool-workbench-editor" rows="5" spellcheck="false"></textarea>
+          <span class="text-muted small">When the model calls the function, this shows the arguments it sent. If it makes no valid call, the current JSON is left unchanged.</span>
+        </label>
+        <label class="tool-workbench-field">
+          <span>Prompt for LLM tool calling</span>
+          <textarea id="tw-prompt" class="form-input" rows="5"></textarea>
+        </label>
+      </div>
+      <div class="tool-workbench-actions">
+        <button type="button" class="btn btn-primary" id="tw-run">Run Code Test</button>
+        <button type="button" class="btn" id="tw-run-llm">Test Tool with LLM</button>
+        <button type="button" class="btn" id="tw-save" disabled>Save Test Report (.md)</button>
+        <button type="button" class="btn" id="tw-promote" disabled
+                title="Run a successful test before adding a tool">Add Passed Tool to Library</button>
+        <span id="tw-status" class="text-muted small" role="status">Ready</span>
+      </div>
+      <label id="tw-llm-response-section" class="tool-workbench-field" hidden>
+        <span>LLM response / tool call</span>
+        <pre id="tw-llm-response" class="tool-workbench-output" aria-live="polite"></pre>
+      </label>
+      <label class="tool-workbench-field">
+        <span>Test output</span>
+        <pre id="tw-output" class="tool-workbench-output" aria-live="polite">Run a test to see its result.</pre>
+      </label>
+      <div class="tool-workbench-library">
+        <h4>Registered Tool Library</h4>
+        <p class="text-muted small">Promoted functions are appended to <code>workspace/tools/tool_library.py</code> so the library can be committed as one module.</p>
+        <div id="tw-library" class="text-muted small">Loading tools…</div>
+      </div>
+      <p class="text-muted small">Promoted code is trusted application code and will run in the Novous backend when an agent invokes it.</p>
+    </section>`);
+
+  const codeField = container.querySelector('#tw-code');
+  const inputField = container.querySelector('#tw-input');
+  const promptField = container.querySelector('#tw-prompt');
+  const modelSelect = container.querySelector('#tw-model');
+  const runButton = container.querySelector('#tw-run');
+  const llmButton = container.querySelector('#tw-run-llm');
+  const saveButton = container.querySelector('#tw-save');
+  const promoteButton = container.querySelector('#tw-promote');
+  const output = container.querySelector('#tw-output');
+  const llmResponseSection = container.querySelector('#tw-llm-response-section');
+  const llmResponse = container.querySelector('#tw-llm-response');
+  const status = container.querySelector('#tw-status');
+  const library = container.querySelector('#tw-library');
+
+  const defaultCode = `def calculate_shipping(weight_kg: float, distance_km: float) -> dict:
+    """Calculate shipping fee from package weight and distance."""
+    base_rate = 5.0
+    cost = base_rate + (weight_kg * 1.5) + (distance_km * 0.05)
+    return {
+        "weight_kg": weight_kg,
+        "distance_km": distance_km,
+        "shipping_cost": round(cost, 2)
+    }`;
+  const defaultInput = `{
+  "weight_kg": 4.5,
+  "distance_km": 120.0
+}`;
+  const defaultPrompt = 'Calculate shipping for a 4.5kg package traveling 120km using the shipping tool.';
+  let lastPassed = null;
+  let lastTestReport = null;
+  let busy = false;
+
+  codeField.value = defaultCode;
+  inputField.value = defaultInput;
+  promptField.value = defaultPrompt;
+
+  function enableTabIndent(field) {
+    field.addEventListener('keydown', event => {
+      if (event.key !== 'Tab') return;
+      event.preventDefault();
+      const start = field.selectionStart;
+      const end = field.selectionEnd;
+      field.value = field.value.slice(0, start) + '    ' + field.value.slice(end);
+      field.selectionStart = field.selectionEnd = start + 4;
+    });
+  }
+
+  function createTestReport(result, context = {}) {
+    return {
+      tested_at: new Date().toISOString(),
+      execution_mode: context.execution_mode || 'local-python',
+      model_used: context.model_used || null,
+      function_code: context.function_code ?? codeField.value,
+      function_input: Object.prototype.hasOwnProperty.call(context, 'function_input')
+        ? context.function_input
+        : inputField.value,
+      prompt: context.prompt ?? '',
+      test_output: result
+    };
+  }
+
+  function markdownCodeBlock(value, language = '') {
+    const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    const longestFence = Math.max(2, ...((text.match(/`+/g) || []).map(run => run.length)));
+    const fence = '`'.repeat(longestFence + 1);
+    return `${fence}${language}\n${text}\n${fence}`;
+  }
+
+  function renderTestReport(report) {
+    const testOutput = report.test_output || {};
+    const execution = testOutput.tool_execution_result || testOutput;
+    const passed = testOutput.status === 'SUCCESS';
+    const fields = [
+      `- **Result:** ${passed ? 'PASS' : 'FAIL'}`,
+      `- **Tested at (UTC):** ${report.tested_at}`,
+      `- **Execution mode:** ${report.execution_mode}`,
+      `- **LLM used:** ${report.model_used || 'No — direct local Python test'}`,
+      `- **Function:** ${execution.function_name || 'Not identified'}`,
+      `- **Error code:** ${testOutput.error_code || execution.error_code || 'None'}`
+    ];
+    const sections = [
+      '# Tool Function Test Report',
+      '',
+      ...fields,
+      '',
+      '## LLM Prompt',
+      '',
+      report.prompt ? markdownCodeBlock(report.prompt, 'text') : '_No LLM prompt was used._',
+      '',
+      '## Function Input',
+      '',
+      markdownCodeBlock(report.function_input, 'json'),
+      '',
+      '## Function Code',
+      '',
+      markdownCodeBlock(report.function_code, 'python'),
+      '',
+      '## Result',
+      '',
+      `**Status:** ${testOutput.status || 'ERROR'}`,
+      ''
+    ];
+
+    if (execution.output !== undefined) {
+      sections.push('### Function output', '', markdownCodeBlock(execution.output, 'json'), '');
+    }
+    if (testOutput.llm_text_response) {
+      sections.push('### LLM response', '', markdownCodeBlock(testOutput.llm_text_response, 'text'), '');
+    }
+    if (testOutput.tool_calls_detected?.length) {
+      sections.push(
+        '### LLM tool calls',
+        '',
+        markdownCodeBlock(testOutput.tool_calls_detected, 'json'),
+        ''
+      );
+    }
+    if (testOutput.message) {
+      sections.push('### Failure details', '', markdownCodeBlock(testOutput.message, 'text'), '');
+    }
+    for (const [label, value] of [
+      ['Standard error', execution.stderr],
+      ['Standard output', execution.stdout],
+      ['Exit code', execution.exit_code]
+    ]) {
+      if (value !== undefined && value !== null && value !== '') {
+        sections.push(`### ${label}`, '', markdownCodeBlock(value, 'text'), '');
+      }
+    }
+    sections.push(
+      '## Machine-readable JSON',
+      '',
+      'The complete report data is included below for reuse or automated processing.',
+      '',
+      markdownCodeBlock(report, 'json'),
+      ''
+    );
+    return sections.join('\n');
+  }
+
+  function parseFunctionInput() {
+    const parsed = JSON.parse(inputField.value || '{}');
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+      throw new Error('Function input must be a JSON object.');
+    }
+    return parsed;
+  }
+
+  function updatePromotion() {
+    const unchangedSincePass = lastPassed &&
+      lastPassed.code === codeField.value &&
+      lastPassed.input === inputField.value;
+    let hasValidInput = true;
+    try {
+      parseFunctionInput();
+    } catch (_) {
+      hasValidInput = false;
+    }
+    promoteButton.disabled = busy || !unchangedSincePass || !hasValidInput;
+  }
+
+  function showResult(result, reportContext) {
+    output.textContent = JSON.stringify(result, null, 2);
+    lastTestReport = createTestReport(result, reportContext);
+    saveButton.disabled = false;
+    const passed = result.status === 'SUCCESS';
+    status.textContent = passed ? 'Test passed' : 'Test failed';
+    status.className = passed ? 'text-success small' : 'text-danger small';
+    lastPassed = passed
+      ? { code: codeField.value, input: inputField.value }
+      : null;
+    updatePromotion();
+  }
+
+  function showLlmResponse(result) {
+    const sections = [];
+    if (typeof result.llm_text_response === 'string' && result.llm_text_response) {
+      sections.push(result.llm_text_response);
+    }
+    if (result.tool_calls_detected?.length) {
+      sections.push(`Tool calls:\n${JSON.stringify(result.tool_calls_detected, null, 2)}`);
+    }
+    if (!sections.length) {
+      sections.push(result.message || 'No response content was returned by the model.');
+    }
+    llmResponse.textContent = sections.join('\n\n');
+    llmResponseSection.hidden = false;
+  }
+
+  async function loadModels() {
+    modelSelect.replaceChildren(new Option('Loading models…', ''));
+    try {
+      const data = await Api.getModels();
+      const models = data.models || [];
+      modelSelect.replaceChildren();
+      if (!models.length) {
+        modelSelect.appendChild(new Option(data.error || 'No models found', ''));
+        return;
+      }
+      models.forEach(model => modelSelect.appendChild(new Option(model, model)));
+      modelSelect.value = models.includes(data.default) ? data.default : models[0];
+    } catch (err) {
+      modelSelect.replaceChildren(new Option(`Could not load models: ${err.message}`, ''));
+    }
+  }
+
+  async function loadToolLibrary() {
+    try {
+      const data = await Api.getTools();
+      const tools = data.tools || [];
+      library.innerHTML = tools.length
+        ? tools.map(tool => `
+          <div class="tool-workbench-library-item">
+            <code>${esc(tool.name)}</code>
+            <span>${esc(tool.signature)}</span>
+            ${tool.custom ? `
+              <button type="button" class="btn btn-sm" data-tool-load="${esc(tool.name)}">Load</button>
+              <button type="button" class="btn btn-sm" data-tool-delete="${esc(tool.name)}">Remove</button>
+            ` : ''}
+          </div>`).join('')
+        : 'No tools registered.';
+    } catch (err) {
+      library.textContent = `Could not load tools: ${err.message}`;
+    }
+  }
+
+  async function runTest(useLlm) {
+    let functionInput;
+    if (!useLlm) {
+      try {
+        functionInput = parseFunctionInput();
+      } catch (err) {
+        lastPassed = null;
+        output.textContent = JSON.stringify({
+          status: 'ERROR',
+          error_code: 'ERR_INVALID_JSON_INPUT',
+          message: err.message
+        }, null, 2);
+        lastTestReport = createTestReport({
+          status: 'ERROR',
+          error_code: 'ERR_INVALID_JSON_INPUT',
+          message: err.message
+        });
+        saveButton.disabled = false;
+        status.textContent = 'Test failed';
+        status.className = 'text-danger small';
+        updatePromotion();
+        return;
+      }
+    }
+    if (useLlm && !modelSelect.value) {
+      status.textContent = 'Select an installed model first.';
+      status.className = 'text-danger small';
+      return;
+    }
+
+    let reportInput;
+    try {
+      reportInput = parseFunctionInput();
+    } catch (_) {
+      reportInput = inputField.value;
+    }
+    const reportContext = {
+      execution_mode: useLlm ? 'local-llm-tool-call' : 'local-python',
+      model_used: useLlm ? modelSelect.value : null,
+      function_code: codeField.value,
+      function_input: useLlm ? null : reportInput,
+      prompt: useLlm ? promptField.value : ''
+    };
+    busy = true;
+    lastPassed = null;
+    updatePromotion();
+    runButton.disabled = true;
+    llmButton.disabled = true;
+    status.textContent = useLlm ? 'Requesting local model tool call…' : 'Running with local Python…';
+    status.className = 'text-muted small';
+    output.textContent = 'Test in progress…';
+    llmResponseSection.hidden = true;
+    llmResponse.textContent = '';
+    try {
+      const result = useLlm
+        ? await Api.testToolWithLlm(modelSelect.value, codeField.value, promptField.value)
+        : await Api.executeToolTest(codeField.value, functionInput);
+      if (useLlm) {
+        showLlmResponse(result);
+        if (result.function_input !== undefined) {
+          inputField.value = JSON.stringify(result.function_input, null, 2);
+          reportContext.function_input = result.function_input;
+        }
+      }
+      showResult(result, reportContext);
+    } catch (err) {
+      const result = {
+        status: 'ERROR',
+        error_code: 'ERR_TOOL_TEST_FAILED',
+        message: err.message
+      };
+      if (useLlm) showLlmResponse(result);
+      output.textContent = JSON.stringify(result, null, 2);
+      lastTestReport = createTestReport(result, reportContext);
+      saveButton.disabled = false;
+      status.textContent = 'Test failed';
+      status.className = 'text-danger small';
+    } finally {
+      busy = false;
+      runButton.disabled = false;
+      llmButton.disabled = false;
+      updatePromotion();
+    }
+  }
+
+  runButton.addEventListener('click', () => runTest(false));
+  llmButton.addEventListener('click', () => runTest(true));
+  container.querySelector('#tw-refresh-models').addEventListener('click', loadModels);
+  library.addEventListener('click', async event => {
+    const loadButton = event.target.closest('[data-tool-load]');
+    const deleteButton = event.target.closest('[data-tool-delete]');
+    if (loadButton) {
+      try {
+        const tool = await Api.getWorkbenchTool(loadButton.dataset.toolLoad);
+        codeField.value = tool.source;
+        lastPassed = null;
+        updatePromotion();
+        status.textContent = `Loaded ${tool.name} from ${tool.path} for testing`;
+        status.className = 'text-muted small';
+      } catch (err) {
+        status.textContent = `Could not load tool: ${err.message}`;
+        status.className = 'text-danger small';
+      }
+    }
+    if (deleteButton && confirm(
+      `Remove ${deleteButton.dataset.toolDelete} from the tool library? Existing agent sessions may keep the loaded function until reset.`
+    )) {
+      try {
+        const deleted = await Api.deleteWorkbenchTool(deleteButton.dataset.toolDelete);
+        await loadToolLibrary();
+        status.textContent = `Removed ${deleted.name} from ${deleted.path}`;
+        status.className = 'text-success small';
+      } catch (err) {
+        status.textContent = `Could not remove tool: ${err.message}`;
+        status.className = 'text-danger small';
+      }
+    }
+  });
+  enableTabIndent(codeField);
+  enableTabIndent(inputField);
+  codeField.addEventListener('input', () => {
+    lastPassed = null;
+    updatePromotion();
+  });
+  inputField.addEventListener('input', () => {
+    lastPassed = null;
+    updatePromotion();
+  });
+  saveButton.addEventListener('click', async () => {
+    if (!lastTestReport) return;
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    try {
+      const saved = await Api.saveMarkdown(
+        renderTestReport(lastTestReport),
+        `novous-tool-test-${stamp}.md`
+      );
+      if (saved.locationChosen) {
+        alert(`Test results saved as ${saved.filename}.`);
+      } else {
+        alert(`Test results download started: ${saved.filename}`);
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        alert(`Could not save test results: ${err.message}`);
+      }
+    }
+  });
+  promoteButton.addEventListener('click', async () => {
+    if (!lastPassed || !confirm(
+      'Add this tested function to the tool library? Promoted code runs as trusted code in the Novous backend.'
+    )) return;
+
+    try {
+      busy = true;
+      runButton.disabled = true;
+      llmButton.disabled = true;
+      updatePromotion();
+      status.textContent = 'Verifying test and adding tool…';
+      const result = await Api.promoteTestedTool(codeField.value, parseFunctionInput());
+      output.textContent = JSON.stringify(result, null, 2);
+      status.textContent = `Added ${result.promoted.name} to the tool library`;
+      status.className = 'text-success small';
+      lastPassed = null;
+      await loadToolLibrary();
+    } catch (err) {
+      output.textContent = JSON.stringify({
+        status: 'ERROR',
+        error_code: 'ERR_TOOL_PROMOTION_FAILED',
+        message: err.message
+      }, null, 2);
+      status.textContent = 'Could not add tool';
+      status.className = 'text-danger small';
+    } finally {
+      busy = false;
+      runButton.disabled = false;
+      llmButton.disabled = false;
+      updatePromotion();
+    }
+  });
+
+  container.querySelector('#tw-reset').addEventListener('click', () => {
+    codeField.value = defaultCode;
+    inputField.value = defaultInput;
+    promptField.value = defaultPrompt;
+    output.textContent = 'Run a test to see its result.';
+    llmResponse.textContent = '';
+    llmResponseSection.hidden = true;
+    status.textContent = 'Ready';
+    status.className = 'text-muted small';
+    lastPassed = null;
+    lastTestReport = null;
+    saveButton.disabled = true;
+    updatePromotion();
+  });
+
+  loadModels();
+  loadToolLibrary();
 }
 
 `
@@ -4152,7 +4808,7 @@ EXCLUDE_DIRS = {"venv", "__pycache__", ".git", "node_modules", "dist", "build"}
 INCLUDE_EXT = {".py", ".js", ".css", ".html", ".json", ".md", ".txt", ".bat", ".sh", ".yaml", ".yml", ".cfg", ".ini"}
 SKIP_FILES = {"MASTER_COPY.md", "novous-ai-builder-prompt-v2.md"}
 
-OUT = ROOT / f"NOVOUS_APP_SNAPSHOT_{TODAY}.md"
+OUT = ROOT / "app_documentation" / f"NOVOUS_APP_SNAPSHOT_{TODAY}_new.md"
 
 
 def get_lang(ext: str) -> str:
@@ -4181,7 +4837,7 @@ def collect_files():
             continue
         if any(part in EXCLUDE_DIRS for part in path.parts):
             continue
-        if path.name in SKIP_FILES or path.name.startswith("NOVOUS_APP_SNAPSHOT"):
+        if path.name in SKIP_FILES or path.name.startswith("NOVOUS_APP_SNAPSHOT") or path.name.startswith("MASTER_COPY"):
             continue
         if path.suffix.lower() not in INCLUDE_EXT and path.name in {"Dockerfile", "Procfile"}:
             pass
@@ -4197,7 +4853,7 @@ def write_tree(f):
         if any(part in EXCLUDE_DIRS for part in path.parts):
             continue
         rel = path.relative_to(ROOT).as_posix()
-        if path.name in SKIP_FILES or path.name.startswith("NOVOUS_APP_SNAPSHOT"):
+        if path.name in SKIP_FILES or path.name.startswith("NOVOUS_APP_SNAPSHOT") or path.name.startswith("MASTER_COPY"):
             continue
         f.write(f"- {rel}{'/' if path.is_dir() else ''}\n")
     f.write("\n")
@@ -4244,10 +4900,12 @@ if __name__ == "__main__":
 `python
 """Generate a single markdown master copy of the entire Novous source tree."""
 
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "MASTER_COPY.md"
+TODAY = datetime.now().strftime("%Y%m%d")
+OUT = ROOT / "app_documentation" / f"MASTER_COPY_{TODAY}.md"
 
 INCLUDE = {".py", ".js", ".css", ".html", ".json", ".md", ".bat", ".sh"}
 EXCLUDE_DIRS = {"venv", "__pycache__", ".git", "node_modules", "test_agents"}
@@ -4259,7 +4917,7 @@ def collect() -> list[Path]:
     for path in sorted(ROOT.rglob("*")):
         if not path.is_file():
             continue
-        if path.name == "MASTER_COPY.md" or path.name == "novous-ai-builder-prompt-v2.md":
+        if path.name.startswith("MASTER_COPY") or path.name == "novous-ai-builder-prompt-v2.md":
             continue
         if path.suffix not in INCLUDE:
             continue
@@ -4395,11 +5053,12 @@ import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from test_environment import prompt_builder, test_runner
+from test_environment import prompt_builder, test_runner, tool_workbench
 
 router = APIRouter()
 
@@ -4408,6 +5067,16 @@ TEST_AGENTS_DIR = Path(__file__).resolve().parent / "test_agents"
 
 class HeaderTestRequest(BaseModel):
     agent_id: str = Field(..., min_length=1)
+
+
+class ToolWorkbenchRequest(BaseModel):
+    tool_code: str = Field(..., min_length=1, max_length=50000)
+    function_input: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolWorkbenchLLMRequest(ToolWorkbenchRequest):
+    model: str = Field(..., min_length=1, max_length=120)
+    user_prompt: str = Field(..., min_length=1, max_length=5000)
 
 
 class AssembleRequest(BaseModel):
@@ -4503,6 +5172,122 @@ def api_assemble(req: AssembleRequest):
 
 
 # --- Test runner -----------------------------------------------------------
+
+@router.post("/api/testing/tool-workbench/execute")
+def api_execute_tool_test(req: ToolWorkbenchRequest):
+    return tool_workbench.run_python_tool(req.tool_code, req.function_input)
+
+
+@router.post("/api/testing/tool-workbench/test-with-llm")
+def api_test_tool_with_llm(req: ToolWorkbenchLLMRequest):
+    try:
+        function = tool_workbench.get_function_definition(req.tool_code)
+        schema = tool_workbench.get_tool_schema(function)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        import ollama
+        response = ollama.chat(
+            model=req.model,
+            messages=[{"role": "user", "content": req.user_prompt}],
+            tools=[schema],
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"LLM tool-call request failed: {exc}") from exc
+
+    message = response.get("message", {})
+    tool_calls = message.get("tool_calls") or []
+    llm_text_response = message.get("content", "")
+    if not tool_calls:
+        return {
+            "status": "ERROR",
+            "error_code": "ERR_NO_TOOL_CALL",
+            "message": "The selected model did not return a tool call.",
+            "llm_text_response": llm_text_response,
+            "tool_calls_detected": [],
+        }
+
+    call = tool_calls[0].get("function", {})
+    if call.get("name") != function.name:
+        return {
+            "status": "ERROR",
+            "error_code": "ERR_UNEXPECTED_TOOL_CALL",
+            "message": "The model called an unexpected tool function.",
+            "llm_text_response": llm_text_response,
+            "tool_calls_detected": tool_calls,
+        }
+    arguments = call.get("arguments", {})
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except json.JSONDecodeError:
+            return {
+                "status": "ERROR",
+                "error_code": "ERR_INVALID_TOOL_ARGUMENTS",
+                "message": "The model returned invalid JSON tool arguments.",
+                "llm_text_response": llm_text_response,
+                "tool_calls_detected": tool_calls,
+            }
+    if not isinstance(arguments, dict):
+        return {
+            "status": "ERROR",
+            "error_code": "ERR_INVALID_TOOL_ARGUMENTS",
+            "message": "The model's tool arguments must be a JSON object.",
+            "llm_text_response": llm_text_response,
+            "tool_calls_detected": tool_calls,
+        }
+
+    execution = tool_workbench.run_python_tool(req.tool_code, arguments)
+    return {
+        "status": execution["status"],
+        "error_code": execution["error_code"],
+        "llm_text_response": llm_text_response,
+        "tool_calls_detected": tool_calls,
+        "function_input": arguments,
+        "tool_execution_result": execution,
+    }
+
+
+@router.post("/api/testing/tool-workbench/promote")
+def api_promote_tool(req: ToolWorkbenchRequest):
+    try:
+        function = tool_workbench.get_function_definition(req.tool_code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    execution = tool_workbench.run_python_tool(req.tool_code, req.function_input)
+    if execution["status"] != "SUCCESS":
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "The tool must pass its test before promotion.",
+                    "test_result": execution},
+        )
+
+    promoted = tool_workbench.promote_python_tool(req.tool_code, function.name)
+    return {"promoted": promoted, "test_result": execution}
+
+
+@router.get("/api/testing/tool-workbench/tools/{tool_name}")
+def api_get_workbench_tool(tool_name: str):
+    try:
+        return tool_workbench.get_custom_tool_source(tool_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/api/testing/tool-workbench/tools/{tool_name}")
+def api_delete_workbench_tool(tool_name: str):
+    try:
+        return tool_workbench.delete_custom_tool(tool_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not delete tool: {exc}") from exc
+
 
 @router.post("/api/testing/run_header_tests")
 def api_run_header_tests(req: HeaderTestRequest):
@@ -4828,18 +5613,30 @@ def assemble_prompt(selected_ids: list[str], extra_instructions: str = "") -> di
       "description": "Voice, reading level, and stylistic preferences."
     },
     {
-      "id": "tools",
-      "name": "Tool Usage",
-      "description": "When and how the agent may call tools."
-    },
-    {
       "id": "tool",
       "name": "Rule",
       "description": "Rules",
       "required_header": "Rules"
+    },
+    {
+      "id": "1",
+      "name": "Thought Process",
+      "description": "",
+      "required_header": "Thinking"
     }
   ]
 }
+
+`
+
+### test_environment/PromptBuilderFiles/parts/1/1.md
+
+`markdown
+---
+title: Thinking
+---
+
+Think through the process. Show the idea flow. And give a logical walkthrough of how you arrive at the conclusion.
 
 `
 
@@ -5007,18 +5804,6 @@ Do not skip the tool.
 Do not replace a tool result with your own knowledge or assumptions.
 
 Do not invent missing fields from a tool result.
-
-`
-
-### test_environment/PromptBuilderFiles/parts/tools/tool-rules.md
-
-`markdown
----
-title: Tool Usage Rules
----
-Call a tool whenever the answer depends on live workspace state. State which
-tool you are calling and why before calling it, then summarize the tool result
-in plain language. Never claim a tool ran if it did not.
 
 `
 
@@ -5492,6 +6277,676 @@ def run_tests_for_agent(agent_id: str) -> dict:
 
 `
 
+### test_environment/test_tool_workbench.py
+
+`python
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+from fastapi import HTTPException
+
+from core_engine import tool_catalog
+from test_environment import tool_workbench
+from test_environment.interface import (
+    ToolWorkbenchLLMRequest,
+    ToolWorkbenchRequest,
+    api_promote_tool,
+    api_test_tool_with_llm,
+)
+
+
+class ToolWorkbenchTests(unittest.TestCase):
+    def test_extracts_primary_function_and_builds_typed_schema(self):
+        function = tool_workbench.get_function_definition(
+            'def calculate(weight: float, *, region: str = "US"):\n'
+            '    """Calculate a value."""\n'
+            "    return weight\n"
+        )
+
+        schema = tool_workbench.get_tool_schema(function)["function"]
+        self.assertEqual(schema["name"], "calculate")
+        self.assertEqual(schema["parameters"]["properties"]["weight"]["type"], "number")
+        self.assertEqual(schema["parameters"]["properties"]["region"]["type"], "string")
+        self.assertEqual(schema["parameters"]["required"], ["weight"])
+
+    def test_rejects_syntax_errors_and_variadic_arguments(self):
+        with self.assertRaises(ValueError):
+            tool_workbench.get_function_definition("def broken(:\n")
+        with self.assertRaisesRegex(ValueError, "variadic"):
+            tool_workbench.get_function_definition("def unsafe(*args):\n    return args\n")
+
+    def test_runs_source_locally_and_decodes_output(self):
+        source = "def add(left: int, right: int):\n    return left + right\n"
+        result = tool_workbench.run_python_tool(source, {"left": 2, "right": 3})
+
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(result["output"], 5)
+        self.assertEqual(result["exit_code"], 0)
+
+    def test_returns_python_errors_and_times_out_long_running_code(self):
+        error_result = tool_workbench.run_python_tool(
+            "def fail():\n    raise ValueError('test error')\n", {}
+        )
+        self.assertEqual(error_result["status"], "ERROR")
+        self.assertIn("ValueError: test error", error_result["stderr"])
+
+        with patch.object(tool_workbench, "LOCAL_RUN_TIMEOUT_SECONDS", 0.1):
+            timeout_result = tool_workbench.run_python_tool(
+                "import time\ndef wait():\n    time.sleep(2)\n", {}
+            )
+        self.assertEqual(timeout_result["error_code"], "ERR_TOOL_TIMEOUT")
+
+    def test_llm_tool_call_returns_and_executes_function_arguments(self):
+        source = "def add(left: int, right: int):\n    return left + right\n"
+        arguments = {"left": 8, "right": 5}
+        execution = {"status": "SUCCESS", "error_code": None, "output": 13}
+        ollama = Mock()
+        ollama.chat.return_value = {
+            "message": {
+                "content": "",
+                "tool_calls": [{
+                    "function": {"name": "add", "arguments": arguments}
+                }],
+            }
+        }
+        request = ToolWorkbenchLLMRequest(
+            model="test-model",
+            tool_code=source,
+            user_prompt="Add eight and five.",
+        )
+
+        with patch.dict(sys.modules, {"ollama": ollama}):
+            with patch.object(
+                tool_workbench, "run_python_tool", return_value=execution
+            ) as run_tool:
+                result = api_test_tool_with_llm(request)
+
+        run_tool.assert_called_once_with(source, arguments)
+        self.assertEqual(result["function_input"], arguments)
+        self.assertEqual(result["tool_execution_result"], execution)
+
+    def test_llm_response_is_returned_when_model_does_not_call_tool(self):
+        ollama = Mock()
+        ollama.chat.return_value = {
+            "message": {
+                "content": "I could not determine the required values.",
+                "tool_calls": [],
+            }
+        }
+        request = ToolWorkbenchLLMRequest(
+            model="test-model",
+            tool_code="def add(left: int, right: int):\n    return left + right\n",
+            user_prompt="Add eight and five.",
+        )
+
+        with patch.dict(sys.modules, {"ollama": ollama}):
+            result = api_test_tool_with_llm(request)
+
+        self.assertEqual(result["status"], "ERROR")
+        self.assertEqual(result["error_code"], "ERR_NO_TOOL_CALL")
+        self.assertEqual(
+            result["llm_text_response"],
+            "I could not determine the required values.",
+        )
+        self.assertEqual(result["tool_calls_detected"], [])
+
+    def test_failed_function_execution_still_returns_llm_arguments(self):
+        source = "def divide(left: int, right: int):\n    return left // right\n"
+        arguments = {"left": 8, "right": 0}
+        execution = {
+            "status": "ERROR",
+            "error_code": "ERR_TOOL_EXECUTION",
+            "stderr": "ZeroDivisionError",
+        }
+        ollama = Mock()
+        ollama.chat.return_value = {
+            "message": {
+                "content": "Dividing eight by zero.",
+                "tool_calls": [{
+                    "function": {"name": "divide", "arguments": arguments}
+                }],
+            }
+        }
+        request = ToolWorkbenchLLMRequest(
+            model="test-model",
+            tool_code=source,
+            user_prompt="Divide eight by zero.",
+        )
+
+        with patch.dict(sys.modules, {"ollama": ollama}):
+            with patch.object(
+                tool_workbench, "run_python_tool", return_value=execution
+            ):
+                result = api_test_tool_with_llm(request)
+
+        self.assertEqual(result["status"], "ERROR")
+        self.assertEqual(result["function_input"], arguments)
+        self.assertEqual(result["llm_text_response"], "Dividing eight by zero.")
+
+    def test_unexpected_llm_tool_call_is_returned_for_diagnostics(self):
+        tool_call = {
+            "function": {"name": "other_function", "arguments": {"value": 8}}
+        }
+        ollama = Mock()
+        ollama.chat.return_value = {
+            "message": {
+                "content": "Trying an unrelated function.",
+                "tool_calls": [tool_call],
+            }
+        }
+        request = ToolWorkbenchLLMRequest(
+            model="test-model",
+            tool_code="def add(left: int, right: int):\n    return left + right\n",
+            user_prompt="Add eight and five.",
+        )
+
+        with patch.dict(sys.modules, {"ollama": ollama}):
+            result = api_test_tool_with_llm(request)
+
+        self.assertEqual(result["status"], "ERROR")
+        self.assertEqual(result["error_code"], "ERR_UNEXPECTED_TOOL_CALL")
+        self.assertEqual(result["llm_text_response"], "Trying an unrelated function.")
+        self.assertEqual(result["tool_calls_detected"], [tool_call])
+
+    def test_rejects_failed_test_before_promotion(self):
+        request = ToolWorkbenchRequest(
+            tool_code="def add(left: int, right: int):\n    return left + right\n",
+            function_input={"left": 2, "right": 3},
+        )
+        failed_result = {"status": "ERROR", "error_code": "ERR_TOOL_EXECUTION"}
+        with patch.object(tool_workbench, "run_python_tool", return_value=failed_result):
+            with patch.object(tool_workbench, "promote_python_tool") as promote:
+                with self.assertRaises(HTTPException) as error:
+                    api_promote_tool(request)
+
+        self.assertEqual(error.exception.status_code, 400)
+        promote.assert_not_called()
+
+    def test_promotes_passing_tool_into_catalog(self):
+        first_name = "workbench_test_add"
+        second_name = "workbench_test_double"
+        first_source = (
+            f"def {first_name}(left: int, right: int):\n"
+            "    return left + right\n"
+        )
+        second_source = f"def {second_name}(value: int):\n    return value * 2\n"
+        with tempfile.TemporaryDirectory() as directory:
+            tools_dir = Path(directory)
+            old_workbench_dir = tool_workbench.WORKSPACE_TOOLS_DIR
+            old_catalog_dir = tool_catalog.CUSTOM_TOOLS_DIR
+            tool_workbench.WORKSPACE_TOOLS_DIR = tools_dir
+            tool_catalog.CUSTOM_TOOLS_DIR = tools_dir
+            try:
+                promoted = api_promote_tool(ToolWorkbenchRequest(
+                    tool_code=first_source, function_input={"left": 2, "right": 3}
+                ))
+                self.assertEqual(promoted["promoted"]["name"], first_name)
+                self.assertEqual(
+                    promoted["promoted"]["path"], "workspace/tools/tool_library.py"
+                )
+                second_promoted = api_promote_tool(ToolWorkbenchRequest(
+                    tool_code=second_source, function_input={"value": 3}
+                ))
+                self.assertEqual(second_promoted["promoted"]["name"], second_name)
+                library_source = (tools_dir / "tool_library.py").read_text(
+                    encoding="utf-8"
+                )
+                self.assertLess(
+                    library_source.index(first_name), library_source.index(second_name)
+                )
+                self.assertEqual(
+                    tool_catalog.REGISTRY[first_name]["function"](2, 3), 5
+                )
+                self.assertEqual(
+                    tool_catalog.REGISTRY[second_name]["function"](3), 6
+                )
+            finally:
+                tool_catalog.REGISTRY.pop(first_name, None)
+                tool_catalog.REGISTRY.pop(second_name, None)
+                tool_catalog._LOADED_CUSTOM_TOOLS.discard(
+                    (tools_dir / "tool_library.py").resolve()
+                )
+                sys.modules.pop("novous_workspace_tool_tool_library", None)
+                tool_workbench.WORKSPACE_TOOLS_DIR = old_workbench_dir
+                tool_catalog.CUSTOM_TOOLS_DIR = old_catalog_dir
+
+    def test_custom_tool_source_can_be_loaded_and_removed_from_library(self):
+        tool_name = "workbench_library_tool"
+        remaining_name = "workbench_library_remaining"
+        source = (
+            f"def {tool_name}(value: int):\n    return value * 2\n\n\n"
+            f"def {remaining_name}(value: int):\n    return value + 1\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            tools_dir = Path(directory)
+            tool_path = tools_dir / "tool_library.py"
+            tool_path.write_text(source, encoding="utf-8")
+            old_workbench_dir = tool_workbench.WORKSPACE_TOOLS_DIR
+            old_catalog_dir = tool_catalog.CUSTOM_TOOLS_DIR
+            tool_workbench.WORKSPACE_TOOLS_DIR = tools_dir
+            tool_catalog.CUSTOM_TOOLS_DIR = tools_dir
+            try:
+                loaded = tool_workbench.get_custom_tool_source(tool_name)
+                self.assertEqual(
+                    loaded["source"],
+                    f"def {tool_name}(value: int):\n    return value * 2\n",
+                )
+                self.assertEqual(loaded["path"], "workspace/tools/tool_library.py")
+                self.assertIn(tool_name, tool_catalog.REGISTRY)
+                self.assertIn(remaining_name, tool_catalog.REGISTRY)
+
+                removed = tool_workbench.delete_custom_tool(tool_name)
+                self.assertTrue(removed["deleted"])
+                self.assertTrue(tool_path.exists())
+                self.assertNotIn(tool_name, tool_catalog.REGISTRY)
+                self.assertIn(remaining_name, tool_catalog.REGISTRY)
+                self.assertIn(remaining_name, tool_path.read_text(encoding="utf-8"))
+
+                tool_workbench.delete_custom_tool(remaining_name)
+                self.assertNotIn(remaining_name, tool_catalog.REGISTRY)
+                self.assertTrue(tool_path.exists())
+                self.assertNotIn(remaining_name, tool_path.read_text(encoding="utf-8"))
+            finally:
+                tool_catalog.REGISTRY.pop(tool_name, None)
+                tool_catalog.REGISTRY.pop(remaining_name, None)
+                tool_catalog._LOADED_CUSTOM_TOOLS.discard(tool_path.resolve())
+                sys.modules.pop("novous_workspace_tool_tool_library", None)
+                tool_workbench.WORKSPACE_TOOLS_DIR = old_workbench_dir
+                tool_catalog.CUSTOM_TOOLS_DIR = old_catalog_dir
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+`
+
+### test_environment/tool_workbench.py
+
+`python
+"""Local Python execution and promotion for user-authored Python tools."""
+
+import ast
+import importlib.util
+import inspect
+import json
+import os
+import re
+import secrets
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+from fastapi import HTTPException
+
+
+WORKSPACE_TOOLS_DIR = Path(__file__).resolve().parent.parent / "workspace" / "tools"
+TOOL_LIBRARY_TEMPLATE = '"""Custom tools promoted from the Function Testing Workbench."""\n\n'
+LOCAL_RUN_TIMEOUT_SECONDS = 5
+MAX_OUTPUT_BYTES = 64 * 1024
+_FUNCTION_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _tool_library_path() -> Path:
+    return WORKSPACE_TOOLS_DIR / "tool_library.py"
+
+
+def get_function_definition(source: str) -> ast.FunctionDef:
+    """Return the first public, top-level synchronous function in source."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise ValueError(f"Python syntax error: {exc}") from exc
+
+    functions = [
+        node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and not node.name.startswith("_")
+    ]
+    if not functions:
+        raise ValueError("Define at least one public top-level function.")
+    if isinstance(functions[0], ast.AsyncFunctionDef):
+        raise ValueError("The primary tool function must be synchronous.")
+    if not _FUNCTION_NAME.fullmatch(functions[0].name):
+        raise ValueError("The primary function name is not a valid tool name.")
+    if (functions[0].args.posonlyargs or functions[0].args.kwarg or
+            functions[0].args.vararg):
+        raise ValueError(
+            "The primary function cannot use positional-only or variadic arguments."
+        )
+    return functions[0]
+
+
+def _json_type(annotation: ast.expr | None) -> str:
+    name = None
+    if isinstance(annotation, ast.Name):
+        name = annotation.id
+    elif isinstance(annotation, ast.Attribute):
+        name = annotation.attr
+    if name:
+        return {
+            "str": "string",
+            "int": "integer",
+            "float": "number",
+            "bool": "boolean",
+            "list": "array",
+            "List": "array",
+            "dict": "object",
+            "Dict": "object",
+        }.get(name, "string")
+    if isinstance(annotation, ast.Subscript):
+        value = annotation.value
+        base_name = value.id if isinstance(value, ast.Name) else (
+            value.attr if isinstance(value, ast.Attribute) else ""
+        )
+        if base_name.lower() == "list":
+            return "array"
+        if base_name.lower() == "dict":
+            return "object"
+    return "string"
+
+
+def get_tool_schema(function: ast.FunctionDef) -> dict:
+    positional_args = function.args.args
+    positional_defaults = (
+        [None] * (len(positional_args) - len(function.args.defaults))
+        + list(function.args.defaults)
+    )
+    keyword_args = function.args.kwonlyargs
+    keyword_defaults = function.args.kw_defaults
+    properties = {}
+    required = []
+    for argument, default in (
+        list(zip(positional_args, positional_defaults))
+        + list(zip(keyword_args, keyword_defaults))
+    ):
+        properties[argument.arg] = {
+            "type": _json_type(argument.annotation),
+            "description": f"Parameter {argument.arg}",
+        }
+        if default is None:
+            required.append(argument.arg)
+    return {
+        "type": "function",
+        "function": {
+            "name": function.name,
+            "description": ast.get_docstring(function) or function.name,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": required,
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+def _local_environment(temp_dir: str) -> dict[str, str]:
+    env = {"PATH": os.environ.get("PATH", ""), "TEMP": temp_dir, "TMP": temp_dir}
+    for key in ("SYSTEMROOT", "WINDIR"):
+        if value := os.environ.get(key):
+            env[key] = value
+    if os.name == "nt":
+        env["USERPROFILE"] = temp_dir
+    else:
+        env["HOME"] = temp_dir
+    env["PYTHONIOENCODING"] = "utf-8"
+    return env
+
+
+def _read_output(output_file) -> str:
+    output_file.seek(0, os.SEEK_END)
+    size = output_file.tell()
+    output_file.seek(max(0, size - MAX_OUTPUT_BYTES))
+    text = output_file.read(MAX_OUTPUT_BYTES).decode("utf-8", errors="replace")
+    if size > MAX_OUTPUT_BYTES:
+        return f"[Earlier output truncated]\n{text}"
+    return text
+
+
+def _run_locally(source: str, arguments: dict, function_name: str) -> dict:
+    marker = f"__NOVOUS_RESULT_{secrets.token_hex(16)}__"
+    wrapper = (
+        "\n\nif __name__ == '__main__':\n"
+        "    import json as __novous_json\n"
+        "    __novous_arguments = __novous_json.loads(input() or '{}')\n"
+        f"    __novous_result = {function_name}(**__novous_arguments)\n"
+        f"    print({marker!r} + __novous_json.dumps("
+        "__novous_result, default=str))\n"
+    )
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="novous-tool-test-") as temp_dir:
+            script_path = Path(temp_dir) / "tool_test.py"
+            script_path.write_text(source + wrapper, encoding="utf-8")
+            with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+                process = subprocess.Popen(
+                    [sys.executable, "-I", str(script_path)],
+                    cwd=temp_dir,
+                    env=_local_environment(temp_dir),
+                    stdin=subprocess.PIPE,
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                )
+                try:
+                    process.communicate(
+                        input=json.dumps(arguments).encode("utf-8"),
+                        timeout=LOCAL_RUN_TIMEOUT_SECONDS,
+                    )
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.communicate()
+                    return {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "status_code": 422,
+                        "error_code": "ERR_TOOL_TIMEOUT",
+                        "status": "ERROR",
+                        "function_name": function_name,
+                        "message": (
+                            f"Local function test exceeded "
+                            f"{LOCAL_RUN_TIMEOUT_SECONDS} seconds."
+                        ),
+                        "stdout": _read_output(stdout_file),
+                        "stderr": _read_output(stderr_file),
+                        "exit_code": process.returncode,
+                    }
+
+                stdout = _read_output(stdout_file)
+                stderr = _read_output(stderr_file)
+                marker_line = next(
+                    (
+                        line for line in reversed(stdout.splitlines())
+                        if line.startswith(marker)
+                    ),
+                    None,
+                )
+                passed = process.returncode == 0 and marker_line is not None
+                try:
+                    output = json.loads(marker_line[len(marker):]) if passed else None
+                except json.JSONDecodeError:
+                    passed = False
+                    output = None
+                visible_stdout = "\n".join(
+                    line for line in stdout.splitlines() if not line.startswith(marker)
+                )
+                return {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "status_code": 200 if passed else 422,
+                    "error_code": None if passed else "ERR_TOOL_EXECUTION",
+                    "status": "SUCCESS" if passed else "ERROR",
+                    "function_name": function_name,
+                    "output": output,
+                    "stdout": visible_stdout,
+                    "stderr": stderr,
+                    "exit_code": process.returncode,
+                }
+    except OSError as exc:
+        return {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "status_code": 500,
+            "error_code": "ERR_LOCAL_RUNNER",
+            "status": "ERROR",
+            "function_name": function_name,
+            "message": f"Could not start local Python: {exc}",
+        }
+
+
+def run_python_tool(source: str, arguments: dict) -> dict:
+    try:
+        function = get_function_definition(source)
+    except ValueError as exc:
+        return {
+            "status": "ERROR",
+            "status_code": 400,
+            "error_code": "ERR_INVALID_TOOL",
+            "message": str(exc),
+        }
+
+    return _run_locally(source, arguments, function.name)
+
+
+def promote_python_tool(source: str, expected_name: str) -> dict:
+    function = get_function_definition(source)
+    if function.name != expected_name:
+        raise HTTPException(
+            status_code=400,
+            detail="The primary function changed; run the test again before adding it.",
+        )
+
+    from core_engine import tool_catalog
+
+    tool_catalog.load_custom_tools()
+    if function.name in tool_catalog.REGISTRY:
+        raise HTTPException(
+            status_code=409, detail=f"Tool '{function.name}' is already registered."
+        )
+
+    WORKSPACE_TOOLS_DIR.mkdir(parents=True, exist_ok=True)
+    destination = _tool_library_path()
+    previous_source = (
+        destination.read_text(encoding="utf-8")
+        if destination.is_file()
+        else TOOL_LIBRARY_TEMPLATE
+    )
+    addition = source.strip() + "\n"
+    separator = "" if previous_source.endswith("\n\n") else (
+        "\n" if previous_source.endswith("\n") else "\n\n"
+    )
+    destination.write_text(
+        previous_source + separator + addition, encoding="utf-8", newline="\n"
+    )
+    try:
+        tool_catalog.load_custom_tools(reload=True)
+    except Exception:
+        destination.write_text(previous_source, encoding="utf-8", newline="\n")
+        tool_catalog.load_custom_tools(reload=True)
+        raise
+
+    return {
+        "name": function.name,
+        "path": f"workspace/tools/{destination.name}",
+        "description": ast.get_docstring(function) or "",
+        "signature": str(inspect.signature(tool_catalog.REGISTRY[function.name]["function"])),
+    }
+
+
+def _tool_library_function_span(source: str, name: str) -> tuple[int, int, ast.FunctionDef]:
+    tree = ast.parse(source)
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            start_line = min(
+                (decorator.lineno for decorator in node.decorator_list),
+                default=node.lineno,
+            )
+            return start_line - 1, node.end_lineno, node
+    raise FileNotFoundError(f"Custom tool '{name}' was not found in the tool library.")
+
+
+def _function_source(source: str, name: str) -> str:
+    start, end, _ = _tool_library_function_span(source, name)
+    return "\n".join(source.splitlines()[start:end]).strip() + "\n"
+
+
+def _remove_library_function(source: str, name: str) -> str:
+    start, end, _ = _tool_library_function_span(source, name)
+    lines = source.splitlines(keepends=True)
+    del lines[start:end]
+    return "".join(lines).rstrip() + "\n"
+
+
+def get_custom_tool_source(name: str) -> dict:
+    if not _FUNCTION_NAME.fullmatch(name):
+        raise ValueError("The tool name is not valid.")
+
+    from core_engine import tool_catalog
+
+    tool_catalog.load_custom_tools()
+    meta = tool_catalog.REGISTRY.get(name)
+    if not meta or not meta["function"].__module__.startswith(
+        "novous_workspace_tool_"
+    ):
+        raise FileNotFoundError(f"Custom tool '{name}' was not found.")
+
+    path = Path(inspect.getsourcefile(meta["function"]) or "").resolve()
+    if path.parent != WORKSPACE_TOOLS_DIR.resolve() or not path.is_file():
+        raise FileNotFoundError(f"Custom tool '{name}' was not found.")
+    full_source = path.read_text(encoding="utf-8")
+    source = (
+        _function_source(full_source, name)
+        if path.name == "tool_library.py"
+        else full_source
+    )
+    return {
+        "name": name,
+        "path": f"workspace/tools/{path.name}",
+        "source": source,
+    }
+
+
+def delete_custom_tool(name: str) -> dict:
+    if not _FUNCTION_NAME.fullmatch(name):
+        raise ValueError("The tool name is not valid.")
+
+    from core_engine import tool_catalog
+
+    tool_catalog.load_custom_tools()
+    meta = tool_catalog.REGISTRY.get(name)
+    if not meta or not meta["function"].__module__.startswith(
+        "novous_workspace_tool_"
+    ):
+        raise FileNotFoundError(f"Custom tool '{name}' was not found.")
+
+    path = Path(inspect.getsourcefile(meta["function"]) or "").resolve()
+    if path.parent != WORKSPACE_TOOLS_DIR.resolve() or not path.is_file():
+        raise FileNotFoundError(f"Custom tool '{name}' was not found.")
+    previous_source = path.read_text(encoding="utf-8")
+    if path.name == "tool_library.py":
+        updated_source = _remove_library_function(previous_source, name)
+        path.write_text(updated_source, encoding="utf-8", newline="\n")
+    else:
+        path.unlink()
+
+    try:
+        tool_catalog.load_custom_tools(reload=True)
+    except Exception:
+        if path.name == "tool_library.py":
+            path.write_text(previous_source, encoding="utf-8", newline="\n")
+        else:
+            path.write_text(previous_source, encoding="utf-8", newline="\n")
+        tool_catalog.load_custom_tools(reload=True)
+        raise
+    return {
+        "name": name,
+        "path": f"workspace/tools/{path.name}",
+        "deleted": True,
+    }
+
+`
+
 ### workspace/__init__.py
 
 `python
@@ -5716,26 +7171,12 @@ Lead with the direct answer, then follow with brief supporting detail. Use bulle
 
 `
 
-### workspace/documentation/hello.txt
-
-`text
-My name is Jesus 
-I am a software developer
-Learning about AI agents
-I have built this app. 
-`
-
-### workspace/documentation/note.md
+### workspace/documentation/user_notes.md
 
 `markdown
-# User Note
-Your name is Jesus and you like blue.
-`
-
-### workspace/documentation/states.txt
-
-`text
-Alabama, Alaska, Arizona, Arkansas, California, Colorado, Connecticut, Delaware, Florida, Georgia, Hawaii, Idaho, Illinois, Indiana, Iowa, Kansas, Kentucky, Louisiana, Maine, Maryland, Massachusetts, Michigan, Minnesota, Mississippi, Missouri, Montana, Nebraska, Nevada, New Hampshire, New Jersey, New Mexico, New York, North Carolina, North Dakota, Ohio, Oklahoma, Oregon, Pennsylvania, Rhode Island, South Carolina, South Dakota, Tennessee, Texas, Utah, Vermont, Virginia, Washington, West Virginia, Wisconsin, Wyoming.
+Name: Jesus
+Preference: Blue
+Response: I have noted that your name is Jesus and that you like the color blue.
 `
 
 ### workspace/exports/sessions/chat-agent-01_20261007_221450_577212.md
@@ -5944,11 +7385,39 @@ def api_delete_squad(req: SquadRequest):
 
 `
 
-### workspace/Markdown/note.md
+### workspace/Notes/MAMA-chat-agent-01_20261007_221450_577212.md
 
 `markdown
-# User Note
-Your name is Jesus and you like blue.
+Los granitos en la piel, también conocidos como manchas o papilomas, pueden causar incomodidad. Aquí tienes algunos consejos para su manejo:
+
+1. **Limpieza:** Mantén la piel limpia y libre de irritantes. Evita el uso de productos químicos abrasivos.
+
+2. **Solar protector:** Protege tu piel del sol con protector solar de alto factor de protección UV.
+
+3. **Hierbas y productos naturales:** Algunas personas usan hierbas como el aloe vera o el manzanilla para aliviar la inflamación y el dolor. Asegúrate de probar cualquier producto natural primero en un área pequeña de la piel para comprobar la reacción.
+
+4. **Masa y exfoliación:** Realiza masajes suaves y exfoliaciones con hierbas como la almendra para mejorar la circulación y eliminar las células muertas.
+
+5. **Consultar a un dermatólogo:** Si los granitos persisten o aumentan, es recomendable consultar a un dermatólogo. Pueden sugerir tratamientos profesionales como el láser, la fotoacido y la cirugía.
+
+Recuerda que siempre es mejor consultar a un profesional de la salud si tienes dudas o preocupaciones sobre tu piel.
+`
+
+### workspace/Notes/Notes.txt
+
+`text
+Plan 1
+
+New component
+
+file structure 
+Data
+Interface
+
+Plan 2
+
+I need to develop a way to make new tools.
+First add 
 `
 
 ### workspace/project.json
@@ -6061,6 +7530,73 @@ def delete_squad(name: str) -> dict:
         raise FileNotFoundError(f"Squad not found: {name}")
     shutil.rmtree(squad_dir)
     return {"deleted": True, "id": squad_dir.name}
+
+`
+
+### workspace/states.txt
+
+`text
+Alabama
+Alaska
+Arizona
+Arkansas
+California
+Colorado
+Connecticut
+Delaware
+Florida
+Georgia
+Hawaii
+Idaho
+Illinois
+Indiana
+Iowa
+Kansas
+Kentucky
+Louisiana
+Maine
+Maryland
+Massachusetts
+Michigan
+Minnesota
+Mississippi
+Missouri
+Montana
+Nebraska
+Nevada
+New Hampshire
+New Jersey
+New Mexico
+New York
+North Carolina
+North Dakota
+Ohio
+Oklahoma
+Oregon
+Pennsylvania
+Rhode Island
+South Carolina
+South Dakota
+Tennessee
+Texas
+Utah
+`
+
+### workspace/tools/tool_library.py
+
+`python
+"""Custom tools promoted from the Function Testing Workbench."""
+
+
+def calculate_shipping(weight_kg: float, distance_km: float) -> dict:
+    """Calculate shipping fee from package weight and distance."""
+    base_rate = 5.0
+    cost = base_rate + (weight_kg * 1.5) + (distance_km * 0.05)
+    return {
+        "weight_kg": weight_kg,
+        "distance_km": distance_km,
+        "shipping_cost": round(cost, 2)
+    }
 
 `
 

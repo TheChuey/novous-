@@ -151,38 +151,53 @@ def api_test_tool_with_llm(req: ToolWorkbenchLLMRequest):
 
     message = response.get("message", {})
     tool_calls = message.get("tool_calls") or []
+    llm_text_response = message.get("content", "")
     if not tool_calls:
         return {
             "status": "ERROR",
             "error_code": "ERR_NO_TOOL_CALL",
             "message": "The selected model did not return a tool call.",
-            "llm_text_response": message.get("content", ""),
+            "llm_text_response": llm_text_response,
+            "tool_calls_detected": [],
         }
 
     call = tool_calls[0].get("function", {})
     if call.get("name") != function.name:
-        raise HTTPException(
-            status_code=422, detail="The model called an unexpected tool function."
-        )
+        return {
+            "status": "ERROR",
+            "error_code": "ERR_UNEXPECTED_TOOL_CALL",
+            "message": "The model called an unexpected tool function.",
+            "llm_text_response": llm_text_response,
+            "tool_calls_detected": tool_calls,
+        }
     arguments = call.get("arguments", {})
     if isinstance(arguments, str):
         try:
             arguments = json.loads(arguments)
-        except json.JSONDecodeError as exc:
-            raise HTTPException(
-                status_code=422, detail="The model returned invalid JSON tool arguments."
-            ) from exc
+        except json.JSONDecodeError:
+            return {
+                "status": "ERROR",
+                "error_code": "ERR_INVALID_TOOL_ARGUMENTS",
+                "message": "The model returned invalid JSON tool arguments.",
+                "llm_text_response": llm_text_response,
+                "tool_calls_detected": tool_calls,
+            }
     if not isinstance(arguments, dict):
-        raise HTTPException(
-            status_code=422, detail="The model's tool arguments must be a JSON object."
-        )
+        return {
+            "status": "ERROR",
+            "error_code": "ERR_INVALID_TOOL_ARGUMENTS",
+            "message": "The model's tool arguments must be a JSON object.",
+            "llm_text_response": llm_text_response,
+            "tool_calls_detected": tool_calls,
+        }
 
     execution = tool_workbench.run_python_tool(req.tool_code, arguments)
     return {
         "status": execution["status"],
         "error_code": execution["error_code"],
-        "llm_text_response": message.get("content", ""),
+        "llm_text_response": llm_text_response,
         "tool_calls_detected": tool_calls,
+        "function_input": arguments,
         "tool_execution_result": execution,
     }
 
@@ -203,6 +218,28 @@ def api_promote_tool(req: ToolWorkbenchRequest):
 
     promoted = tool_workbench.promote_python_tool(req.tool_code, function.name)
     return {"promoted": promoted, "test_result": execution}
+
+
+@router.get("/api/testing/tool-workbench/tools/{tool_name}")
+def api_get_workbench_tool(tool_name: str):
+    try:
+        return tool_workbench.get_custom_tool_source(tool_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/api/testing/tool-workbench/tools/{tool_name}")
+def api_delete_workbench_tool(tool_name: str):
+    try:
+        return tool_workbench.delete_custom_tool(tool_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not delete tool: {exc}") from exc
 
 
 @router.post("/api/testing/run_header_tests")

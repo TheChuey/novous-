@@ -17,9 +17,14 @@ from fastapi import HTTPException
 
 
 WORKSPACE_TOOLS_DIR = Path(__file__).resolve().parent.parent / "workspace" / "tools"
+TOOL_LIBRARY_TEMPLATE = '"""Custom tools promoted from the Function Testing Workbench."""\n\n'
 LOCAL_RUN_TIMEOUT_SECONDS = 5
 MAX_OUTPUT_BYTES = 64 * 1024
 _FUNCTION_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _tool_library_path() -> Path:
+    return WORKSPACE_TOOLS_DIR / "tool_library.py"
 
 
 def get_function_definition(source: str) -> ast.FunctionDef:
@@ -253,24 +258,121 @@ def promote_python_tool(source: str, expected_name: str) -> dict:
         )
 
     WORKSPACE_TOOLS_DIR.mkdir(parents=True, exist_ok=True)
-    destination = WORKSPACE_TOOLS_DIR / f"{function.name}.py"
+    destination = _tool_library_path()
+    previous_source = (
+        destination.read_text(encoding="utf-8")
+        if destination.is_file()
+        else TOOL_LIBRARY_TEMPLATE
+    )
+    addition = source.strip() + "\n"
+    separator = "" if previous_source.endswith("\n\n") else (
+        "\n" if previous_source.endswith("\n") else "\n\n"
+    )
+    destination.write_text(
+        previous_source + separator + addition, encoding="utf-8", newline="\n"
+    )
     try:
-        with destination.open("x", encoding="utf-8", newline="\n") as tool_file:
-            tool_file.write(source.rstrip() + "\n")
-    except FileExistsError as exc:
-        raise HTTPException(
-            status_code=409, detail=f"Tool file '{destination.name}' already exists."
-        ) from exc
-
-    try:
-        tool_catalog.load_custom_tools()
+        tool_catalog.load_custom_tools(reload=True)
     except Exception:
-        destination.unlink(missing_ok=True)
+        destination.write_text(previous_source, encoding="utf-8", newline="\n")
+        tool_catalog.load_custom_tools(reload=True)
         raise
 
     return {
         "name": function.name,
-        "path": f"tools/{destination.name}",
+        "path": f"workspace/tools/{destination.name}",
         "description": ast.get_docstring(function) or "",
         "signature": str(inspect.signature(tool_catalog.REGISTRY[function.name]["function"])),
+    }
+
+
+def _tool_library_function_span(source: str, name: str) -> tuple[int, int, ast.FunctionDef]:
+    tree = ast.parse(source)
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            start_line = min(
+                (decorator.lineno for decorator in node.decorator_list),
+                default=node.lineno,
+            )
+            return start_line - 1, node.end_lineno, node
+    raise FileNotFoundError(f"Custom tool '{name}' was not found in the tool library.")
+
+
+def _function_source(source: str, name: str) -> str:
+    start, end, _ = _tool_library_function_span(source, name)
+    return "\n".join(source.splitlines()[start:end]).strip() + "\n"
+
+
+def _remove_library_function(source: str, name: str) -> str:
+    start, end, _ = _tool_library_function_span(source, name)
+    lines = source.splitlines(keepends=True)
+    del lines[start:end]
+    return "".join(lines).rstrip() + "\n"
+
+
+def get_custom_tool_source(name: str) -> dict:
+    if not _FUNCTION_NAME.fullmatch(name):
+        raise ValueError("The tool name is not valid.")
+
+    from core_engine import tool_catalog
+
+    tool_catalog.load_custom_tools()
+    meta = tool_catalog.REGISTRY.get(name)
+    if not meta or not meta["function"].__module__.startswith(
+        "novous_workspace_tool_"
+    ):
+        raise FileNotFoundError(f"Custom tool '{name}' was not found.")
+
+    path = Path(inspect.getsourcefile(meta["function"]) or "").resolve()
+    if path.parent != WORKSPACE_TOOLS_DIR.resolve() or not path.is_file():
+        raise FileNotFoundError(f"Custom tool '{name}' was not found.")
+    full_source = path.read_text(encoding="utf-8")
+    source = (
+        _function_source(full_source, name)
+        if path.name == "tool_library.py"
+        else full_source
+    )
+    return {
+        "name": name,
+        "path": f"workspace/tools/{path.name}",
+        "source": source,
+    }
+
+
+def delete_custom_tool(name: str) -> dict:
+    if not _FUNCTION_NAME.fullmatch(name):
+        raise ValueError("The tool name is not valid.")
+
+    from core_engine import tool_catalog
+
+    tool_catalog.load_custom_tools()
+    meta = tool_catalog.REGISTRY.get(name)
+    if not meta or not meta["function"].__module__.startswith(
+        "novous_workspace_tool_"
+    ):
+        raise FileNotFoundError(f"Custom tool '{name}' was not found.")
+
+    path = Path(inspect.getsourcefile(meta["function"]) or "").resolve()
+    if path.parent != WORKSPACE_TOOLS_DIR.resolve() or not path.is_file():
+        raise FileNotFoundError(f"Custom tool '{name}' was not found.")
+    previous_source = path.read_text(encoding="utf-8")
+    if path.name == "tool_library.py":
+        updated_source = _remove_library_function(previous_source, name)
+        path.write_text(updated_source, encoding="utf-8", newline="\n")
+    else:
+        path.unlink()
+
+    try:
+        tool_catalog.load_custom_tools(reload=True)
+    except Exception:
+        if path.name == "tool_library.py":
+            path.write_text(previous_source, encoding="utf-8", newline="\n")
+        else:
+            path.write_text(previous_source, encoding="utf-8", newline="\n")
+        tool_catalog.load_custom_tools(reload=True)
+        raise
+    return {
+        "name": name,
+        "path": f"workspace/tools/{path.name}",
+        "deleted": True,
     }

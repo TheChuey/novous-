@@ -192,6 +192,9 @@ def list_tools() -> list[dict]:
             "provider": meta["provider"],
             "description": meta["description"],
             "signature": meta["signature"],
+            "custom": meta["function"].__module__.startswith(
+                "novous_workspace_tool_"
+            ),
         }
         for meta in REGISTRY.values()
     ]
@@ -210,8 +213,20 @@ def get_tools(names: list[str] | None = None) -> list[Callable]:
     return resolved
 
 
-def load_custom_tools() -> None:
+def load_custom_tools(reload: bool = False) -> None:
     """Load promoted workspace tools into the runtime registry."""
+    if reload:
+        custom_names = [
+            name for name, meta in REGISTRY.items()
+            if meta["function"].__module__.startswith("novous_workspace_tool_")
+        ]
+        for name in custom_names:
+            REGISTRY.pop(name, None)
+        for module_name in list(sys.modules):
+            if module_name.startswith("novous_workspace_tool_"):
+                sys.modules.pop(module_name, None)
+        _LOADED_CUSTOM_TOOLS.clear()
+
     if not CUSTOM_TOOLS_DIR.is_dir():
         return
 
@@ -219,8 +234,6 @@ def load_custom_tools() -> None:
         resolved_path = path.resolve()
         if resolved_path in _LOADED_CUSTOM_TOOLS:
             continue
-        if path.stem in REGISTRY:
-            raise ValueError(f"Custom tool '{path.stem}' conflicts with a registered tool.")
 
         module_name = f"novous_workspace_tool_{path.stem}"
         spec = importlib.util.spec_from_file_location(module_name, resolved_path)
@@ -234,21 +247,51 @@ def load_custom_tools() -> None:
             sys.modules.pop(module_name, None)
             raise
 
-        function = getattr(module, path.stem, None)
-        if not inspect.isfunction(function) or function.__module__ != module_name:
+        if path.name == "tool_library.py":
+            functions = []
+            function_names = set()
+            for node in ast.parse(path.read_text(encoding="utf-8")).body:
+                if isinstance(node, ast.AsyncFunctionDef) and not node.name.startswith("_"):
+                    raise ValueError(
+                        f"Tool library function '{node.name}' must be synchronous."
+                    )
+                if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
+                    if node.name in function_names:
+                        raise ValueError(
+                            f"Tool library defines '{node.name}' more than once."
+                        )
+                    function_names.add(node.name)
+                    function = getattr(module, node.name, None)
+                    if not inspect.isfunction(function) or function.__module__ != module_name:
+                        raise ValueError(
+                            f"Could not load tool library function '{node.name}'."
+                        )
+                    functions.append((node.name, function))
+        else:
+            function = getattr(module, path.stem, None)
+            if not inspect.isfunction(function) or function.__module__ != module_name:
+                sys.modules.pop(module_name, None)
+                raise ValueError(
+                    f"Custom tool module '{path.name}' must define a function named '{path.stem}'."
+                )
+            functions = [(path.stem, function)]
+
+        conflicts = [name for name, _ in functions if name in REGISTRY]
+        if conflicts:
             sys.modules.pop(module_name, None)
             raise ValueError(
-                f"Custom tool module '{path.name}' must define a function named '{path.stem}'."
+                f"Custom tool '{conflicts[0]}' conflicts with a registered tool."
             )
 
-        doc = inspect.getdoc(function) or ""
-        function.name = path.stem
-        function.provider = "core_engine"
-        REGISTRY[path.stem] = {
-            "name": path.stem,
-            "function": function,
-            "provider": "core_engine",
-            "description": doc.splitlines() if doc else "",
-            "signature": str(inspect.signature(function)),
-        }
+        for name, function in functions:
+            doc = inspect.getdoc(function) or ""
+            function.name = name
+            function.provider = "core_engine"
+            REGISTRY[name] = {
+                "name": name,
+                "function": function,
+                "provider": "core_engine",
+                "description": doc.splitlines() if doc else "",
+                "signature": str(inspect.signature(function)),
+            }
         _LOADED_CUSTOM_TOOLS.add(resolved_path)

@@ -106,6 +106,7 @@ function renderToolWorkbench(container) {
         <label class="tool-workbench-field">
           <span>Function input (JSON)</span>
           <textarea id="tw-input" class="tool-workbench-editor" rows="5" spellcheck="false"></textarea>
+          <span class="text-muted small">When the model calls the function, this shows the arguments it sent. If it makes no valid call, the current JSON is left unchanged.</span>
         </label>
         <label class="tool-workbench-field">
           <span>Prompt for LLM tool calling</span>
@@ -120,12 +121,17 @@ function renderToolWorkbench(container) {
                 title="Run a successful test before adding a tool">Add Passed Tool to Library</button>
         <span id="tw-status" class="text-muted small" role="status">Ready</span>
       </div>
+      <label id="tw-llm-response-section" class="tool-workbench-field" hidden>
+        <span>LLM response / tool call</span>
+        <pre id="tw-llm-response" class="tool-workbench-output" aria-live="polite"></pre>
+      </label>
       <label class="tool-workbench-field">
         <span>Test output</span>
         <pre id="tw-output" class="tool-workbench-output" aria-live="polite">Run a test to see its result.</pre>
       </label>
       <div class="tool-workbench-library">
         <h4>Registered Tool Library</h4>
+        <p class="text-muted small">Promoted functions are appended to <code>workspace/tools/tool_library.py</code> so the library can be committed as one module.</p>
         <div id="tw-library" class="text-muted small">Loading tools…</div>
       </div>
       <p class="text-muted small">Promoted code is trusted application code and will run in the Novous backend when an agent invokes it.</p>
@@ -140,6 +146,8 @@ function renderToolWorkbench(container) {
   const saveButton = container.querySelector('#tw-save');
   const promoteButton = container.querySelector('#tw-promote');
   const output = container.querySelector('#tw-output');
+  const llmResponseSection = container.querySelector('#tw-llm-response-section');
+  const llmResponse = container.querySelector('#tw-llm-response');
   const status = container.querySelector('#tw-status');
   const library = container.querySelector('#tw-library');
 
@@ -182,7 +190,9 @@ function renderToolWorkbench(container) {
       execution_mode: context.execution_mode || 'local-python',
       model_used: context.model_used || null,
       function_code: context.function_code ?? codeField.value,
-      function_input: context.function_input ?? inputField.value,
+      function_input: Object.prototype.hasOwnProperty.call(context, 'function_input')
+        ? context.function_input
+        : inputField.value,
       prompt: context.prompt ?? '',
       test_output: result
     };
@@ -301,6 +311,21 @@ function renderToolWorkbench(container) {
     updatePromotion();
   }
 
+  function showLlmResponse(result) {
+    const sections = [];
+    if (typeof result.llm_text_response === 'string' && result.llm_text_response) {
+      sections.push(result.llm_text_response);
+    }
+    if (result.tool_calls_detected?.length) {
+      sections.push(`Tool calls:\n${JSON.stringify(result.tool_calls_detected, null, 2)}`);
+    }
+    if (!sections.length) {
+      sections.push(result.message || 'No response content was returned by the model.');
+    }
+    llmResponse.textContent = sections.join('\n\n');
+    llmResponseSection.hidden = false;
+  }
+
   async function loadModels() {
     modelSelect.replaceChildren(new Option('Loading models…', ''));
     try {
@@ -323,7 +348,15 @@ function renderToolWorkbench(container) {
       const data = await Api.getTools();
       const tools = data.tools || [];
       library.innerHTML = tools.length
-        ? tools.map(tool => `<div class="tool-workbench-library-item"><code>${esc(tool.name)}</code> <span>${esc(tool.signature)}</span></div>`).join('')
+        ? tools.map(tool => `
+          <div class="tool-workbench-library-item">
+            <code>${esc(tool.name)}</code>
+            <span>${esc(tool.signature)}</span>
+            ${tool.custom ? `
+              <button type="button" class="btn btn-sm" data-tool-load="${esc(tool.name)}">Load</button>
+              <button type="button" class="btn btn-sm" data-tool-delete="${esc(tool.name)}">Remove</button>
+            ` : ''}
+          </div>`).join('')
         : 'No tools registered.';
     } catch (err) {
       library.textContent = `Could not load tools: ${err.message}`;
@@ -370,7 +403,7 @@ function renderToolWorkbench(container) {
       execution_mode: useLlm ? 'local-llm-tool-call' : 'local-python',
       model_used: useLlm ? modelSelect.value : null,
       function_code: codeField.value,
-      function_input: reportInput,
+      function_input: useLlm ? null : reportInput,
       prompt: useLlm ? promptField.value : ''
     };
     busy = true;
@@ -381,10 +414,19 @@ function renderToolWorkbench(container) {
     status.textContent = useLlm ? 'Requesting local model tool call…' : 'Running with local Python…';
     status.className = 'text-muted small';
     output.textContent = 'Test in progress…';
+    llmResponseSection.hidden = true;
+    llmResponse.textContent = '';
     try {
       const result = useLlm
         ? await Api.testToolWithLlm(modelSelect.value, codeField.value, promptField.value)
         : await Api.executeToolTest(codeField.value, functionInput);
+      if (useLlm) {
+        showLlmResponse(result);
+        if (result.function_input !== undefined) {
+          inputField.value = JSON.stringify(result.function_input, null, 2);
+          reportContext.function_input = result.function_input;
+        }
+      }
       showResult(result, reportContext);
     } catch (err) {
       const result = {
@@ -392,6 +434,7 @@ function renderToolWorkbench(container) {
         error_code: 'ERR_TOOL_TEST_FAILED',
         message: err.message
       };
+      if (useLlm) showLlmResponse(result);
       output.textContent = JSON.stringify(result, null, 2);
       lastTestReport = createTestReport(result, reportContext);
       saveButton.disabled = false;
@@ -408,6 +451,36 @@ function renderToolWorkbench(container) {
   runButton.addEventListener('click', () => runTest(false));
   llmButton.addEventListener('click', () => runTest(true));
   container.querySelector('#tw-refresh-models').addEventListener('click', loadModels);
+  library.addEventListener('click', async event => {
+    const loadButton = event.target.closest('[data-tool-load]');
+    const deleteButton = event.target.closest('[data-tool-delete]');
+    if (loadButton) {
+      try {
+        const tool = await Api.getWorkbenchTool(loadButton.dataset.toolLoad);
+        codeField.value = tool.source;
+        lastPassed = null;
+        updatePromotion();
+        status.textContent = `Loaded ${tool.name} from ${tool.path} for testing`;
+        status.className = 'text-muted small';
+      } catch (err) {
+        status.textContent = `Could not load tool: ${err.message}`;
+        status.className = 'text-danger small';
+      }
+    }
+    if (deleteButton && confirm(
+      `Remove ${deleteButton.dataset.toolDelete} from the tool library? Existing agent sessions may keep the loaded function until reset.`
+    )) {
+      try {
+        const deleted = await Api.deleteWorkbenchTool(deleteButton.dataset.toolDelete);
+        await loadToolLibrary();
+        status.textContent = `Removed ${deleted.name} from ${deleted.path}`;
+        status.className = 'text-success small';
+      } catch (err) {
+        status.textContent = `Could not remove tool: ${err.message}`;
+        status.className = 'text-danger small';
+      }
+    }
+  });
   enableTabIndent(codeField);
   enableTabIndent(inputField);
   codeField.addEventListener('input', () => {
@@ -475,6 +548,8 @@ function renderToolWorkbench(container) {
     inputField.value = defaultInput;
     promptField.value = defaultPrompt;
     output.textContent = 'Run a test to see its result.';
+    llmResponse.textContent = '';
+    llmResponseSection.hidden = true;
     status.textContent = 'Ready';
     status.className = 'text-muted small';
     lastPassed = null;
