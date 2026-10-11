@@ -65,19 +65,23 @@ export const Api = {
     return get('/api/agents');
   },
 
-  async createAgent(agentId, name, description, mode = 'chat', squad = '') {
+  async createAgent(agentId, name, description, mode = 'chat', squad = '', environment = 'workspace') {
     return send('POST', '/api/agents/create', {
-      agent_id: agentId, name, description, mode, squad
+      agent_id: agentId, name, description, mode, squad, environment
     });
   },
 
-  async deleteAgent(agentId) {
-    return send('DELETE', `/api/agents/${encodeURIComponent(agentId)}`);
+  async deleteAgent(agentId, environment = 'workspace') {
+    return send('DELETE', `/api/agents/${encodeURIComponent(agentId)}?environment=${encodeURIComponent(environment)}`);
   },
 
-  async sendMessage(message, agentId, model = 'qwen2.5-coder:latest', sessionId = null) {
+  async getCodeBuilderAgents() {
+    return get('/api/codebuilder/agents');
+  },
+
+  async sendMessage(message, agentId, model = 'qwen2.5-coder:latest', sessionId = null, environment = 'workspace') {
     return send('POST', '/api/chat', {
-      message, agent_id: agentId, model, session_id: sessionId
+      message, agent_id: agentId, model, session_id: sessionId, environment
     });
   },
 
@@ -214,8 +218,8 @@ export const Api = {
     });
   },
 
-  async runHeaderTests(agentId) {
-    return send('POST', '/api/testing/run_header_tests', { agent_id: agentId });
+  async runHeaderTests(agentId, environment = 'workspace') {
+    return send('POST', '/api/testing/run_header_tests', { agent_id: agentId, environment });
   },
 
   async executeToolTest(toolCode, functionInput = {}) {
@@ -240,8 +244,10 @@ export const Api = {
     return send('POST', '/api/testing/evaluate_markdown', { markdown, agent_id: agentId });
   },
 
-  async publishAgent(agentId, label = '', markdown) {
-    return send('POST', '/api/testing/publish', { agent_id: agentId, label, markdown });
+  async publishAgent(agentId, label = '', markdown, environment = 'workspace') {
+    return send('POST', '/api/testing/publish', {
+      agent_id: agentId, label, markdown, environment
+    });
   },
 
   async getTestFixtures() {

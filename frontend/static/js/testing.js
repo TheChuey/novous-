@@ -15,7 +15,7 @@ export function renderTestingView(container) {
       </div>
       <div class="form-row">
         <select id="ht-agent" class="form-select">
-          <option value="">Loading workspace agents…</option>
+          <option value="">Loading agents…</option>
         </select>
       </div>
       <div id="ht-results" class="ht-results mt-3">
@@ -26,10 +26,13 @@ export function renderTestingView(container) {
   const agentSel = container.querySelector('#ht-agent');
   const results = container.querySelector('#ht-results');
 
-  Api.getAgents().then(data => {
-    const agents = data.agents || [];
+  Promise.all([Api.getAgents(), Api.getCodeBuilderAgents()]).then(([workspaceData, codeBuilderData]) => {
+    const agents = [
+      ...(workspaceData.agents || []).map(agent => ({ ...agent, environment: 'workspace' })),
+      ...(codeBuilderData.agents || []).map(agent => ({ ...agent, environment: 'codebuilder' }))
+    ];
     agentSel.innerHTML = agents.length
-      ? agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.id)})</option>`).join('')
+      ? agents.map(agent => `<option value="${esc(agent.id)}" data-environment="${agent.environment}">${esc(agent.name)} (${esc(agent.id)}) · ${agent.environment === 'codebuilder' ? 'CodeBuilder' : 'Workspace'}</option>`).join('')
       : '<option value="">No agents found</option>';
   }).catch(err => {
     agentSel.innerHTML = `<option value="">Error: ${esc(err.message)}</option>`;
@@ -69,7 +72,8 @@ export function renderTestingView(container) {
     if (!agentSel.value) return;
     results.innerHTML = '<p class="text-muted">Executing header battery evaluation...</p>';
     try {
-      const report = await Api.runHeaderTests(agentSel.value);
+      const environment = agentSel.selectedOptions[0]?.dataset.environment || 'workspace';
+      const report = await Api.runHeaderTests(agentSel.value, environment);
       results.innerHTML = renderReport(report);
     } catch (err) {
       results.innerHTML = `<p class="text-danger">Error: ${esc(err.message)}</p>`;

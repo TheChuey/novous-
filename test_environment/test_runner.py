@@ -147,12 +147,12 @@ def run_header_tests(md_text: str, agent_id: str = "") -> dict:
     }
 
 
-def run_tests_for_agent(agent_id: str) -> dict:
-    """Locate workspace/agents/<id>/agent.md and run the battery against it."""
+def run_tests_for_agent(agent_id: str, environment: str = "workspace") -> dict:
+    """Locate an agent profile in its environment and run the header battery."""
     from core_engine.agent_factory import find_agent_dir
-    agent_dir = find_agent_dir(agent_id)
+    agent_dir = find_agent_dir(agent_id, environment)
     if not agent_dir:
-        raise FileNotFoundError(f"Agent not found: {agent_id}")
+        raise FileNotFoundError(f"Agent not found in {environment}: {agent_id}")
     md_path = agent_dir / "agent.md"
     md_text = md_path.read_text(encoding="utf-8") if md_path.is_file() else ""
     report = run_header_tests(md_text, agent_id)

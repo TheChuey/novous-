@@ -34,5 +34,31 @@
     "label": "snapshot",
     "snapshot": "agent-01__snapshot__20261008-042917",
     "published_at": "2026-10-08T04:29:17.034009+00:00"
+  },
+  {
+    "agent_id": "codingagent",
+    "label": "snapshot",
+    "snapshot": "codingagent__snapshot__20261010-234451",
+    "published_at": "2026-10-10T23:44:51.916373+00:00"
+  },
+  {
+    "agent_id": "codingagent",
+    "label": "snapshot",
+    "snapshot": "codingagent__snapshot__20261010-234544",
+    "published_at": "2026-10-10T23:45:44.081798+00:00"
+  },
+  {
+    "agent_id": "codingagent",
+    "environment": "codebuilder",
+    "label": "snapshot",
+    "snapshot": "codebuilder__codingagent__snapshot__20261011-000732",
+    "published_at": "2026-10-11T00:07:32.771135+00:00"
+  },
+  {
+    "agent_id": "codingagent",
+    "environment": "codebuilder",
+    "label": "snapshot",
+    "snapshot": "codebuilder__codingagent__snapshot__20261011-001037",
+    "published_at": "2026-10-11T00:10:37.095313+00:00"
   }
 ]

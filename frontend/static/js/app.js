@@ -4,6 +4,7 @@ import { renderEditorView } from './editor.js';
 import { renderChatView } from './chat.js';
 import { renderPromptCreationView } from './prompt_creation.js';
 import { renderTestingView } from './testing.js';
+import { renderCodeBuilderView } from './codebuilder/codebuilder.js';
 
 export const AppState = {
   activeTab: 'dashboard',
@@ -16,6 +17,7 @@ export const AppState = {
 const views = {
   dashboard: renderDashboardView,
   editor: renderEditorView,
+  codebuilder: renderCodeBuilderView,
   chat: renderChatView,
   'prompt-creation': renderPromptCreationView,
   testing: renderTestingView
@@ -60,6 +62,10 @@ function renderDashboardView(container) {
             </div>
             <div class="form-row">
               <input id="na-desc" class="form-input" placeholder="Description">
+              <select id="na-environment" class="form-select" aria-label="Agent environment">
+                <option value="workspace">Workspace</option>
+                <option value="codebuilder">CodeBuilder</option>
+              </select>
               <select id="na-mode" class="form-select">
                 <option value="chat">chat</option>
                 <option value="agent">agent</option>
@@ -70,6 +76,10 @@ function renderDashboardView(container) {
           </div>
           <div class="agent-cards" id="dash-agent-cards">
             ${agents.length ? '' : '<p class="text-muted">No agents yet. Create your first one.</p>'}
+          </div>
+          <div class="card-head mt-3"><h3>CodeBuilder Agents</h3></div>
+          <div class="agent-cards" id="dash-codebuilder-agent-cards">
+            <p class="text-muted">Loading CodeBuilder agents…</p>
           </div>
         </section>
 
@@ -104,6 +114,7 @@ function renderDashboardView(container) {
   `;
 
   const cards = container.querySelector('#dash-agent-cards');
+  const codeBuilderCards = container.querySelector('#dash-codebuilder-agent-cards');
   agents.forEach(a => {
     const el = document.createElement('div');
     el.className = 'agent-card';
@@ -127,9 +138,50 @@ function renderDashboardView(container) {
     else if (t.dataset.edit) { switchTab('editor', `agents/${t.dataset.edit}/agent.md`); }
     else if (t.dataset.delete) {
       if (!confirm(`Delete agent "${t.dataset.delete}"?`)) return;
-      try { await Api.deleteAgent(t.dataset.delete); await refreshAgents(); renderDashboardView(container); }
+      try { await Api.deleteAgent(t.dataset.delete, 'workspace'); await refreshAgents(); renderDashboardView(container); }
       catch (err) { alert(err.message); }
     }
+  });
+
+  function renderCodeBuilderAgentCards(codeBuilderAgents) {
+    codeBuilderCards.replaceChildren();
+    if (!codeBuilderAgents.length) {
+      codeBuilderCards.innerHTML = '<p class="text-muted">No CodeBuilder agents yet.</p>';
+      return;
+    }
+    codeBuilderAgents.forEach(agent => {
+      const el = document.createElement('div');
+      el.className = 'agent-card';
+      el.innerHTML = `
+        <div class="agent-card-head">
+          <strong>${esc(agent.name)}</strong>
+          <span class="badge badge-accent">CodeBuilder</span>
+        </div>
+        <p class="text-muted">${esc(agent.description || 'No description.')}</p>
+        <div class="agent-card-actions">
+          <a class="btn btn-sm" href="/codebuilder">Open CodeBuilder</a>
+          <button class="btn btn-sm btn-danger" data-codebuilder-delete="${esc(agent.id)}">Delete</button>
+        </div>`;
+      codeBuilderCards.appendChild(el);
+    });
+  }
+
+  Api.getCodeBuilderAgents().then(data => {
+    renderCodeBuilderAgentCards(data.agents || []);
+  }).catch(err => {
+    codeBuilderCards.innerHTML = `<p class="text-danger">Could not load CodeBuilder agents: ${esc(err.message)}</p>`;
+  });
+
+  codeBuilderCards.addEventListener('click', async e => {
+    const button = e.target.closest('[data-codebuilder-delete]');
+    if (!button) return;
+    const agentId = button.dataset.codebuilderDelete;
+    if (!confirm(`Delete CodeBuilder agent "${agentId}"?`)) return;
+    try {
+      await Api.deleteAgent(agentId, 'codebuilder');
+      const data = await Api.getCodeBuilderAgents();
+      renderCodeBuilderAgentCards(data.agents || []);
+    } catch (err) { alert(err.message); }
   });
 
   container.querySelector('#dash-new-agent').onclick = () =>
@@ -140,10 +192,11 @@ function renderDashboardView(container) {
     const name = container.querySelector('#na-name').value.trim();
     const desc = container.querySelector('#na-desc').value.trim();
     const mode = container.querySelector('#na-mode').value;
+    const environment = container.querySelector('#na-environment').value;
     const errBox = container.querySelector('#na-error');
     errBox.classList.add('hidden');
     try {
-      await Api.createAgent(id, name || id, desc, mode);
+      await Api.createAgent(id, name || id, desc, mode, '', environment);
       await refreshAgents();
       renderDashboardView(container);
     } catch (err) { errBox.textContent = err.message; errBox.classList.remove('hidden'); }
@@ -234,7 +287,8 @@ async function boot() {
     updateHealthBadge(h);
   } catch (_) { /* badge stays default */ }
 
-  switchTab('dashboard');
+  const requestedTab = new URLSearchParams(window.location.search).get('tab');
+  switchTab(Object.prototype.hasOwnProperty.call(views, requestedTab) ? requestedTab : 'dashboard');
 }
 
 boot();

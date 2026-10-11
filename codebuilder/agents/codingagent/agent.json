@@ -1,7 +1,7 @@
 {
-  "id": "agent-01",
-  "name": "AgentTest",
-  "description": "test agent and tools",
+  "id": "codingagent",
+  "name": "CodingAgent",
+  "description": "Agent that will write code inpython",
   "mode": "agent",
   "model": "qwen2.5-coder:latest",
   "squad": "",
@@ -11,6 +11,7 @@
     "write_file",
     "create_file",
     "list_directory",
-    "project_status"
-  ]
+    "run_python_code"
+  ],
+  "environment": "codebuilder"
 }

@@ -6,7 +6,7 @@ import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -20,6 +20,7 @@ TEST_AGENTS_DIR = Path(__file__).resolve().parent / "test_agents"
 
 class HeaderTestRequest(BaseModel):
     agent_id: str = Field(..., min_length=1)
+    environment: Literal["workspace", "codebuilder"] = "workspace"
 
 
 class ToolWorkbenchRequest(BaseModel):
@@ -41,6 +42,7 @@ class PublishRequest(BaseModel):
     agent_id: str = Field(..., min_length=1)
     label: str = ""
     markdown: str = Field(..., min_length=1)
+    environment: Literal["workspace", "codebuilder"] = "workspace"
 
 
 class AddCategoryRequest(BaseModel):
@@ -245,7 +247,7 @@ def api_delete_workbench_tool(tool_name: str):
 @router.post("/api/testing/run_header_tests")
 def api_run_header_tests(req: HeaderTestRequest):
     try:
-        return test_runner.run_tests_for_agent(req.agent_id)
+        return test_runner.run_tests_for_agent(req.agent_id, req.environment)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -263,9 +265,12 @@ def api_publish(req: PublishRequest):
     """Save a prompt to its agent profile and archive the updated definition."""
     from core_engine.agent_factory import find_agent_dir, parse_markdown_sections
 
-    agent_dir = find_agent_dir(req.agent_id)
+    agent_dir = find_agent_dir(req.agent_id, req.environment)
     if not agent_dir:
-        raise HTTPException(status_code=404, detail=f"Agent not found: {req.agent_id}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Agent not found in {req.environment}: {req.agent_id}",
+        )
 
     json_path = agent_dir / "agent.json"
     try:
@@ -292,7 +297,8 @@ def api_publish(req: PublishRequest):
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     label = re.sub(r"[^A-Za-z0-9_-]+", "-", (req.label or req.agent_id).strip()).strip("-_")
     label = label or req.agent_id
-    dest = TEST_AGENTS_DIR / f"{req.agent_id}__{label}__{stamp}"
+    snapshot_prefix = f"{req.environment}__" if req.environment != "workspace" else ""
+    dest = TEST_AGENTS_DIR / f"{snapshot_prefix}{req.agent_id}__{label}__{stamp}"
     dest.mkdir(parents=True, exist_ok=True)
     for src in agent_dir.iterdir():
         if src.is_file():
@@ -307,15 +313,19 @@ def api_publish(req: PublishRequest):
             manifest = []
     manifest.append({
         "agent_id": req.agent_id,
+        "environment": req.environment,
         "label": label,
         "snapshot": dest.name,
         "published_at": datetime.now(timezone.utc).isoformat(),
     })
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
-    report = test_runner.run_tests_for_agent(req.agent_id)
-    return {"saved": True, "path": f"agents/{req.agent_id}/agent.md",
-            "metadata_path": f"agents/{req.agent_id}/agent.json",
+    report = test_runner.run_header_tests(markdown, req.agent_id)
+    agent_path = f"{'codebuilder/' if req.environment == 'codebuilder' else ''}agents/{req.agent_id}"
+    report["source"] = f"{agent_path}/agent.md"
+    return {"saved": True, "path": f"{agent_path}/agent.md",
+            "metadata_path": f"{agent_path}/agent.json",
+            "environment": req.environment,
             "snapshot": dest.name, "snapshot_path": f"test_agents/{dest.name}",
             "header_report": report}
 

@@ -3,6 +3,7 @@
 import re
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
@@ -25,6 +26,7 @@ class CreateAgentRequest(BaseModel):
     description: str = ""
     mode: str = "chat"
     squad: str = ""
+    environment: Literal["workspace", "codebuilder"] = "workspace"
 
 
 class ChatRequest(BaseModel):
@@ -32,6 +34,7 @@ class ChatRequest(BaseModel):
     agent_id: str
     model: str = "qwen2.5-coder:latest"
     session_id: str | None = None
+    environment: Literal["workspace", "codebuilder"] = "workspace"
 
 
 class ExportSessionRequest(BaseModel):
@@ -39,10 +42,11 @@ class ExportSessionRequest(BaseModel):
 
 
 def run_single_agent(agent_id: str, message: str, model: str | None = None,
-                     session_id: str | None = None) -> dict:
+                     session_id: str | None = None,
+                     environment: str = "workspace") -> dict:
     """Doorway function: run one agent turn through the Think-Act-Observe loop."""
     try:
-        profile = agent_factory.load_agent(agent_id)
+        profile = agent_factory.load_agent(agent_id, environment)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -76,7 +80,7 @@ def run_single_agent(agent_id: str, message: str, model: str | None = None,
 
 def list_agents() -> list[dict]:
     """Doorway function: list all canonical agents from workspace/agents/."""
-    return agent_factory.list_agents()
+    return agent_factory.list_agents("workspace")
 
 
 def reset_session(session_id: str) -> bool:
@@ -98,6 +102,7 @@ def api_create_agent(req: CreateAgentRequest):
             description=req.description.strip(),
             mode=req.mode if req.mode in ("chat", "agent") else "chat",
             squad=req.squad.strip(),
+            environment=getattr(req, "environment", "workspace"),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -105,10 +110,10 @@ def api_create_agent(req: CreateAgentRequest):
 
 
 @router.delete("/api/agents/{agent_id}")
-def api_delete_agent(agent_id: str):
+def api_delete_agent(agent_id: str, environment: str = "workspace"):
     from workspace import workspace_workflow
     try:
-        return workspace_workflow.delete_agent(agent_id)
+        return workspace_workflow.delete_agent(agent_id, environment)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
@@ -120,7 +125,8 @@ async def api_chat(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message must not be empty.")
     result = await run_in_threadpool(
-        run_single_agent, req.agent_id, req.message.strip(), req.model, req.session_id
+        run_single_agent, req.agent_id, req.message.strip(), req.model, req.session_id,
+        req.environment,
     )
     for event in result["tool_events"]:
         event_data = {

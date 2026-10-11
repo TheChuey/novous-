@@ -40,6 +40,18 @@
       "name": "Thought Process",
       "description": "",
       "required_header": "Thinking"
+    },
+    {
+      "id": "agent-instructions",
+      "name": "Instructions",
+      "description": "Instruction Description",
+      "required_header": "Instructions"
+    },
+    {
+      "id": "primary-goal",
+      "name": "Goal",
+      "description": "Primary Goal",
+      "required_header": "Goal"
     }
   ]
 }

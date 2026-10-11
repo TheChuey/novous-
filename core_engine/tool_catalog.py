@@ -70,6 +70,30 @@ def _safe_eval(expr: str):
     return _eval(ast.parse(expr, mode="eval"))
 
 
+@tool(provider="codebuilder")
+def run_python_code(code: str) -> str:
+    """Run a Python snippet in CodeBuilder and return its output and diagnostics."""
+    from codebuilder.execution import execute_python_code
+    from codebuilder.schemas import CodeExecutionRequest
+
+    result = execute_python_code(CodeExecutionRequest(code=code))
+    return json.dumps(result.model_dump(), ensure_ascii=False)
+
+
+@tool(provider="codebuilder")
+def send_code_to_editor(code: str) -> str:
+    """Queue generated Python code for insertion into the active CodeBuilder Monaco editor."""
+    if not code.strip():
+        raise ValueError("Code to send to the editor must not be empty.")
+    return "CodeBuilder will insert this code into the active Monaco editor after the chat turn."
+
+
+@tool(provider="codebuilder")
+def run_code_in_editor() -> str:
+    """Queue execution of the current contents of the active CodeBuilder editor."""
+    return "CodeBuilder will run the active editor buffer after the chat turn."
+
+
 # --- Core System Tools ---
 
 
@@ -181,6 +205,7 @@ PROVIDER_BINDINGS = {
     "editor": "editor.interface",
     "workspace": "workspace.interface",
     "test_environment": "test_environment.interface",
+    "codebuilder": "codebuilder.interface",
 }
 
 

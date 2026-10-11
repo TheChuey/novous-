@@ -3,6 +3,11 @@ from pathlib import Path
 from core_engine.runtime import AgentProfile
 
 AGENTS_ROOT = Path(__file__).resolve().parent.parent / "workspace" / "agents"
+CODEBUILDER_AGENTS_ROOT = Path(__file__).resolve().parent.parent / "codebuilder" / "agents"
+AGENT_ENVIRONMENTS = {
+    "workspace": AGENTS_ROOT,
+    "codebuilder": CODEBUILDER_AGENTS_ROOT,
+}
 
 AGENT_MD_TEMPLATE = """# {name}
 
@@ -46,11 +51,18 @@ def parse_markdown_sections(md_text: str) -> dict:
     return sections
 
 
-def find_agent_dir(agent_id: str) -> Path | None:
+def _get_agents_root(environment: str = "workspace") -> Path:
+    try:
+        return AGENT_ENVIRONMENTS[environment]
+    except KeyError as exc:
+        raise ValueError(f"Unknown agent environment: {environment}") from exc
+
+
+def find_agent_dir(agent_id: str, environment: str = "workspace") -> Path | None:
     clean = str(agent_id or "").strip().replace("\\", "/")
     if not clean or "/" in clean or clean in (".", ".."):
         return None
-    candidate = AGENTS_ROOT / clean
+    candidate = _get_agents_root(environment) / clean
     if candidate.is_dir() and (candidate / "agent.json").is_file():
         return candidate
     return None
@@ -89,18 +101,19 @@ def load_agent_definition(json_path: Path, md_path: Path) -> AgentProfile:
     return profile
 
 
-def load_agent(agent_id: str) -> AgentProfile:
-    agent_dir = find_agent_dir(agent_id)
+def load_agent(agent_id: str, environment: str = "workspace") -> AgentProfile:
+    agent_dir = find_agent_dir(agent_id, environment)
     if not agent_dir:
-        raise FileNotFoundError(f"Agent not found: {agent_id}")
+        raise FileNotFoundError(f"Agent not found in {environment}: {agent_id}")
     return load_agent_definition(agent_dir / "agent.json", agent_dir / "agent.md")
 
 
-def list_agents() -> list[dict]:
+def list_agents(environment: str = "workspace") -> list[dict]:
+    agents_root = _get_agents_root(environment)
     agents = []
-    if not AGENTS_ROOT.is_dir():
+    if not agents_root.is_dir():
         return agents
-    for child in sorted(AGENTS_ROOT.iterdir(), key=lambda p: p.name.lower()):
+    for child in sorted(agents_root.iterdir(), key=lambda p: p.name.lower()):
         json_path = child / "agent.json"
         if not json_path.is_file():
             continue
@@ -117,5 +130,6 @@ def list_agents() -> list[dict]:
             "squad": meta.get("squad", ""),
             "tools": meta.get("tools", []),
             "has_markdown": (child / "agent.md").is_file(),
+            "environment": environment,
         })
     return agents

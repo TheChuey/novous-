@@ -157,10 +157,16 @@ export function renderPromptCreationView(container) {
 
   async function loadPromptAgents() {
     try {
-      const data = await Api.getAgents();
-      const agents = data.agents || [];
+      const [workspaceData, codeBuilderData] = await Promise.all([
+        Api.getAgents(),
+        Api.getCodeBuilderAgents()
+      ]);
+      const agents = [
+        ...(workspaceData.agents || []).map(agent => ({ ...agent, environment: 'workspace' })),
+        ...(codeBuilderData.agents || []).map(agent => ({ ...agent, environment: 'codebuilder' }))
+      ];
       publishAgentSel.innerHTML = agents.length
-        ? agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.id)})</option>`).join('')
+        ? agents.map(a => `<option value="${esc(a.environment)}:${esc(a.id)}">${esc(a.name)} (${esc(a.id)}) — ${a.environment === 'codebuilder' ? 'CodeBuilder' : 'Workspace'}</option>`).join('')
         : '<option value="">No agents found</option>';
     } catch (err) {
       publishAgentSel.innerHTML = `<option value="">${esc(err.message)}</option>`;
@@ -392,11 +398,11 @@ export function renderPromptCreationView(container) {
   });
 
   container.querySelector('#tb-publish').addEventListener('click', async () => {
-    const agentId = publishAgentSel.value;
-    if (!agentId) return showMsg('Select an agent to publish first.', true);
+    const [environment, agentId] = publishAgentSel.value.split(':', 2);
+    if (!environment || !agentId) return showMsg('Select an agent to publish first.', true);
     if (!preview.value.trim()) return showMsg('Assemble a prompt before saving it to an agent.', true);
     try {
-      const res = await Api.publishAgent(agentId, 'snapshot', preview.value);
+      const res = await Api.publishAgent(agentId, 'snapshot', preview.value, environment);
       showMsg(`Saved to ${res.path} and ${res.metadata_path} (headers ${res.header_report.verdict}; snapshot ${res.snapshot}).`);
     } catch (err) {
       showMsg(err.message, true);

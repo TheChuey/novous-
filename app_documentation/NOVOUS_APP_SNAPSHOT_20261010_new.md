@@ -1,7 +1,7 @@
 Date: 2026-10-10
 Name: Novous Application Snapshot
 Filename: NOVOUS_APP_SNAPSHOT_20261010_new.md
-Commit: 35d8ddf
+Commit: 8fffe40
 Description: Self-contained reference for an AI agent. Captures Novous app purpose, architecture, file structure, and complete source code. Designed for grounding/understanding without repo access.
 
 # NOVOUS APPLICATION SNAPSHOT
@@ -32,8 +32,29 @@ Key components:
 - .pytest_cache/README.md
 - .pytest_cache/v/
 - .pytest_cache/v/cache/
+- .pytest_cache/v/cache/lastfailed
 - .pytest_cache/v/cache/nodeids
 - app_documentation/
+- codebuilder/
+- codebuilder/__init__.py
+- codebuilder/agent_codebuilder.py
+- codebuilder/agent_loader.py
+- codebuilder/agents/
+- codebuilder/agents/codebuilder-agent/
+- codebuilder/agents/codebuilder-agent/agent.json
+- codebuilder/agents/codebuilder-agent/agent.md
+- codebuilder/agents/codingagent/
+- codebuilder/agents/codingagent/agent.json
+- codebuilder/agents/codingagent/agent.md
+- codebuilder/codebuilder_schemas.py
+- codebuilder/diagnostics.py
+- codebuilder/execution.py
+- codebuilder/execution_codebuilder.py
+- codebuilder/interface.py
+- codebuilder/interface_codebuilder.py
+- codebuilder/schemas.py
+- codebuilder/tools/
+- codebuilder/tools/tool_library.py
 - core_engine/
 - core_engine/__init__.py
 - core_engine/agent_factory.py
@@ -50,17 +71,22 @@ Key components:
 - frontend/
 - frontend/pages/
 - frontend/pages/chat.html
+- frontend/pages/codeBuilder.html
 - frontend/pages/editor.html
 - frontend/pages/index.html
 - frontend/pages/testing.html
 - frontend/static/
 - frontend/static/css/
+- frontend/static/css/codebuilder.css
 - frontend/static/css/style.css
 - frontend/static/css/test_panel.css
 - frontend/static/js/
 - frontend/static/js/api.js
 - frontend/static/js/app.js
 - frontend/static/js/chat.js
+- frontend/static/js/codebuilder/
+- frontend/static/js/codebuilder/codebuilder.js
+- frontend/static/js/codebuilder/codebuilder_editor.js
 - frontend/static/js/editor.js
 - frontend/static/js/prompt_creation.js
 - frontend/static/js/test_panel.js
@@ -82,17 +108,25 @@ Key components:
 - test_environment/PromptBuilderFiles/parts/
 - test_environment/PromptBuilderFiles/parts/1/
 - test_environment/PromptBuilderFiles/parts/1/1.md
+- test_environment/PromptBuilderFiles/parts/agent-instructions/
+- test_environment/PromptBuilderFiles/parts/agent-instructions/codeagent.md
 - test_environment/PromptBuilderFiles/parts/boundaries/
 - test_environment/PromptBuilderFiles/parts/boundaries/agenttest.md
+- test_environment/PromptBuilderFiles/parts/boundaries/codeagent.md
 - test_environment/PromptBuilderFiles/parts/boundaries/safety.md
 - test_environment/PromptBuilderFiles/parts/boundaries/scope.md
+- test_environment/PromptBuilderFiles/parts/output-format/
+- test_environment/PromptBuilderFiles/parts/output-format/codeagent.md
 - test_environment/PromptBuilderFiles/parts/output_format/
 - test_environment/PromptBuilderFiles/parts/output_format/concise-bullets.md
 - test_environment/PromptBuilderFiles/parts/output_format/markdown-structure.md
+- test_environment/PromptBuilderFiles/parts/primary-goal/
+- test_environment/PromptBuilderFiles/parts/primary-goal/goal.md
 - test_environment/PromptBuilderFiles/parts/purpose/
 - test_environment/PromptBuilderFiles/parts/purpose/research-report.md
 - test_environment/PromptBuilderFiles/parts/purpose/task-completion.md
 - test_environment/PromptBuilderFiles/parts/role/
+- test_environment/PromptBuilderFiles/parts/role/01.md
 - test_environment/PromptBuilderFiles/parts/role/agenttest.md
 - test_environment/PromptBuilderFiles/parts/role/senior-engineer.md
 - test_environment/PromptBuilderFiles/parts/role/supportive-tutor.md
@@ -111,12 +145,25 @@ Key components:
 - test_environment/test_agents/agent-01__snapshot__20261008-042917/
 - test_environment/test_agents/agent-01__snapshot__20261008-042917/agent.json
 - test_environment/test_agents/agent-01__snapshot__20261008-042917/agent.md
+- test_environment/test_agents/agent-01__snapshot__20261010-232622/
 - test_environment/test_agents/assistant__snapshot__20261007-210439/
 - test_environment/test_agents/assistant__snapshot__20261007-210439/agent.json
 - test_environment/test_agents/assistant__snapshot__20261007-210439/agent.md
 - test_environment/test_agents/assistant__snapshot__20261008-012019/
 - test_environment/test_agents/assistant__snapshot__20261008-012019/agent.json
 - test_environment/test_agents/assistant__snapshot__20261008-012019/agent.md
+- test_environment/test_agents/codebuilder__codingagent__snapshot__20261011-000732/
+- test_environment/test_agents/codebuilder__codingagent__snapshot__20261011-000732/agent.json
+- test_environment/test_agents/codebuilder__codingagent__snapshot__20261011-000732/agent.md
+- test_environment/test_agents/codebuilder__codingagent__snapshot__20261011-001037/
+- test_environment/test_agents/codebuilder__codingagent__snapshot__20261011-001037/agent.json
+- test_environment/test_agents/codebuilder__codingagent__snapshot__20261011-001037/agent.md
+- test_environment/test_agents/codingagent__snapshot__20261010-234451/
+- test_environment/test_agents/codingagent__snapshot__20261010-234451/agent.json
+- test_environment/test_agents/codingagent__snapshot__20261010-234451/agent.md
+- test_environment/test_agents/codingagent__snapshot__20261010-234544/
+- test_environment/test_agents/codingagent__snapshot__20261010-234544/agent.json
+- test_environment/test_agents/codingagent__snapshot__20261010-234544/agent.md
 - test_environment/test_agents/manifest.json
 - test_environment/test_runner.py
 - test_environment/test_tool_workbench.py
@@ -124,9 +171,6 @@ Key components:
 - workspace/
 - workspace/__init__.py
 - workspace/agents/
-- workspace/agents/agent-01/
-- workspace/agents/agent-01/agent.json
-- workspace/agents/agent-01/agent.md
 - workspace/agents/assistant/
 - workspace/agents/assistant/agent.json
 - workspace/agents/assistant/agent.md
@@ -142,6 +186,7 @@ Key components:
 - workspace/exports/
 - workspace/exports/sessions/
 - workspace/exports/sessions/chat-agent-01_20261007_221450_577212.md
+- workspace/hello_world.py
 - workspace/interface.py
 - workspace/Markdown
 - workspace/Notes/
@@ -175,6 +220,453 @@ See [the docs](https://docs.pytest.org/en/stable/how-to/cache.html) for more inf
 
 `
 
+### codebuilder/__init__.py
+
+`python
+"""CodeBuilder pillar package."""
+
+from .agent_loader import load_codebuilder_agent_meta
+from .execution import execute_python_code
+from .schemas import (
+    CodeExecutionRequest,
+    CodeExecutionResult,
+    DiagnosticItem,
+    StructuredEditRequest,
+)
+
+__all__ = [
+    "CodeExecutionRequest",
+    "CodeExecutionResult",
+    "DiagnosticItem",
+    "StructuredEditRequest",
+    "execute_python_code",
+    "load_codebuilder_agent_meta",
+]
+
+`
+
+### codebuilder/agent_codebuilder.py
+
+`python
+"""Compatibility wrapper for the CodeBuilder agent loader."""
+
+from .agent_loader import load_codebuilder_agent_meta
+
+__all__ = ["load_codebuilder_agent_meta"]
+
+`
+
+### codebuilder/agent_loader.py
+
+`python
+"""Agent metadata loader for the CodeBuilder specialist."""
+
+import json
+from pathlib import Path
+from typing import Any, Dict
+
+CODEBUILDER_ROOT = Path(__file__).resolve().parent
+
+
+def load_codebuilder_agent_meta() -> Dict[str, Any]:
+    """Load the CodeBuilder specialist metadata from the agent definition file."""
+    agent_json_path = CODEBUILDER_ROOT / "agents" / "codebuilder-agent" / "agent.json"
+    if agent_json_path.is_file():
+        return json.loads(agent_json_path.read_text(encoding="utf-8"))
+
+    return {
+        "id": "codebuilder-agent",
+        "name": "CodeBuilder Specialist",
+        "description": "Agent dedicated to writing, refactoring, and diagnosing Python code.",
+        "mode": "agent",
+        "tools": ["list_files", "read_file", "edit_file", "check_syntax", "run_code"],
+    }
+
+`
+
+### codebuilder/agents/codebuilder-agent/agent.json
+
+`json
+{
+  "id": "codebuilder-agent",
+  "name": "CodeBuilder Specialist",
+  "description": "Specialized agent for writing, analyzing, and refactoring Python code in Novous.",
+  "mode": "agent",
+  "model": "qwen2.5-coder:latest",
+  "environment": "codebuilder",
+  "tools": [
+    "read_file",
+    "write_file",
+    "create_file",
+    "list_directory",
+    "run_python_code",
+    "send_code_to_editor",
+    "run_code_in_editor"
+  ]
+}
+
+`
+
+### codebuilder/agents/codebuilder-agent/agent.md
+
+`markdown
+# CodeBuilder Specialist
+
+## role
+You are CodeBuilder, a specialist AI software engineer inside Novous. You analyze requirements, inspect workspace code, and generate precise, structured code edits.
+
+## purpose
+Your purpose is to assist users in building, refactoring, and debugging Python applications. Always test syntax and verify workspace context before proposing edits.
+
+## boundaries
+- Only suggest changes that adhere to separation of concerns.
+- Whenever you provide or revise Python code, call `send_code_to_editor` with the complete code so it is placed in the active Monaco editor. Also include a fenced `python` code block in your reply so the user can review it and send it manually if needed.
+- When the user asks to run the code, call `send_code_to_editor` first if you generated or changed the code, then call `run_code_in_editor`. The calls may be combined in that order.
+- Use `run_python_code` only when the user asks for a standalone snippet that should not replace the editor contents.
+- Never make unverified assumptions about file paths.
+
+## output format
+Briefly describe what you changed and whether you placed code in the editor or ran the editor contents. Refer to the Run Output panel for execution results.
+
+`
+
+### codebuilder/agents/codingagent/agent.json
+
+`json
+{
+  "id": "codingagent",
+  "name": "CodingAgent",
+  "description": "Agent that will write code inpython",
+  "mode": "agent",
+  "model": "qwen2.5-coder:latest",
+  "squad": "",
+  "tools": [
+    "calculator",
+    "read_file",
+    "write_file",
+    "create_file",
+    "list_directory",
+    "run_python_code"
+  ],
+  "environment": "codebuilder"
+}
+
+`
+
+### codebuilder/agents/codingagent/agent.md
+
+`markdown
+## CodeAgent
+
+You are a Code Writing Agent. Your job is to write, explain, debug, and improve code based on the user's instructions.
+
+## CodeAgent
+
+Do not invent libraries, functions, APIs, or project files.
+
+Follow the user's existing project structure and coding conventions when provided.
+
+Do not modify unrelated code.
+
+Ask a question if essential requirements are unclear.
+
+Never claim a file was created, modified, or saved unless the operation was successful.
+
+## 01
+
+Understand the task: Identify what the user wants the code to accomplish.
+
+Plan: Break the task into simple steps before writing code.
+
+Write code: Produce functional, readable, and well-organized code.
+
+Explain: Include comments explaining important sections and how they work.
+
+Handle errors: Consider possible errors and include appropriate error handling.
+
+Keep it maintainable: Use clear variable and function names. Make the code easy to modify, update, and debug.
+
+Verify: Check the code for syntax errors, logical mistakes, and missing requirements. Run tests when tools are available.
+
+Be honest: Never claim code was executed or tested unless it actually was. If something is uncertain, explain why.
+
+## Goal
+
+Deliver functional, understandable, and maintainable code that solves the user's request with minimal unnecessary complexity.
+
+## CodeAgent
+
+Purpose: What the code does.
+
+Code: The complete code in a copy-and-paste-ready format.
+
+Explanation: How the code works.
+
+Testing: Example inputs, expected outputs, and test results when available.
+
+Integration: Where the code belongs in the project, when applicable.
+
+## Available Tools
+
+### send_code_to_editor
+- Provider: codebuilder
+- Signature: (code: str) -> str
+- Description: Queue generated Python code for insertion into the active CodeBuilder Monaco editor.
+
+### run_code_in_editor
+- Provider: codebuilder
+- Signature: () -> str
+- Description: Queue execution of the current contents of the active CodeBuilder editor.
+
+`
+
+### codebuilder/codebuilder_schemas.py
+
+`python
+"""Backward-compatible schema exports for the CodeBuilder pillar."""
+
+from .schemas import *
+
+`
+
+### codebuilder/diagnostics.py
+
+`python
+"""Diagnostic funnel utilities for the CodeBuilder pillar."""
+
+from typing import Any, Iterable, List
+
+
+def funnel_diagnostics(items: Iterable[Any]) -> List[dict]:
+    """Normalize arbitrary diagnostic payloads to dictionary entries."""
+    return [
+        {
+            "path": getattr(item, "path", None),
+            "line": getattr(item, "line", None),
+            "column": getattr(item, "column", None),
+            "message": getattr(item, "message", str(item)),
+            "severity": getattr(item, "severity", "error"),
+            "run_id": getattr(item, "run_id", None),
+        }
+        for item in items
+    ]
+
+`
+
+### codebuilder/execution.py
+
+`python
+"""Execution engine for Python snippets and structured diagnostics."""
+
+import io
+import sys
+import traceback
+import uuid
+from typing import List
+
+from .schemas import CodeExecutionRequest, CodeExecutionResult, DiagnosticItem
+
+
+def execute_python_code(req: CodeExecutionRequest) -> CodeExecutionResult:
+    """Execute Python code in an isolated namespace and capture diagnostics."""
+    run_id = f"run_{uuid.uuid4().hex[:8]}"
+    stdout_buffer = io.StringIO()
+    stderr_buffer = io.StringIO()
+    diagnostics: List[DiagnosticItem] = []
+
+    old_stdout, old_stderr = sys.stdout, sys.stderr
+    sys.stdout, sys.stderr = stdout_buffer, stderr_buffer
+
+    status = "SUCCESS"
+    try:
+        try:
+            compile(req.code, "<codebuilder>", "exec")
+        except SyntaxError as exc:
+            diagnostics.append(
+                DiagnosticItem(
+                    line=exc.lineno,
+                    column=exc.offset,
+                    message=f"SyntaxError: {exc.msg}",
+                    severity="error",
+                    run_id=run_id,
+                )
+            )
+            raise
+        exec_globals = {"__name__": "__main__"}
+        exec(req.code, exec_globals)
+    except Exception as exc:  # noqa: BLE001 - surface structured runtime diagnostics
+        status = "ERROR"
+        tb = traceback.extract_tb(exc.__traceback__)
+        last_frame = tb[-1] if tb else None
+        diagnostics.append(
+            DiagnosticItem(
+                path=getattr(exc, "filename", None),
+                line=last_frame.lineno if last_frame else None,
+                column=getattr(exc, "offset", None),
+                message=f"{type(exc).__name__}: {exc}",
+                severity="error",
+                run_id=run_id,
+            )
+        )
+        stderr_buffer.write(traceback.format_exc())
+    finally:
+        sys.stdout, sys.stderr = old_stdout, old_stderr
+
+    return CodeExecutionResult(
+        run_id=run_id,
+        status=status,
+        stdout=stdout_buffer.getvalue(),
+        stderr=stderr_buffer.getvalue(),
+        diagnostics=diagnostics,
+    )
+
+`
+
+### codebuilder/execution_codebuilder.py
+
+`python
+"""Compatibility wrapper for the CodeBuilder execution engine."""
+
+from .execution import execute_python_code
+
+__all__ = ["execute_python_code"]
+
+`
+
+### codebuilder/interface.py
+
+`python
+"""CodeBuilder doorway: FastAPI router for execution and structured edits."""
+
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException
+
+from .agent_loader import load_codebuilder_agent_meta
+from .execution import execute_python_code
+from .schemas import CodeExecutionRequest, CodeExecutionResult, StructuredEditRequest
+from core_engine.agent_factory import list_agents
+
+router = APIRouter(prefix="/api/codebuilder", tags=["CodeBuilder"])
+
+
+@router.get("/health")
+def api_codebuilder_health():
+    """Return the health state of the CodeBuilder pillar."""
+    return {"status": "ok", "pillar": "codebuilder"}
+
+
+@router.get("/agent")
+def api_get_agent():
+    """Return the CodeBuilder specialist profile."""
+    return load_codebuilder_agent_meta()
+
+
+@router.get("/agents")
+def api_codebuilder_agents():
+    """List only agents stored in the CodeBuilder environment."""
+    return {"agents": list_agents("codebuilder")}
+
+
+@router.post("/execute", response_model=CodeExecutionResult)
+def api_execute_code(req: CodeExecutionRequest):
+    """Execute Python source and return any collected diagnostics."""
+    try:
+        return execute_python_code(req)
+    except Exception as exc:  # pragma: no cover - surfaced as HTTP 500
+        raise HTTPException(status_code=500, detail=f"CodeBuilder execution error: {exc}") from exc
+
+
+@router.post("/edit")
+def api_apply_structured_edit(req: StructuredEditRequest):
+    """Write an approved file update to the workspace."""
+    target = Path(req.target_path)
+    if not target.is_absolute():
+        target = Path.cwd() / target
+
+    if target.exists() and target.is_dir():
+        raise HTTPException(status_code=400, detail="Target path points to a directory, not a file.")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(req.content, encoding="utf-8")
+
+    return {
+        "status": "applied",
+        "target_path": str(target),
+        "bytes_written": len(req.content.encode("utf-8")),
+        "explanation": req.explanation,
+    }
+
+`
+
+### codebuilder/interface_codebuilder.py
+
+`python
+"""Compatibility wrapper for the CodeBuilder router."""
+
+from .interface import router
+
+__all__ = ["router"]
+
+`
+
+### codebuilder/schemas.py
+
+`python
+"""Data models and request schemas for the CodeBuilder pillar."""
+
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
+
+
+class CodeExecutionRequest(BaseModel):
+    code: str = Field(..., description="Python source code to execute")
+    timeout_seconds: float = Field(default=5.0, description="Execution timeout in seconds")
+
+
+class DiagnosticItem(BaseModel):
+    path: Optional[str] = Field(default=None, description="Target file path, if available")
+    line: Optional[int] = Field(default=None, description="Line number of the issue")
+    column: Optional[int] = Field(default=None, description="Column number of the issue")
+    message: str = Field(..., description="Diagnostic error message")
+    severity: str = Field(default="error", description="Severity level: error, warning, or info")
+    run_id: Optional[str] = Field(default=None, description="Execution run identifier")
+
+
+class CodeExecutionResult(BaseModel):
+    run_id: str
+    status: str
+    stdout: str = ""
+    stderr: str = ""
+    diagnostics: List[DiagnosticItem] = Field(default_factory=list)
+
+
+class StructuredEditRequest(BaseModel):
+    target_path: str = Field(..., description="Target file path relative to the workspace root")
+    content: str = Field(..., description="Proposed content or patch")
+    explanation: Optional[str] = Field(default=None, description="Explanation of the requested change")
+
+`
+
+### codebuilder/tools/tool_library.py
+
+`python
+"""Custom tools promoted from the Function Testing Workbench."""
+
+
+def calculate_shipping(weight_kg: float, distance_km: float) -> dict:
+    """Calculate shipping fee from package weight and distance."""
+    base_rate = 5.0
+    cost = base_rate + (weight_kg * 1.5) + (distance_km * 0.05)
+    return {
+        "weight_kg": weight_kg,
+        "distance_km": distance_km,
+        "shipping_cost": round(cost, 2)
+    }
+
+`
+
 ### core_engine/__init__.py
 
 `python
@@ -189,6 +681,11 @@ from pathlib import Path
 from core_engine.runtime import AgentProfile
 
 AGENTS_ROOT = Path(__file__).resolve().parent.parent / "workspace" / "agents"
+CODEBUILDER_AGENTS_ROOT = Path(__file__).resolve().parent.parent / "codebuilder" / "agents"
+AGENT_ENVIRONMENTS = {
+    "workspace": AGENTS_ROOT,
+    "codebuilder": CODEBUILDER_AGENTS_ROOT,
+}
 
 AGENT_MD_TEMPLATE = """# {name}
 
@@ -232,11 +729,18 @@ def parse_markdown_sections(md_text: str) -> dict:
     return sections
 
 
-def find_agent_dir(agent_id: str) -> Path | None:
+def _get_agents_root(environment: str = "workspace") -> Path:
+    try:
+        return AGENT_ENVIRONMENTS[environment]
+    except KeyError as exc:
+        raise ValueError(f"Unknown agent environment: {environment}") from exc
+
+
+def find_agent_dir(agent_id: str, environment: str = "workspace") -> Path | None:
     clean = str(agent_id or "").strip().replace("\\", "/")
     if not clean or "/" in clean or clean in (".", ".."):
         return None
-    candidate = AGENTS_ROOT / clean
+    candidate = _get_agents_root(environment) / clean
     if candidate.is_dir() and (candidate / "agent.json").is_file():
         return candidate
     return None
@@ -275,18 +779,19 @@ def load_agent_definition(json_path: Path, md_path: Path) -> AgentProfile:
     return profile
 
 
-def load_agent(agent_id: str) -> AgentProfile:
-    agent_dir = find_agent_dir(agent_id)
+def load_agent(agent_id: str, environment: str = "workspace") -> AgentProfile:
+    agent_dir = find_agent_dir(agent_id, environment)
     if not agent_dir:
-        raise FileNotFoundError(f"Agent not found: {agent_id}")
+        raise FileNotFoundError(f"Agent not found in {environment}: {agent_id}")
     return load_agent_definition(agent_dir / "agent.json", agent_dir / "agent.md")
 
 
-def list_agents() -> list[dict]:
+def list_agents(environment: str = "workspace") -> list[dict]:
+    agents_root = _get_agents_root(environment)
     agents = []
-    if not AGENTS_ROOT.is_dir():
+    if not agents_root.is_dir():
         return agents
-    for child in sorted(AGENTS_ROOT.iterdir(), key=lambda p: p.name.lower()):
+    for child in sorted(agents_root.iterdir(), key=lambda p: p.name.lower()):
         json_path = child / "agent.json"
         if not json_path.is_file():
             continue
@@ -303,6 +808,7 @@ def list_agents() -> list[dict]:
             "squad": meta.get("squad", ""),
             "tools": meta.get("tools", []),
             "has_markdown": (child / "agent.md").is_file(),
+            "environment": environment,
         })
     return agents
 
@@ -316,6 +822,7 @@ def list_agents() -> list[dict]:
 import re
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
@@ -338,6 +845,7 @@ class CreateAgentRequest(BaseModel):
     description: str = ""
     mode: str = "chat"
     squad: str = ""
+    environment: Literal["workspace", "codebuilder"] = "workspace"
 
 
 class ChatRequest(BaseModel):
@@ -345,6 +853,7 @@ class ChatRequest(BaseModel):
     agent_id: str
     model: str = "qwen2.5-coder:latest"
     session_id: str | None = None
+    environment: Literal["workspace", "codebuilder"] = "workspace"
 
 
 class ExportSessionRequest(BaseModel):
@@ -352,10 +861,11 @@ class ExportSessionRequest(BaseModel):
 
 
 def run_single_agent(agent_id: str, message: str, model: str | None = None,
-                     session_id: str | None = None) -> dict:
+                     session_id: str | None = None,
+                     environment: str = "workspace") -> dict:
     """Doorway function: run one agent turn through the Think-Act-Observe loop."""
     try:
-        profile = agent_factory.load_agent(agent_id)
+        profile = agent_factory.load_agent(agent_id, environment)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -389,7 +899,7 @@ def run_single_agent(agent_id: str, message: str, model: str | None = None,
 
 def list_agents() -> list[dict]:
     """Doorway function: list all canonical agents from workspace/agents/."""
-    return agent_factory.list_agents()
+    return agent_factory.list_agents("workspace")
 
 
 def reset_session(session_id: str) -> bool:
@@ -411,6 +921,7 @@ def api_create_agent(req: CreateAgentRequest):
             description=req.description.strip(),
             mode=req.mode if req.mode in ("chat", "agent") else "chat",
             squad=req.squad.strip(),
+            environment=getattr(req, "environment", "workspace"),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -418,10 +929,10 @@ def api_create_agent(req: CreateAgentRequest):
 
 
 @router.delete("/api/agents/{agent_id}")
-def api_delete_agent(agent_id: str):
+def api_delete_agent(agent_id: str, environment: str = "workspace"):
     from workspace import workspace_workflow
     try:
-        return workspace_workflow.delete_agent(agent_id)
+        return workspace_workflow.delete_agent(agent_id, environment)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
@@ -433,7 +944,8 @@ async def api_chat(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message must not be empty.")
     result = await run_in_threadpool(
-        run_single_agent, req.agent_id, req.message.strip(), req.model, req.session_id
+        run_single_agent, req.agent_id, req.message.strip(), req.model, req.session_id,
+        req.environment,
     )
     for event in result["tool_events"]:
         event_data = {
@@ -995,6 +1507,30 @@ def _safe_eval(expr: str):
     return _eval(ast.parse(expr, mode="eval"))
 
 
+@tool(provider="codebuilder")
+def run_python_code(code: str) -> str:
+    """Run a Python snippet in CodeBuilder and return its output and diagnostics."""
+    from codebuilder.execution import execute_python_code
+    from codebuilder.schemas import CodeExecutionRequest
+
+    result = execute_python_code(CodeExecutionRequest(code=code))
+    return json.dumps(result.model_dump(), ensure_ascii=False)
+
+
+@tool(provider="codebuilder")
+def send_code_to_editor(code: str) -> str:
+    """Queue generated Python code for insertion into the active CodeBuilder Monaco editor."""
+    if not code.strip():
+        raise ValueError("Code to send to the editor must not be empty.")
+    return "CodeBuilder will insert this code into the active Monaco editor after the chat turn."
+
+
+@tool(provider="codebuilder")
+def run_code_in_editor() -> str:
+    """Queue execution of the current contents of the active CodeBuilder editor."""
+    return "CodeBuilder will run the active editor buffer after the chat turn."
+
+
 # --- Core System Tools ---
 
 
@@ -1106,6 +1642,7 @@ PROVIDER_BINDINGS = {
     "editor": "editor.interface",
     "workspace": "workspace.interface",
     "test_environment": "test_environment.interface",
+    "codebuilder": "codebuilder.interface",
 }
 
 
@@ -1641,6 +2178,48 @@ async def api_ws(websocket: WebSocket):
 
 `
 
+### frontend/pages/codeBuilder.html
+
+`html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodeBuilder — Novous Agent Factory</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/codebuilder.css">
+</head>
+<body class="bg-dark text-light">
+  <div class="app-container">
+    <header class="navbar">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">NOVOUS <strong>AGENT FACTORY</strong></span>
+      </div>
+      <nav class="nav-links">
+        <a class="nav-btn" href="/">Dashboard</a>
+        <a class="nav-btn" href="/editor">File &amp; Agent Editor</a>
+        <a class="nav-btn active" href="/codebuilder">Code Builder</a>
+        <a class="nav-btn" href="/chat">Chat Console</a>
+        <a class="nav-btn" href="/test">Prompt Testing</a>
+      </nav>
+      <div class="badge badge-success">Python Editor</div>
+    </header>
+
+    <main id="view-container" class="main-content"></main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.min.js"></script>
+  <script type="module">
+    import { renderCodeBuilderView } from '/static/js/codebuilder/codebuilder.js';
+    renderCodeBuilderView(document.getElementById('view-container'));
+  </script>
+</body>
+</html>
+
+`
+
 ### frontend/pages/editor.html
 
 `html
@@ -1694,6 +2273,7 @@ async def api_ws(websocket: WebSocket):
   <title>Novous Agent Factory</title>
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/test_panel.css">
+  <link rel="stylesheet" href="/static/css/codebuilder.css">
 </head>
 <body class="bg-dark text-light">
   <div id="app" class="app-container">
@@ -1706,6 +2286,7 @@ async def api_ws(websocket: WebSocket):
       <nav class="nav-links">
         <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
         <button class="nav-btn" data-tab="editor">File & Agent Editor</button>
+        <button class="nav-btn" data-tab="codebuilder">Code Builder</button>
         <button class="nav-btn" data-tab="chat">Chat Console</button>
         <button class="nav-btn" data-tab="prompt-creation">Prompt Creation</button>
         <button class="nav-btn" data-tab="testing">Prompt Testing</button>
@@ -1721,6 +2302,7 @@ async def api_ws(websocket: WebSocket):
   </div>
 
   <script src="https://unpkg.com/lucide@latest" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.min.js"></script>
   <script type="module" src="/static/js/app.js"></script>
 </body>
 </html>
@@ -1765,6 +2347,608 @@ async def api_ws(websocket: WebSocket):
   </script>
 </body>
 </html>
+
+`
+
+### frontend/static/css/codebuilder.css
+
+`css
+.codebuilder-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 610px;
+  gap: 0.6rem;
+}
+
+.codebuilder-toolbar {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0.65rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+}
+
+.codebuilder-file-label,
+.codebuilder-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.codebuilder-file-label {
+  min-width: 0;
+  font-size: 0.86rem;
+}
+
+.codebuilder-file-label > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codebuilder-python-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 6px;
+  background: #3776ab;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.codebuilder-toolbar-actions .btn-primary:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.codebuilder-layout {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr) minmax(250px, 300px);
+  flex: 1;
+  min-height: 250px;
+  gap: 0.6rem;
+}
+
+.codebuilder-sidebar,
+.codebuilder-editor-panel,
+.codebuilder-console-panel,
+.codebuilder-chat-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+}
+
+.codebuilder-sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem;
+  gap: 0.5rem;
+}
+
+.codebuilder-sidebar-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 34px;
+}
+
+.codebuilder-sidebar-toggle,
+.codebuilder-agent-refresh {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.5rem;
+}
+
+.codebuilder-sidebar-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.codebuilder-sidebar-title h2,
+.codebuilder-chat-heading h2 {
+  margin: 0;
+  font-size: 0.86rem;
+}
+
+.codebuilder-agent-status {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codebuilder-agent-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.25rem;
+  overflow-y: auto;
+}
+
+.codebuilder-agent-list > p {
+  margin: 0;
+  padding: 0.35rem;
+}
+
+.codebuilder-agent-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-main);
+  text-align: left;
+  cursor: pointer;
+}
+
+.codebuilder-agent-item:hover,
+.codebuilder-agent-item.selected {
+  background: var(--bg-elev);
+  border-color: var(--border-color);
+}
+
+.codebuilder-agent-item.selected {
+  box-shadow: inset 3px 0 var(--primary);
+}
+
+.codebuilder-agent-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+
+.codebuilder-agent-mode {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+}
+
+.codebuilder-editor-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-surface {
+  flex: 1;
+  min-height: 0;
+  background: var(--bg-dark);
+}
+
+.codebuilder-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  resize: none;
+  padding: 0.9rem 1rem;
+  border: 0;
+  outline: none;
+  background: var(--bg-dark);
+  color: var(--text-main);
+  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  tab-size: 4;
+}
+
+.codebuilder-statusbar {
+  min-height: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding: 0 0.75rem;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.codebuilder-statusbar span:first-child {
+  margin-right: auto;
+}
+
+.codebuilder-console-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.codebuilder-console-heading,
+.codebuilder-chat-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.codebuilder-console-heading h2,
+.codebuilder-output-section h3,
+.codebuilder-problems-section h3 {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.codebuilder-console-subtitle {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.codebuilder-output-section,
+.codebuilder-problems-section {
+  min-height: 0;
+  padding: 0.7rem 0.85rem;
+}
+
+.codebuilder-output-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.console-output {
+  flex: 1;
+  min-height: 70px;
+  max-height: 40vh;
+  overflow: auto;
+  margin: 0.55rem 0 0;
+  padding: 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-dark);
+  color: var(--text-main);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.codebuilder-problems-section {
+  flex: 0 1 35%;
+  overflow: auto;
+}
+
+.diagnostics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
+
+.diagnostics-list p {
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.diagnostic-item {
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 0;
+  border-left: 3px solid var(--danger);
+  border-radius: 4px;
+  background: var(--bg-elev);
+  color: var(--text-main);
+  text-align: left;
+  font: inherit;
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+button.diagnostic-item {
+  cursor: pointer;
+}
+
+.diagnostic-item[data-severity="warning"] {
+  border-left-color: var(--warning);
+}
+
+.diagnostic-item[data-severity="info"] {
+  border-left-color: var(--primary);
+}
+
+.codebuilder-shell.sidebar-collapsed .codebuilder-layout {
+  grid-template-columns: 52px minmax(0, 1fr) minmax(250px, 300px);
+}
+
+.codebuilder-sidebar.collapsed .codebuilder-sidebar-title,
+.codebuilder-sidebar.collapsed .codebuilder-agent-refresh,
+.codebuilder-sidebar.collapsed .codebuilder-agent-name,
+.codebuilder-sidebar.collapsed .codebuilder-agent-mode,
+.codebuilder-sidebar.collapsed .codebuilder-agent-list > p {
+  display: none;
+}
+
+.codebuilder-sidebar.collapsed .codebuilder-sidebar-heading {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.codebuilder-sidebar.collapsed .codebuilder-agent-item {
+  justify-content: center;
+  padding: 0.4rem 0.15rem;
+}
+
+.codebuilder-chat-panel {
+  flex: 0 0 185px;
+  display: flex;
+  flex-direction: column;
+  transition: flex-basis 180ms ease;
+}
+
+.codebuilder-chat-panel.expanded {
+  flex-basis: clamp(300px, 42vh, 520px);
+}
+
+.codebuilder-chat-heading {
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0.45rem 0.75rem;
+}
+
+.codebuilder-chat-expand {
+  flex: 0 0 auto;
+  min-width: 30px;
+  padding: 0.2rem 0.45rem;
+  line-height: 1.2;
+}
+
+.codebuilder-chat-heading .text-muted {
+  max-width: 65%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codebuilder-chat-messages {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.4rem 0.75rem;
+}
+
+.codebuilder-chat-message {
+  align-self: flex-start;
+  max-width: 85%;
+  padding: 0.3rem 0.5rem;
+  border-radius: 5px;
+  background: var(--bg-elev);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.codebuilder-chat-message.assistant {
+  max-width: min(95%, 900px);
+  min-width: 0;
+}
+
+.codebuilder-chat-text {
+  white-space: pre-wrap;
+}
+
+.codebuilder-code-block {
+  min-width: 0;
+  margin: 0.45rem 0;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-dark);
+}
+
+.codebuilder-code-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.7rem;
+}
+
+.codebuilder-send-code {
+  padding: 0.2rem 0.45rem;
+  font-family: inherit;
+  font-size: 0.7rem;
+}
+
+.codebuilder-code-block pre {
+  max-width: 100%;
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  padding: 0.65rem;
+  color: var(--text-main);
+  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  tab-size: 4;
+}
+
+.codebuilder-code-block code {
+  white-space: pre;
+}
+
+.codebuilder-chat-message.user {
+  align-self: flex-end;
+  background: var(--primary);
+  color: #fff;
+}
+
+.codebuilder-chat-message.system {
+  align-self: center;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.codebuilder-chat-form {
+  display: grid;
+  grid-template-columns: minmax(145px, 190px) minmax(0, 560px) auto;
+  align-items: end;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.codebuilder-model-picker {
+  display: flex;
+  flex: 0 0 190px;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.codebuilder-model-picker .form-select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.78rem;
+}
+
+.codebuilder-chat-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  max-height: 110px;
+  resize: vertical;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+.codebuilder-chat-form button {
+  justify-self: start;
+}
+
+@media (max-width: 1100px) {
+  .codebuilder-layout,
+  .codebuilder-shell.sidebar-collapsed .codebuilder-layout {
+    grid-template-columns: 185px minmax(0, 1fr);
+    grid-template-rows: minmax(280px, 1fr) minmax(200px, 0.65fr);
+  }
+
+  .codebuilder-sidebar {
+    grid-row: 1 / span 2;
+  }
+
+  .codebuilder-editor-panel {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .codebuilder-console-panel {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .codebuilder-shell.sidebar-collapsed .codebuilder-layout {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .codebuilder-shell {
+    height: auto;
+    min-height: 900px;
+  }
+
+  .codebuilder-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .codebuilder-toolbar-actions {
+    width: 100%;
+  }
+
+  .codebuilder-toolbar-actions .btn {
+    flex: 1;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .codebuilder-layout,
+  .codebuilder-shell.sidebar-collapsed .codebuilder-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(350px, 55vh) minmax(260px, 35vh);
+  }
+
+  .codebuilder-sidebar,
+  .codebuilder-shell.sidebar-collapsed .codebuilder-sidebar {
+    grid-column: 1;
+    grid-row: 1;
+    max-height: 190px;
+  }
+
+  .codebuilder-shell.sidebar-collapsed .codebuilder-sidebar {
+    max-height: 48px;
+  }
+
+  .codebuilder-editor-panel {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .codebuilder-console-panel {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .codebuilder-chat-panel {
+    flex-basis: 215px;
+  }
+
+  .codebuilder-chat-panel.expanded {
+    flex-basis: min(45vh, 420px);
+    min-height: 300px;
+  }
+
+  .codebuilder-model-picker {
+    grid-column: 1 / -1;
+  }
+
+  .codebuilder-chat-form {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .codebuilder-chat-form textarea {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .codebuilder-chat-form button {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .codebuilder-statusbar {
+    gap: 0.55rem;
+    font-size: 0.65rem;
+  }
+}
 
 `
 
@@ -2400,19 +3584,23 @@ export const Api = {
     return get('/api/agents');
   },
 
-  async createAgent(agentId, name, description, mode = 'chat', squad = '') {
+  async createAgent(agentId, name, description, mode = 'chat', squad = '', environment = 'workspace') {
     return send('POST', '/api/agents/create', {
-      agent_id: agentId, name, description, mode, squad
+      agent_id: agentId, name, description, mode, squad, environment
     });
   },
 
-  async deleteAgent(agentId) {
-    return send('DELETE', `/api/agents/${encodeURIComponent(agentId)}`);
+  async deleteAgent(agentId, environment = 'workspace') {
+    return send('DELETE', `/api/agents/${encodeURIComponent(agentId)}?environment=${encodeURIComponent(environment)}`);
   },
 
-  async sendMessage(message, agentId, model = 'qwen2.5-coder:latest', sessionId = null) {
+  async getCodeBuilderAgents() {
+    return get('/api/codebuilder/agents');
+  },
+
+  async sendMessage(message, agentId, model = 'qwen2.5-coder:latest', sessionId = null, environment = 'workspace') {
     return send('POST', '/api/chat', {
-      message, agent_id: agentId, model, session_id: sessionId
+      message, agent_id: agentId, model, session_id: sessionId, environment
     });
   },
 
@@ -2549,8 +3737,8 @@ export const Api = {
     });
   },
 
-  async runHeaderTests(agentId) {
-    return send('POST', '/api/testing/run_header_tests', { agent_id: agentId });
+  async runHeaderTests(agentId, environment = 'workspace') {
+    return send('POST', '/api/testing/run_header_tests', { agent_id: agentId, environment });
   },
 
   async executeToolTest(toolCode, functionInput = {}) {
@@ -2575,8 +3763,10 @@ export const Api = {
     return send('POST', '/api/testing/evaluate_markdown', { markdown, agent_id: agentId });
   },
 
-  async publishAgent(agentId, label = '', markdown) {
-    return send('POST', '/api/testing/publish', { agent_id: agentId, label, markdown });
+  async publishAgent(agentId, label = '', markdown, environment = 'workspace') {
+    return send('POST', '/api/testing/publish', {
+      agent_id: agentId, label, markdown, environment
+    });
   },
 
   async getTestFixtures() {
@@ -2595,6 +3785,7 @@ import { renderEditorView } from './editor.js';
 import { renderChatView } from './chat.js';
 import { renderPromptCreationView } from './prompt_creation.js';
 import { renderTestingView } from './testing.js';
+import { renderCodeBuilderView } from './codebuilder/codebuilder.js';
 
 export const AppState = {
   activeTab: 'dashboard',
@@ -2607,6 +3798,7 @@ export const AppState = {
 const views = {
   dashboard: renderDashboardView,
   editor: renderEditorView,
+  codebuilder: renderCodeBuilderView,
   chat: renderChatView,
   'prompt-creation': renderPromptCreationView,
   testing: renderTestingView
@@ -2651,6 +3843,10 @@ function renderDashboardView(container) {
             </div>
             <div class="form-row">
               <input id="na-desc" class="form-input" placeholder="Description">
+              <select id="na-environment" class="form-select" aria-label="Agent environment">
+                <option value="workspace">Workspace</option>
+                <option value="codebuilder">CodeBuilder</option>
+              </select>
               <select id="na-mode" class="form-select">
                 <option value="chat">chat</option>
                 <option value="agent">agent</option>
@@ -2661,6 +3857,10 @@ function renderDashboardView(container) {
           </div>
           <div class="agent-cards" id="dash-agent-cards">
             ${agents.length ? '' : '<p class="text-muted">No agents yet. Create your first one.</p>'}
+          </div>
+          <div class="card-head mt-3"><h3>CodeBuilder Agents</h3></div>
+          <div class="agent-cards" id="dash-codebuilder-agent-cards">
+            <p class="text-muted">Loading CodeBuilder agents…</p>
           </div>
         </section>
 
@@ -2695,6 +3895,7 @@ function renderDashboardView(container) {
   `;
 
   const cards = container.querySelector('#dash-agent-cards');
+  const codeBuilderCards = container.querySelector('#dash-codebuilder-agent-cards');
   agents.forEach(a => {
     const el = document.createElement('div');
     el.className = 'agent-card';
@@ -2718,9 +3919,50 @@ function renderDashboardView(container) {
     else if (t.dataset.edit) { switchTab('editor', `agents/${t.dataset.edit}/agent.md`); }
     else if (t.dataset.delete) {
       if (!confirm(`Delete agent "${t.dataset.delete}"?`)) return;
-      try { await Api.deleteAgent(t.dataset.delete); await refreshAgents(); renderDashboardView(container); }
+      try { await Api.deleteAgent(t.dataset.delete, 'workspace'); await refreshAgents(); renderDashboardView(container); }
       catch (err) { alert(err.message); }
     }
+  });
+
+  function renderCodeBuilderAgentCards(codeBuilderAgents) {
+    codeBuilderCards.replaceChildren();
+    if (!codeBuilderAgents.length) {
+      codeBuilderCards.innerHTML = '<p class="text-muted">No CodeBuilder agents yet.</p>';
+      return;
+    }
+    codeBuilderAgents.forEach(agent => {
+      const el = document.createElement('div');
+      el.className = 'agent-card';
+      el.innerHTML = `
+        <div class="agent-card-head">
+          <strong>${esc(agent.name)}</strong>
+          <span class="badge badge-accent">CodeBuilder</span>
+        </div>
+        <p class="text-muted">${esc(agent.description || 'No description.')}</p>
+        <div class="agent-card-actions">
+          <a class="btn btn-sm" href="/codebuilder">Open CodeBuilder</a>
+          <button class="btn btn-sm btn-danger" data-codebuilder-delete="${esc(agent.id)}">Delete</button>
+        </div>`;
+      codeBuilderCards.appendChild(el);
+    });
+  }
+
+  Api.getCodeBuilderAgents().then(data => {
+    renderCodeBuilderAgentCards(data.agents || []);
+  }).catch(err => {
+    codeBuilderCards.innerHTML = `<p class="text-danger">Could not load CodeBuilder agents: ${esc(err.message)}</p>`;
+  });
+
+  codeBuilderCards.addEventListener('click', async e => {
+    const button = e.target.closest('[data-codebuilder-delete]');
+    if (!button) return;
+    const agentId = button.dataset.codebuilderDelete;
+    if (!confirm(`Delete CodeBuilder agent "${agentId}"?`)) return;
+    try {
+      await Api.deleteAgent(agentId, 'codebuilder');
+      const data = await Api.getCodeBuilderAgents();
+      renderCodeBuilderAgentCards(data.agents || []);
+    } catch (err) { alert(err.message); }
   });
 
   container.querySelector('#dash-new-agent').onclick = () =>
@@ -2731,10 +3973,11 @@ function renderDashboardView(container) {
     const name = container.querySelector('#na-name').value.trim();
     const desc = container.querySelector('#na-desc').value.trim();
     const mode = container.querySelector('#na-mode').value;
+    const environment = container.querySelector('#na-environment').value;
     const errBox = container.querySelector('#na-error');
     errBox.classList.add('hidden');
     try {
-      await Api.createAgent(id, name || id, desc, mode);
+      await Api.createAgent(id, name || id, desc, mode, '', environment);
       await refreshAgents();
       renderDashboardView(container);
     } catch (err) { errBox.textContent = err.message; errBox.classList.remove('hidden'); }
@@ -2825,7 +4068,8 @@ async function boot() {
     updateHealthBadge(h);
   } catch (_) { /* badge stays default */ }
 
-  switchTab('dashboard');
+  const requestedTab = new URLSearchParams(window.location.search).get('tab');
+  switchTab(Object.prototype.hasOwnProperty.call(views, requestedTab) ? requestedTab : 'dashboard');
 }
 
 boot();
@@ -3236,6 +4480,662 @@ export function renderChatView(container) {
       ${argText ? `<span class="text-muted small"> ${esc(argText.slice(0, 120))}</span>` : ''}`;
     messagesBox.appendChild(badgeDiv);
     messagesBox.scrollTop = messagesBox.scrollHeight;
+  }
+}
+
+`
+
+### frontend/static/js/codebuilder/codebuilder.js
+
+`javascript
+import { attachCodeBuilderEditor } from './codebuilder_editor.js';
+
+const DEMO_CODE = `print("Hello from Novous CodeBuilder!")
+for i in range(3):
+    print(f"count={i}")
+`;
+
+export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
+  const root = document.getElementById(rootId);
+  const output = document.getElementById('codebuilder-output');
+  const diagnostics = document.getElementById('diagnostics');
+  const runButton = document.getElementById('run-code');
+  const demoButton = document.getElementById('load-demo');
+  const clearButton = document.getElementById('clear-console');
+  const status = document.getElementById('codebuilder-status');
+  const agentList = document.getElementById('codebuilder-agent-list');
+  const agentStatus = document.getElementById('codebuilder-agent-status');
+  const agentRefresh = document.getElementById('codebuilder-agent-refresh');
+  const sidebar = document.getElementById('codebuilder-sidebar');
+  const sidebarToggle = document.getElementById('codebuilder-sidebar-toggle');
+  const modelSelect = document.getElementById('codebuilder-model');
+  const chatForm = document.getElementById('codebuilder-chat-form');
+  const chatInput = document.getElementById('codebuilder-chat-input');
+  const chatMessages = document.getElementById('codebuilder-chat-messages');
+  const chatStatus = document.getElementById('codebuilder-chat-status');
+  const chatPanel = document.getElementById('codebuilder-chat-panel');
+  const chatExpand = document.getElementById('codebuilder-chat-expand');
+
+  if (!root || !output || !diagnostics || !runButton || !demoButton || !clearButton ||
+      !agentList || !agentStatus || !agentRefresh || !sidebar || !sidebarToggle ||
+      !modelSelect || !chatForm || !chatInput || !chatMessages || !chatStatus ||
+      !chatPanel || !chatExpand) {
+    console.error('CodeBuilder could not start because a required page element is missing.');
+    return null;
+  }
+
+  const editor = await attachCodeBuilderEditor(root, DEMO_CODE);
+  let agents = [];
+  let selectedAgent = null;
+  let defaultModel = 'qwen2.5-coder:latest';
+  let chatPending = false;
+
+  const renderDiagnostics = (items = []) => {
+    diagnostics.replaceChildren();
+    if (!items.length) {
+      const empty = document.createElement('p');
+      empty.className = 'text-muted';
+      empty.textContent = 'No diagnostics reported.';
+      diagnostics.appendChild(empty);
+      return;
+    }
+
+    items.forEach(item => {
+      const entry = document.createElement('button');
+      entry.type = 'button';
+      entry.className = 'diagnostic-item';
+      entry.dataset.severity = item.severity || 'error';
+      entry.textContent = `${item.severity || 'error'}${item.line ? ` · line ${item.line}` : ''} · ${item.message}`;
+      if (item.line) {
+        entry.addEventListener('click', () => editor.revealLine(item.line));
+      }
+      diagnostics.appendChild(entry);
+    });
+  };
+
+  const runCode = async () => {
+    runButton.disabled = true;
+    runButton.textContent = 'Running…';
+    output.textContent = 'Running Python code…';
+    status.textContent = 'Running';
+    diagnostics.replaceChildren();
+    editor.setDiagnostics([]);
+
+    try {
+      const response = await fetch('/api/codebuilder/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: editor.getValue(), timeout_seconds: 5.0 })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Execution failed.');
+      }
+
+      const stdout = payload.stdout || '';
+      const stderr = payload.stderr || '';
+      output.textContent = [stdout, stderr].filter(Boolean).join('\n').trim()
+        || 'Execution completed with no output.';
+      renderDiagnostics(payload.diagnostics || []);
+      editor.setDiagnostics(payload.diagnostics || []);
+      status.textContent = payload.status === 'SUCCESS' ? 'Finished' : 'Finished with errors';
+      return payload;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      output.textContent = `Error: ${message}`;
+      renderDiagnostics([{ severity: 'error', message }]);
+      status.textContent = 'Request failed';
+      return null;
+    } finally {
+      runButton.disabled = false;
+      runButton.textContent = '▶ Run Python';
+      editor.focus();
+    }
+  };
+
+  const sendCodeToEditor = (code, source = 'chat') => {
+    if (typeof code !== 'string' || !code.trim()) return false;
+    editor.setValue(code);
+    editor.setDiagnostics([]);
+    renderDiagnostics([]);
+    status.textContent = source === 'agent'
+      ? 'Code received from agent'
+      : 'Code sent to editor';
+    editor.focus();
+    return true;
+  };
+
+  const handleCodeBuilderToolEvents = async (events = []) => {
+    for (const event of events) {
+      if (event.status !== 'success') continue;
+      if (event.tool === 'send_code_to_editor') {
+        const code = event.args?.code;
+        if (sendCodeToEditor(code, 'agent')) {
+          appendChatMessage('system', 'The agent placed its code in the Monaco editor.');
+        }
+      } else if (event.tool === 'run_code_in_editor') {
+        appendChatMessage('system', 'The agent requested a run of the current editor code.');
+        const result = await runCode();
+        if (!result) {
+          appendChatMessage('system', 'The editor code could not be run. See Run Output for details.');
+        } else {
+          appendChatMessage(
+            'system',
+            result.status === 'SUCCESS'
+              ? 'Editor code ran successfully. See Run Output.'
+              : 'Editor code ran with errors. See Run Output and Problems.'
+          );
+        }
+      }
+    }
+  };
+
+  const appendAssistantMessage = (message, content) => {
+    content = String(content ?? '');
+    const codeBlockPattern = /```([^\r\n`]*)\r?\n([\s\S]*?)```/g;
+    let lastIndex = 0;
+    let match;
+
+    const appendText = text => {
+      if (!text) return;
+      const paragraph = document.createElement('div');
+      paragraph.className = 'codebuilder-chat-text';
+      paragraph.textContent = text;
+      message.appendChild(paragraph);
+    };
+
+    while ((match = codeBlockPattern.exec(content)) !== null) {
+      appendText(content.slice(lastIndex, match.index));
+
+      const language = match[1].trim().split(/\s+/, 1)[0].toLowerCase();
+      const code = match[2];
+      const isPython = !language || ['py', 'python', 'python3'].includes(language);
+      const block = document.createElement('section');
+      block.className = 'codebuilder-code-block';
+
+      const heading = document.createElement('div');
+      heading.className = 'codebuilder-code-heading';
+      const languageLabel = document.createElement('span');
+      languageLabel.textContent = isPython ? 'Python' : language;
+      heading.appendChild(languageLabel);
+
+      if (isPython) {
+        const sendButton = document.createElement('button');
+        sendButton.type = 'button';
+        sendButton.className = 'btn btn-sm codebuilder-send-code';
+        sendButton.textContent = 'Send to editor';
+        sendButton.addEventListener('click', () => {
+          if (sendCodeToEditor(code)) {
+            sendButton.textContent = 'Sent to editor';
+            sendButton.disabled = true;
+          }
+        });
+        heading.appendChild(sendButton);
+      }
+
+      const pre = document.createElement('pre');
+      const codeElement = document.createElement('code');
+      codeElement.className = isPython ? 'language-python' : `language-${language || 'text'}`;
+      codeElement.textContent = code;
+      pre.appendChild(codeElement);
+      block.append(heading, pre);
+      message.appendChild(block);
+      lastIndex = codeBlockPattern.lastIndex;
+    }
+
+    appendText(content.slice(lastIndex));
+  };
+
+  const appendChatMessage = (role, content) => {
+    const message = document.createElement('div');
+    message.className = `codebuilder-chat-message ${role}`;
+    if (role === 'assistant') {
+      appendAssistantMessage(message, content);
+    } else {
+      message.textContent = content;
+    }
+    chatMessages.appendChild(message);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  };
+
+  const updateChatControls = () => {
+    const sendButton = chatForm.querySelector('button[type="submit"]');
+    chatInput.disabled = chatPending;
+    sendButton.disabled = chatPending || !selectedAgent || !modelSelect.value || modelSelect.disabled;
+  };
+
+  const renderAgents = () => {
+    agentList.replaceChildren();
+    if (!agents.length) {
+      const empty = document.createElement('p');
+      empty.className = 'text-muted small';
+      empty.textContent = 'No agents found in the workspace agents folder.';
+      agentList.appendChild(empty);
+      selectedAgent = null;
+      updateChatControls();
+      return;
+    }
+
+    agents.forEach(agent => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'codebuilder-agent-item';
+      button.classList.toggle('selected', selectedAgent?.id === agent.id);
+      button.title = agent.description || agent.name;
+      button.setAttribute('aria-pressed', String(selectedAgent?.id === agent.id));
+      button.disabled = chatPending;
+
+      const name = document.createElement('span');
+      name.className = 'codebuilder-agent-name';
+      name.textContent = agent.name;
+      const mode = document.createElement('span');
+      mode.className = 'codebuilder-agent-mode';
+      mode.textContent = agent.mode || 'agent';
+      button.append(name, mode);
+      button.addEventListener('click', () => selectAgent(agent));
+      agentList.appendChild(button);
+    });
+
+    updateChatControls();
+  };
+
+  const selectAgent = (agent) => {
+    selectedAgent = agent;
+    renderAgents();
+    const preferredModel = agent.model || defaultModel;
+    if ([...modelSelect.options].some(option => option.value === preferredModel)) {
+      modelSelect.value = preferredModel;
+    }
+    chatMessages.replaceChildren();
+    appendChatMessage('system', `Chatting with ${agent.name}.`);
+    chatStatus.textContent = `Agent: ${agent.name}`;
+  };
+
+  const loadAgents = async () => {
+    agentRefresh.disabled = true;
+    agentStatus.textContent = 'Loading agents…';
+    try {
+      const data = await fetch('/api/codebuilder/agents').then(async response => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || 'Could not load agents.');
+        return payload;
+      });
+      agents = data.agents || [];
+      agentStatus.textContent = `${agents.length} agent${agents.length === 1 ? '' : 's'}`;
+      const selectedId = selectedAgent?.id;
+      selectedAgent = agents.find(agent => agent.id === selectedId) || agents[0] || null;
+      renderAgents();
+      if (selectedAgent) selectAgent(selectedAgent);
+    } catch (error) {
+      agentStatus.textContent = 'Could not load agents.';
+      const message = document.createElement('p');
+      message.className = 'text-danger small';
+      message.textContent = error instanceof Error ? error.message : String(error);
+      agentList.replaceChildren(message);
+    } finally {
+      agentRefresh.disabled = false;
+    }
+  };
+
+  const loadModels = async () => {
+    modelSelect.replaceChildren();
+    const loadingOption = document.createElement('option');
+    loadingOption.textContent = 'Loading models…';
+    loadingOption.value = '';
+    modelSelect.appendChild(loadingOption);
+    modelSelect.disabled = true;
+    try {
+      const response = await fetch('/api/models');
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || 'Could not load models.');
+      const models = (payload.models || []).slice().sort();
+      defaultModel = payload.default || defaultModel;
+      modelSelect.replaceChildren();
+
+      const availableModels = models.length ? models : [defaultModel];
+      availableModels.forEach(model => {
+        const option = document.createElement('option');
+        option.value = model;
+        option.textContent = models.length ? model : `${model} (not detected)`;
+        modelSelect.appendChild(option);
+      });
+      modelSelect.disabled = models.length === 0;
+      if (models.length) {
+        const preferredModel = selectedAgent?.model || defaultModel;
+        modelSelect.value = models.includes(preferredModel) ? preferredModel : models[0];
+      }
+      if (!models.length) {
+        chatStatus.textContent = payload.error || 'No installed models detected.';
+      }
+      updateChatControls();
+    } catch (error) {
+      modelSelect.replaceChildren();
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'Could not load models';
+      modelSelect.appendChild(option);
+      modelSelect.disabled = true;
+      chatStatus.textContent = error instanceof Error ? error.message : String(error);
+      updateChatControls();
+    }
+  };
+
+  demoButton.addEventListener('click', () => {
+    editor.setValue(DEMO_CODE);
+    editor.setDiagnostics([]);
+    status.textContent = 'Demo loaded';
+    editor.focus();
+  });
+  clearButton.addEventListener('click', () => {
+    output.textContent = 'Console cleared.';
+    renderDiagnostics([]);
+    editor.setDiagnostics([]);
+    status.textContent = 'Ready';
+  });
+  runButton.addEventListener('click', runCode);
+  editor.setRunHandler(runCode);
+  agentRefresh.addEventListener('click', loadAgents);
+  sidebarToggle.addEventListener('click', () => {
+    const collapsed = sidebar.classList.toggle('collapsed');
+    sidebar.closest('.codebuilder-shell').classList.toggle('sidebar-collapsed', collapsed);
+    sidebarToggle.setAttribute('aria-expanded', String(!collapsed));
+    sidebarToggle.setAttribute('aria-label', collapsed ? 'Expand agent sidebar' : 'Collapse agent sidebar');
+  });
+  chatExpand.addEventListener('click', () => {
+    const expanded = chatPanel.classList.toggle('expanded');
+    chatExpand.setAttribute('aria-expanded', String(expanded));
+    chatExpand.setAttribute(
+      'aria-label',
+      expanded ? 'Shrink chat panel' : 'Expand chat panel'
+    );
+    chatExpand.title = expanded ? 'Shrink chat panel' : 'Expand chat panel';
+    chatExpand.textContent = expanded ? '⌄' : '⌃';
+  });
+  chatForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const message = chatInput.value.trim();
+    if (!message || chatPending) return;
+    if (!selectedAgent) {
+      chatStatus.textContent = 'Select an agent before sending a message.';
+      return;
+    }
+    if (!modelSelect.value) {
+      chatStatus.textContent = 'Select an installed model before sending a message.';
+      return;
+    }
+
+    appendChatMessage('user', message);
+    chatInput.value = '';
+    chatPending = true;
+    chatStatus.textContent = `Waiting for ${selectedAgent.name}…`;
+    updateChatControls();
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          agent_id: selectedAgent.id,
+          model: modelSelect.value,
+          session_id: `codebuilder-${selectedAgent.id}`,
+          environment: 'codebuilder',
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || 'The agent request failed.');
+      await handleCodeBuilderToolEvents(payload.tool_events || []);
+      appendChatMessage('assistant', payload.reply || 'The agent returned an empty response.');
+      chatStatus.textContent = `${selectedAgent.name} · ${payload.model || modelSelect.value}`;
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : String(error);
+      appendChatMessage('system', `Request failed: ${messageText}`);
+      chatStatus.textContent = 'Request failed';
+    } finally {
+      chatPending = false;
+      updateChatControls();
+      chatInput.focus();
+    }
+  });
+  chatInput.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      chatForm.requestSubmit();
+    }
+  });
+
+  renderDiagnostics([]);
+  status.textContent = 'Ready';
+  updateChatControls();
+  Promise.all([loadAgents(), loadModels()]);
+
+  return { editor, runCode, loadAgents };
+}
+
+export function renderCodeBuilderView(container) {
+  if (!container) return;
+  container.innerHTML = `
+    <div class="codebuilder-shell">
+      <div class="codebuilder-toolbar">
+        <div class="codebuilder-file-label">
+          <span class="codebuilder-python-icon">Py</span>
+          <span>Untitled Python File</span>
+          <span class="badge badge-success">Python</span>
+        </div>
+        <div class="codebuilder-toolbar-actions">
+          <button id="load-demo" class="btn btn-sm" type="button" title="Load the sample Python program">Sample</button>
+          <button id="clear-console" class="btn btn-sm" type="button" title="Clear console and diagnostics">Clear Output</button>
+          <button id="run-code" class="btn btn-sm btn-primary" type="button" title="Run Python (Ctrl+Enter)">▶ Run Python</button>
+        </div>
+      </div>
+
+      <main class="codebuilder-layout">
+        <aside id="codebuilder-sidebar" class="codebuilder-sidebar" aria-label="Workspace agents">
+          <div class="codebuilder-sidebar-heading">
+            <button id="codebuilder-sidebar-toggle" class="btn btn-sm codebuilder-sidebar-toggle"
+                    type="button" aria-label="Collapse agent sidebar" aria-expanded="true" title="Collapse sidebar">‹</button>
+            <div class="codebuilder-sidebar-title">
+              <h2>Agents</h2>
+              <span id="codebuilder-agent-status" class="text-muted small">Loading…</span>
+            </div>
+            <button id="codebuilder-agent-refresh" class="btn btn-sm codebuilder-agent-refresh"
+                    type="button" title="Refresh agents" aria-label="Refresh agents">↻</button>
+          </div>
+          <div id="codebuilder-agent-list" class="codebuilder-agent-list"></div>
+        </aside>
+
+        <section class="codebuilder-editor-panel" aria-label="Python editor">
+          <div id="codebuilder-editor" class="editor-surface"></div>
+          <div class="codebuilder-statusbar">
+            <span id="codebuilder-status">Loading editor…</span>
+            <span>Python</span>
+            <span>UTF-8</span>
+            <span>Spaces: 4</span>
+          </div>
+        </section>
+
+        <aside class="codebuilder-console-panel" aria-label="Run output and diagnostics">
+          <div class="codebuilder-console-heading">
+            <h2>Run Output</h2>
+            <span class="codebuilder-console-subtitle">Console &amp; Problems</span>
+          </div>
+          <section class="codebuilder-output-section">
+            <h3>Console</h3>
+            <pre id="codebuilder-output" class="console-output">Ready. Run your Python code to see output here.</pre>
+          </section>
+          <section class="codebuilder-problems-section">
+            <h3>Problems</h3>
+            <div id="diagnostics" class="diagnostics-list"></div>
+          </section>
+        </aside>
+      </main>
+
+      <section id="codebuilder-chat-panel" class="codebuilder-chat-panel" aria-label="Chat with an agent">
+        <div class="codebuilder-chat-heading">
+          <h2>Ask an Agent</h2>
+          <span id="codebuilder-chat-status" class="text-muted small">Select an agent to start.</span>
+          <button id="codebuilder-chat-expand" class="btn btn-sm codebuilder-chat-expand"
+                  type="button" aria-label="Expand chat panel" aria-expanded="false"
+                  title="Expand chat panel">⌃</button>
+        </div>
+        <div id="codebuilder-chat-messages" class="codebuilder-chat-messages" aria-live="polite">
+          <div class="codebuilder-chat-message system">Messages with your selected agent appear here.</div>
+        </div>
+        <form id="codebuilder-chat-form" class="codebuilder-chat-form">
+          <label class="codebuilder-model-picker">
+            <span class="text-muted small">Model</span>
+            <select id="codebuilder-model" class="form-select" aria-label="Choose model">
+              <option value="">Loading models…</option>
+            </select>
+          </label>
+          <textarea id="codebuilder-chat-input" class="form-input" rows="2"
+                    placeholder="Ask the selected agent about your Python code…"
+                    aria-label="Message to agent"></textarea>
+          <button class="btn btn-primary" type="submit" disabled>Send</button>
+        </form>
+      </section>
+    </div>
+  `;
+
+  setupCodeBuilderPage();
+}
+
+if (typeof window !== 'undefined' && document.readyState !== 'loading') {
+  const root = document.getElementById('codebuilder-editor');
+  if (root) setupCodeBuilderPage();
+}
+
+`
+
+### frontend/static/js/codebuilder/codebuilder_editor.js
+
+`javascript
+const MONACO_VS_PATH = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs';
+let monacoPromise;
+
+function loadMonaco() {
+  if (window.monaco?.editor) return Promise.resolve(window.monaco);
+  if (monacoPromise) return monacoPromise;
+
+  monacoPromise = new Promise((resolve, reject) => {
+    if (typeof window.require !== 'function') {
+      reject(new Error('The Monaco Editor loader is unavailable.'));
+      return;
+    }
+
+    window.require.config({ paths: { vs: MONACO_VS_PATH } });
+    window.require(['vs/editor/editor.main'], () => {
+      if (!window.monaco?.editor) {
+        reject(new Error('Monaco Editor failed to initialize.'));
+        return;
+      }
+      resolve(window.monaco);
+    }, reject);
+  });
+  return monacoPromise;
+}
+
+function createTextareaEditor(element, initialValue) {
+  const textarea = document.createElement('textarea');
+  textarea.className = 'codebuilder-textarea';
+  textarea.value = initialValue;
+  textarea.setAttribute('aria-label', 'Python source code');
+  element.replaceChildren(textarea);
+  let runHandler = null;
+  textarea.addEventListener('keydown', event => {
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      event.preventDefault();
+      runHandler?.();
+    }
+  });
+
+  return {
+    getValue: () => textarea.value,
+    setValue: (value) => { textarea.value = value; },
+    setDiagnostics: () => {},
+    setRunHandler: (handler) => { runHandler = handler; },
+    revealLine: (line) => {
+      const lineStart = textarea.value.split('\n').slice(0, Math.max(0, line - 1)).join('\n').length;
+      textarea.focus();
+      textarea.setSelectionRange(lineStart, lineStart);
+    },
+    focus: () => textarea.focus(),
+    dispose: () => textarea.remove(),
+  };
+}
+
+export async function attachCodeBuilderEditor(element, initialValue = "print('Hello from Novous CodeBuilder!')\n") {
+  if (!element) {
+    throw new Error('The CodeBuilder editor container was not found.');
+  }
+
+  try {
+    const monaco = await loadMonaco();
+    const editor = monaco.editor.create(element, {
+      value: initialValue,
+      language: 'python',
+      theme: 'vs-dark',
+      automaticLayout: true,
+      ariaLabel: 'Python code editor',
+      accessibilitySupport: 'auto',
+      bracketPairColorization: { enabled: true },
+      cursorBlinking: 'smooth',
+      detectIndentation: false,
+      folding: true,
+      fontSize: 14,
+      fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace",
+      fontLigatures: true,
+      formatOnPaste: true,
+      guides: { bracketPairs: true, indentation: true },
+      lineNumbers: 'on',
+      minimap: { enabled: true, scale: 0.8 },
+      padding: { top: 12, bottom: 12 },
+      renderLineHighlight: 'all',
+      scrollBeyondLastLine: false,
+      smoothScrolling: true,
+      stickyScroll: { enabled: true },
+      tabSize: 4,
+      insertSpaces: true,
+      wordWrap: 'off',
+    });
+    let runHandler = null;
+    editor.addAction({
+      id: 'codebuilder.runPython',
+      label: 'Run Python',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
+      run: () => runHandler?.(),
+    });
+
+    return {
+      getValue: () => editor.getValue(),
+      setValue: (value) => editor.setValue(value),
+      focus: () => editor.focus(),
+      setRunHandler: (handler) => { runHandler = handler; },
+      revealLine: (line) => {
+        editor.revealLineInCenter(line);
+        editor.setPosition({ lineNumber: line, column: 1 });
+        editor.focus();
+      },
+      setDiagnostics: (items) => {
+        const model = editor.getModel();
+        if (!model) return;
+        monaco.editor.setModelMarkers(model, 'codebuilder', items.map(item => ({
+          severity: item.severity === 'warning'
+            ? monaco.MarkerSeverity.Warning
+            : item.severity === 'info'
+              ? monaco.MarkerSeverity.Info
+              : monaco.MarkerSeverity.Error,
+          message: item.message,
+          startLineNumber: item.line || 1,
+          endLineNumber: item.line || 1,
+          startColumn: item.column || 1,
+          endColumn: (item.column || 1) + 1,
+        })));
+      },
+      dispose: () => editor.dispose(),
+    };
+  } catch (error) {
+    console.error('Monaco Editor could not be loaded; using the basic Python editor instead.', error);
+    return createTextareaEditor(element, initialValue);
   }
 }
 
@@ -3758,10 +5658,16 @@ export function renderPromptCreationView(container) {
 
   async function loadPromptAgents() {
     try {
-      const data = await Api.getAgents();
-      const agents = data.agents || [];
+      const [workspaceData, codeBuilderData] = await Promise.all([
+        Api.getAgents(),
+        Api.getCodeBuilderAgents()
+      ]);
+      const agents = [
+        ...(workspaceData.agents || []).map(agent => ({ ...agent, environment: 'workspace' })),
+        ...(codeBuilderData.agents || []).map(agent => ({ ...agent, environment: 'codebuilder' }))
+      ];
       publishAgentSel.innerHTML = agents.length
-        ? agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.id)})</option>`).join('')
+        ? agents.map(a => `<option value="${esc(a.environment)}:${esc(a.id)}">${esc(a.name)} (${esc(a.id)}) — ${a.environment === 'codebuilder' ? 'CodeBuilder' : 'Workspace'}</option>`).join('')
         : '<option value="">No agents found</option>';
     } catch (err) {
       publishAgentSel.innerHTML = `<option value="">${esc(err.message)}</option>`;
@@ -3993,11 +5899,11 @@ export function renderPromptCreationView(container) {
   });
 
   container.querySelector('#tb-publish').addEventListener('click', async () => {
-    const agentId = publishAgentSel.value;
-    if (!agentId) return showMsg('Select an agent to publish first.', true);
+    const [environment, agentId] = publishAgentSel.value.split(':', 2);
+    if (!environment || !agentId) return showMsg('Select an agent to publish first.', true);
     if (!preview.value.trim()) return showMsg('Assemble a prompt before saving it to an agent.', true);
     try {
-      const res = await Api.publishAgent(agentId, 'snapshot', preview.value);
+      const res = await Api.publishAgent(agentId, 'snapshot', preview.value, environment);
       showMsg(`Saved to ${res.path} and ${res.metadata_path} (headers ${res.header_report.verdict}; snapshot ${res.snapshot}).`);
     } catch (err) {
       showMsg(err.message, true);
@@ -4113,7 +6019,7 @@ export function renderTestingView(container) {
       </div>
       <div class="form-row">
         <select id="ht-agent" class="form-select">
-          <option value="">Loading workspace agents…</option>
+          <option value="">Loading agents…</option>
         </select>
       </div>
       <div id="ht-results" class="ht-results mt-3">
@@ -4124,10 +6030,13 @@ export function renderTestingView(container) {
   const agentSel = container.querySelector('#ht-agent');
   const results = container.querySelector('#ht-results');
 
-  Api.getAgents().then(data => {
-    const agents = data.agents || [];
+  Promise.all([Api.getAgents(), Api.getCodeBuilderAgents()]).then(([workspaceData, codeBuilderData]) => {
+    const agents = [
+      ...(workspaceData.agents || []).map(agent => ({ ...agent, environment: 'workspace' })),
+      ...(codeBuilderData.agents || []).map(agent => ({ ...agent, environment: 'codebuilder' }))
+    ];
     agentSel.innerHTML = agents.length
-      ? agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.id)})</option>`).join('')
+      ? agents.map(agent => `<option value="${esc(agent.id)}" data-environment="${agent.environment}">${esc(agent.name)} (${esc(agent.id)}) · ${agent.environment === 'codebuilder' ? 'CodeBuilder' : 'Workspace'}</option>`).join('')
       : '<option value="">No agents found</option>';
   }).catch(err => {
     agentSel.innerHTML = `<option value="">Error: ${esc(err.message)}</option>`;
@@ -4167,7 +6076,8 @@ export function renderTestingView(container) {
     if (!agentSel.value) return;
     results.innerHTML = '<p class="text-muted">Executing header battery evaluation...</p>';
     try {
-      const report = await Api.runHeaderTests(agentSel.value);
+      const environment = agentSel.selectedOptions[0]?.dataset.environment || 'workspace';
+      const report = await Api.runHeaderTests(agentSel.value, environment);
       results.innerHTML = renderReport(report);
     } catch (err) {
       results.innerHTML = `<p class="text-danger">Error: ${esc(err.message)}</p>`;
@@ -4999,6 +6909,7 @@ from core_engine.interface import router as core_router
 from editor.interface import router as editor_router
 from workspace.interface import router as workspace_router
 from test_environment.interface import router as test_router
+from codebuilder.interface import router as codebuilder_router
 
 app = FastAPI(title="Novous AGENT FACTORY", version="4.0.0")
 
@@ -5007,6 +6918,7 @@ app.include_router(core_router)
 app.include_router(editor_router)
 app.include_router(workspace_router)
 app.include_router(test_router)
+app.include_router(codebuilder_router)
 
 # Serve Static Assets (CSS, JS)
 app.mount("/static", StaticFiles(directory=Path("frontend") / "static"), name="static")
@@ -5019,6 +6931,10 @@ def index_page():
 @app.get("/editor")
 def editor_page():
     return FileResponse("frontend/pages/editor.html")
+
+@app.get("/codebuilder")
+def codebuilder_page():
+    return FileResponse("frontend/pages/codeBuilder.html")
 
 @app.get("/chat")
 def chat_page():
@@ -5053,7 +6969,7 @@ import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -5067,6 +6983,7 @@ TEST_AGENTS_DIR = Path(__file__).resolve().parent / "test_agents"
 
 class HeaderTestRequest(BaseModel):
     agent_id: str = Field(..., min_length=1)
+    environment: Literal["workspace", "codebuilder"] = "workspace"
 
 
 class ToolWorkbenchRequest(BaseModel):
@@ -5088,6 +7005,7 @@ class PublishRequest(BaseModel):
     agent_id: str = Field(..., min_length=1)
     label: str = ""
     markdown: str = Field(..., min_length=1)
+    environment: Literal["workspace", "codebuilder"] = "workspace"
 
 
 class AddCategoryRequest(BaseModel):
@@ -5292,7 +7210,7 @@ def api_delete_workbench_tool(tool_name: str):
 @router.post("/api/testing/run_header_tests")
 def api_run_header_tests(req: HeaderTestRequest):
     try:
-        return test_runner.run_tests_for_agent(req.agent_id)
+        return test_runner.run_tests_for_agent(req.agent_id, req.environment)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -5310,9 +7228,12 @@ def api_publish(req: PublishRequest):
     """Save a prompt to its agent profile and archive the updated definition."""
     from core_engine.agent_factory import find_agent_dir, parse_markdown_sections
 
-    agent_dir = find_agent_dir(req.agent_id)
+    agent_dir = find_agent_dir(req.agent_id, req.environment)
     if not agent_dir:
-        raise HTTPException(status_code=404, detail=f"Agent not found: {req.agent_id}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Agent not found in {req.environment}: {req.agent_id}",
+        )
 
     json_path = agent_dir / "agent.json"
     try:
@@ -5339,7 +7260,8 @@ def api_publish(req: PublishRequest):
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     label = re.sub(r"[^A-Za-z0-9_-]+", "-", (req.label or req.agent_id).strip()).strip("-_")
     label = label or req.agent_id
-    dest = TEST_AGENTS_DIR / f"{req.agent_id}__{label}__{stamp}"
+    snapshot_prefix = f"{req.environment}__" if req.environment != "workspace" else ""
+    dest = TEST_AGENTS_DIR / f"{snapshot_prefix}{req.agent_id}__{label}__{stamp}"
     dest.mkdir(parents=True, exist_ok=True)
     for src in agent_dir.iterdir():
         if src.is_file():
@@ -5354,15 +7276,19 @@ def api_publish(req: PublishRequest):
             manifest = []
     manifest.append({
         "agent_id": req.agent_id,
+        "environment": req.environment,
         "label": label,
         "snapshot": dest.name,
         "published_at": datetime.now(timezone.utc).isoformat(),
     })
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
-    report = test_runner.run_tests_for_agent(req.agent_id)
-    return {"saved": True, "path": f"agents/{req.agent_id}/agent.md",
-            "metadata_path": f"agents/{req.agent_id}/agent.json",
+    report = test_runner.run_header_tests(markdown, req.agent_id)
+    agent_path = f"{'codebuilder/' if req.environment == 'codebuilder' else ''}agents/{req.agent_id}"
+    report["source"] = f"{agent_path}/agent.md"
+    return {"saved": True, "path": f"{agent_path}/agent.md",
+            "metadata_path": f"{agent_path}/agent.json",
+            "environment": req.environment,
             "snapshot": dest.name, "snapshot_path": f"test_agents/{dest.name}",
             "header_report": report}
 
@@ -5623,6 +7549,18 @@ def assemble_prompt(selected_ids: list[str], extra_instructions: str = "") -> di
       "name": "Thought Process",
       "description": "",
       "required_header": "Thinking"
+    },
+    {
+      "id": "agent-instructions",
+      "name": "Instructions",
+      "description": "Instruction Description",
+      "required_header": "Instructions"
+    },
+    {
+      "id": "primary-goal",
+      "name": "Goal",
+      "description": "Primary Goal",
+      "required_header": "Goal"
     }
   ]
 }
@@ -5637,6 +7575,31 @@ title: Thinking
 ---
 
 Think through the process. Show the idea flow. And give a logical walkthrough of how you arrive at the conclusion.
+
+`
+
+### test_environment/PromptBuilderFiles/parts/agent-instructions/codeagent.md
+
+`markdown
+---
+title: 01
+---
+
+Understand the task: Identify what the user wants the code to accomplish.
+
+Plan: Break the task into simple steps before writing code.
+
+Write code: Produce functional, readable, and well-organized code.
+
+Explain: Include comments explaining important sections and how they work.
+
+Handle errors: Consider possible errors and include appropriate error handling.
+
+Keep it maintainable: Use clear variable and function names. Make the code easy to modify, update, and debug.
+
+Verify: Check the code for syntax errors, logical mistakes, and missing requirements. Run tests when tools are available.
+
+Be honest: Never claim code was executed or tested unless it actually was. If something is uncertain, explain why.
 
 `
 
@@ -5656,6 +7619,25 @@ succeeded when the tool failed
 failed when the tool succeeded
 
 If the required information is not in a tool result, it is UNKNOWN.
+
+`
+
+### test_environment/PromptBuilderFiles/parts/boundaries/codeagent.md
+
+`markdown
+---
+title: CodeAgent
+---
+
+Do not invent libraries, functions, APIs, or project files.
+
+Follow the user's existing project structure and coding conventions when provided.
+
+Do not modify unrelated code.
+
+Ask a question if essential requirements are unclear.
+
+Never claim a file was created, modified, or saved unless the operation was successful.
 
 `
 
@@ -5685,6 +7667,25 @@ title: Scope Boundaries
 
 `
 
+### test_environment/PromptBuilderFiles/parts/output-format/codeagent.md
+
+`markdown
+---
+title: CodeAgent
+---
+
+Purpose: What the code does.
+
+Code: The complete code in a copy-and-paste-ready format.
+
+Explanation: How the code works.
+
+Testing: Example inputs, expected outputs, and test results when available.
+
+Integration: Where the code belongs in the project, when applicable.
+
+`
+
 ### test_environment/PromptBuilderFiles/parts/output_format/concise-bullets.md
 
 `markdown
@@ -5709,6 +7710,17 @@ and use bullet lists for anything with three or more items.
 
 `
 
+### test_environment/PromptBuilderFiles/parts/primary-goal/goal.md
+
+`markdown
+---
+title: Goal
+---
+
+Deliver functional, understandable, and maintainable code that solves the user's request with minimal unnecessary complexity.
+
+`
+
 ### test_environment/PromptBuilderFiles/parts/purpose/research-report.md
 
 `markdown
@@ -5730,6 +7742,17 @@ title: Task Completion Goal
 Your objective is to complete the user's task end to end. Verify your own work
 before responding, and do not stop until the requested outcome is achieved or
 a clear blocker is reported.
+
+`
+
+### test_environment/PromptBuilderFiles/parts/role/01.md
+
+`markdown
+---
+title: CodeAgent
+---
+
+You are a Code Writing Agent. Your job is to write, explain, debug, and improve code based on the user's instructions.
 
 `
 
@@ -6067,6 +8090,382 @@ Your purpose is to answer user questions, summarize material, and draft clear wr
 Lead with the direct answer, then follow with brief supporting detail. Use markdown headings only for responses longer than three paragraphs, and use bullet lists whenever you present three or more items. Keep tone professional and concise.
 `
 
+### test_environment/test_agents/codebuilder__codingagent__snapshot__20261011-000732/agent.json
+
+`json
+{
+  "id": "codingagent",
+  "name": "CodingAgent",
+  "description": "Agent that will write code inpython",
+  "mode": "agent",
+  "model": "qwen2.5-coder:latest",
+  "squad": "",
+  "tools": [
+    "calculator",
+    "read_file",
+    "write_file",
+    "create_file",
+    "list_directory",
+    "run_python_code"
+  ],
+  "environment": "codebuilder"
+}
+
+`
+
+### test_environment/test_agents/codebuilder__codingagent__snapshot__20261011-000732/agent.md
+
+`markdown
+## CodeAgent
+
+You are a Code Writing Agent. Your job is to write, explain, debug, and improve code based on the user's instructions.
+
+## CodeAgent
+
+Do not invent libraries, functions, APIs, or project files.
+
+Follow the user's existing project structure and coding conventions when provided.
+
+Do not modify unrelated code.
+
+Ask a question if essential requirements are unclear.
+
+Never claim a file was created, modified, or saved unless the operation was successful.
+
+## 01
+
+Understand the task: Identify what the user wants the code to accomplish.
+
+Plan: Break the task into simple steps before writing code.
+
+Write code: Produce functional, readable, and well-organized code.
+
+Explain: Include comments explaining important sections and how they work.
+
+Handle errors: Consider possible errors and include appropriate error handling.
+
+Keep it maintainable: Use clear variable and function names. Make the code easy to modify, update, and debug.
+
+Verify: Check the code for syntax errors, logical mistakes, and missing requirements. Run tests when tools are available.
+
+Be honest: Never claim code was executed or tested unless it actually was. If something is uncertain, explain why.
+
+## Goal
+
+Deliver functional, understandable, and maintainable code that solves the user's request with minimal unnecessary complexity.
+
+## CodeAgent
+
+Purpose: What the code does.
+
+Code: The complete code in a copy-and-paste-ready format.
+
+Explanation: How the code works.
+
+Testing: Example inputs, expected outputs, and test results when available.
+
+Integration: Where the code belongs in the project, when applicable.
+
+## Available Tools
+
+### read_file
+- Provider: editor
+- Signature: (path: str) -> str
+- Description: Read a file by workspace-root-relative path; do not prefix paths with 'workspace/'.
+
+### write_file
+- Provider: editor
+- Signature: (path: str, content: str) -> str
+- Description: Write and verify non-empty text at a workspace-root-relative path; bare filenames go in the root.  Do not prefix paths with 'workspace/'. Supports formats such as .txt, .md, .py, .json, .html, .css, and .js. Use create_file only when an intentionally empty file is requested.
+
+### create_file
+- Provider: editor
+- Signature: (path: str, kind: str = 'file') -> str
+- Description: Create an empty file or directory by workspace-root-relative path; bare names go in root. Use write_file for content.
+
+### delete_file
+- Provider: editor
+- Signature: (path: str) -> str
+- Description: Delete a file or empty directory from the workspace.
+
+`
+
+### test_environment/test_agents/codebuilder__codingagent__snapshot__20261011-001037/agent.json
+
+`json
+{
+  "id": "codingagent",
+  "name": "CodingAgent",
+  "description": "Agent that will write code inpython",
+  "mode": "agent",
+  "model": "qwen2.5-coder:latest",
+  "squad": "",
+  "tools": [
+    "calculator",
+    "read_file",
+    "write_file",
+    "create_file",
+    "list_directory",
+    "run_python_code"
+  ],
+  "environment": "codebuilder"
+}
+
+`
+
+### test_environment/test_agents/codebuilder__codingagent__snapshot__20261011-001037/agent.md
+
+`markdown
+## CodeAgent
+
+You are a Code Writing Agent. Your job is to write, explain, debug, and improve code based on the user's instructions.
+
+## CodeAgent
+
+Do not invent libraries, functions, APIs, or project files.
+
+Follow the user's existing project structure and coding conventions when provided.
+
+Do not modify unrelated code.
+
+Ask a question if essential requirements are unclear.
+
+Never claim a file was created, modified, or saved unless the operation was successful.
+
+## 01
+
+Understand the task: Identify what the user wants the code to accomplish.
+
+Plan: Break the task into simple steps before writing code.
+
+Write code: Produce functional, readable, and well-organized code.
+
+Explain: Include comments explaining important sections and how they work.
+
+Handle errors: Consider possible errors and include appropriate error handling.
+
+Keep it maintainable: Use clear variable and function names. Make the code easy to modify, update, and debug.
+
+Verify: Check the code for syntax errors, logical mistakes, and missing requirements. Run tests when tools are available.
+
+Be honest: Never claim code was executed or tested unless it actually was. If something is uncertain, explain why.
+
+## Goal
+
+Deliver functional, understandable, and maintainable code that solves the user's request with minimal unnecessary complexity.
+
+## CodeAgent
+
+Purpose: What the code does.
+
+Code: The complete code in a copy-and-paste-ready format.
+
+Explanation: How the code works.
+
+Testing: Example inputs, expected outputs, and test results when available.
+
+Integration: Where the code belongs in the project, when applicable.
+
+## Available Tools
+
+### send_code_to_editor
+- Provider: codebuilder
+- Signature: (code: str) -> str
+- Description: Queue generated Python code for insertion into the active CodeBuilder Monaco editor.
+
+### run_code_in_editor
+- Provider: codebuilder
+- Signature: () -> str
+- Description: Queue execution of the current contents of the active CodeBuilder editor.
+
+`
+
+### test_environment/test_agents/codingagent__snapshot__20261010-234451/agent.json
+
+`json
+{
+  "id": "codingagent",
+  "name": "CodingAgent",
+  "description": "Agent that will write code inpython",
+  "mode": "agent",
+  "model": "qwen2.5-coder:latest",
+  "squad": "",
+  "tools": [
+    "calculator",
+    "read_file",
+    "write_file",
+    "create_file",
+    "list_directory",
+    "project_status"
+  ]
+}
+
+`
+
+### test_environment/test_agents/codingagent__snapshot__20261010-234451/agent.md
+
+`markdown
+## CodeAgent
+
+You are a Code Writing Agent. Your job is to write, explain, debug, and improve code based on the user's instructions.
+
+## CodeAgent
+
+Do not invent libraries, functions, APIs, or project files.
+
+Follow the user's existing project structure and coding conventions when provided.
+
+Do not modify unrelated code.
+
+Ask a question if essential requirements are unclear.
+
+Never claim a file was created, modified, or saved unless the operation was successful.
+
+## 01
+
+Understand the task: Identify what the user wants the code to accomplish.
+
+Plan: Break the task into simple steps before writing code.
+
+Write code: Produce functional, readable, and well-organized code.
+
+Explain: Include comments explaining important sections and how they work.
+
+Handle errors: Consider possible errors and include appropriate error handling.
+
+Keep it maintainable: Use clear variable and function names. Make the code easy to modify, update, and debug.
+
+Verify: Check the code for syntax errors, logical mistakes, and missing requirements. Run tests when tools are available.
+
+Be honest: Never claim code was executed or tested unless it actually was. If something is uncertain, explain why.
+
+## Goal
+
+Deliver functional, understandable, and maintainable code that solves the user's request with minimal unnecessary complexity.
+
+## CodeAgent
+
+Purpose: What the code does.
+
+Code: The complete code in a copy-and-paste-ready format.
+
+Explanation: How the code works.
+
+Testing: Example inputs, expected outputs, and test results when available.
+
+Integration: Where the code belongs in the project, when applicable.
+
+`
+
+### test_environment/test_agents/codingagent__snapshot__20261010-234544/agent.json
+
+`json
+{
+  "id": "codingagent",
+  "name": "CodingAgent",
+  "description": "Agent that will write code inpython",
+  "mode": "agent",
+  "model": "qwen2.5-coder:latest",
+  "squad": "",
+  "tools": [
+    "calculator",
+    "read_file",
+    "write_file",
+    "create_file",
+    "list_directory",
+    "project_status"
+  ]
+}
+
+`
+
+### test_environment/test_agents/codingagent__snapshot__20261010-234544/agent.md
+
+`markdown
+## CodeAgent
+
+You are a Code Writing Agent. Your job is to write, explain, debug, and improve code based on the user's instructions.
+
+## CodeAgent
+
+Do not invent libraries, functions, APIs, or project files.
+
+Follow the user's existing project structure and coding conventions when provided.
+
+Do not modify unrelated code.
+
+Ask a question if essential requirements are unclear.
+
+Never claim a file was created, modified, or saved unless the operation was successful.
+
+## 01
+
+Understand the task: Identify what the user wants the code to accomplish.
+
+Plan: Break the task into simple steps before writing code.
+
+Write code: Produce functional, readable, and well-organized code.
+
+Explain: Include comments explaining important sections and how they work.
+
+Handle errors: Consider possible errors and include appropriate error handling.
+
+Keep it maintainable: Use clear variable and function names. Make the code easy to modify, update, and debug.
+
+Verify: Check the code for syntax errors, logical mistakes, and missing requirements. Run tests when tools are available.
+
+Be honest: Never claim code was executed or tested unless it actually was. If something is uncertain, explain why.
+
+## Goal
+
+Deliver functional, understandable, and maintainable code that solves the user's request with minimal unnecessary complexity.
+
+## CodeAgent
+
+Purpose: What the code does.
+
+Code: The complete code in a copy-and-paste-ready format.
+
+Explanation: How the code works.
+
+Testing: Example inputs, expected outputs, and test results when available.
+
+Integration: Where the code belongs in the project, when applicable.
+
+## Available Tools
+
+### read_file
+- Provider: editor
+- Signature: (path: str) -> str
+- Description: Read a file by workspace-root-relative path; do not prefix paths with 'workspace/'.
+
+### write_file
+- Provider: editor
+- Signature: (path: str, content: str) -> str
+- Description: Write and verify non-empty text at a workspace-root-relative path; bare filenames go in the root.  Do not prefix paths with 'workspace/'. Supports formats such as .txt, .md, .py, .json, .html, .css, and .js. Use create_file only when an intentionally empty file is requested.
+
+### create_file
+- Provider: editor
+- Signature: (path: str, kind: str = 'file') -> str
+- Description: Create an empty file or directory by workspace-root-relative path; bare names go in root. Use write_file for content.
+
+### delete_file
+- Provider: editor
+- Signature: (path: str) -> str
+- Description: Delete a file or empty directory from the workspace.
+
+### list_directory
+- Provider: editor
+- Signature: (path: str = '') -> str
+- Description: List the workspace directory tree (optionally rooted at a relative path).
+
+### search_workspace
+- Provider: editor
+- Signature: (query: str, extension: str = '.py') -> str
+- Description: Search workspace files for matching keyword or snippet.
+
+`
+
 ### test_environment/test_agents/manifest.json
 
 `json
@@ -6106,6 +8505,32 @@ Lead with the direct answer, then follow with brief supporting detail. Use markd
     "label": "snapshot",
     "snapshot": "agent-01__snapshot__20261008-042917",
     "published_at": "2026-10-08T04:29:17.034009+00:00"
+  },
+  {
+    "agent_id": "codingagent",
+    "label": "snapshot",
+    "snapshot": "codingagent__snapshot__20261010-234451",
+    "published_at": "2026-10-10T23:44:51.916373+00:00"
+  },
+  {
+    "agent_id": "codingagent",
+    "label": "snapshot",
+    "snapshot": "codingagent__snapshot__20261010-234544",
+    "published_at": "2026-10-10T23:45:44.081798+00:00"
+  },
+  {
+    "agent_id": "codingagent",
+    "environment": "codebuilder",
+    "label": "snapshot",
+    "snapshot": "codebuilder__codingagent__snapshot__20261011-000732",
+    "published_at": "2026-10-11T00:07:32.771135+00:00"
+  },
+  {
+    "agent_id": "codingagent",
+    "environment": "codebuilder",
+    "label": "snapshot",
+    "snapshot": "codebuilder__codingagent__snapshot__20261011-001037",
+    "published_at": "2026-10-11T00:10:37.095313+00:00"
   }
 ]
 
@@ -6263,12 +8688,12 @@ def run_header_tests(md_text: str, agent_id: str = "") -> dict:
     }
 
 
-def run_tests_for_agent(agent_id: str) -> dict:
-    """Locate workspace/agents/<id>/agent.md and run the battery against it."""
+def run_tests_for_agent(agent_id: str, environment: str = "workspace") -> dict:
+    """Locate an agent profile in its environment and run the header battery."""
     from core_engine.agent_factory import find_agent_dir
-    agent_dir = find_agent_dir(agent_id)
+    agent_dir = find_agent_dir(agent_id, environment)
     if not agent_dir:
-        raise FileNotFoundError(f"Agent not found: {agent_id}")
+        raise FileNotFoundError(f"Agent not found in {environment}: {agent_id}")
     md_path = agent_dir / "agent.md"
     md_text = md_path.read_text(encoding="utf-8") if md_path.is_file() else ""
     report = run_header_tests(md_text, agent_id)
@@ -6953,98 +9378,6 @@ def delete_custom_tool(name: str) -> dict:
 
 `
 
-### workspace/agents/agent-01/agent.json
-
-`json
-{
-  "id": "agent-01",
-  "name": "AgentTest",
-  "description": "test agent and tools",
-  "mode": "agent",
-  "model": "qwen2.5-coder:latest",
-  "squad": "",
-  "tools": [
-    "calculator",
-    "read_file",
-    "write_file",
-    "create_file",
-    "list_directory",
-    "project_status"
-  ]
-}
-
-`
-
-### workspace/agents/agent-01/agent.md
-
-`markdown
-## TestAgent
-
-You will help me test your tools
-
-## AgentTest
-
-Never claim that a tool:
-
-was called when it was not called
-returned information when it did not
-found a file, path, record, value, or result that it did not return
-succeeded when the tool failed
-failed when the tool succeeded
-
-If the required information is not in a tool result, it is UNKNOWN.
-
-## Concise Bulleted Replies
-
-Keep every reply short. Start with a one-sentence answer, then follow with
-bulleted details. Never exceed five bullets unless the user explicitly asks
-for more depth.
-
-## Tool Usage Rules
-
-Call a tool whenever the answer depends on live workspace state. State which
-tool you are calling and why before calling it, then summarize the tool result
-in plain language. Never claim a tool ran if it did not.
-
-## Rule
-
-User Request → Tool → Tool Result → Response
-
-Do not skip the tool.
-
-Do not replace a tool result with your own knowledge or assumptions.
-
-Do not invent missing fields from a tool result.
-
-## Available Tools
-
-### calculator
-- Provider: core_engine
-- Signature: (expression: str) -> str
-- Description: Evaluate a basic arithmetic expression (numbers, + - * / // % ** and parentheses).
-
-### read_file
-- Provider: editor
-- Signature: (path: str) -> str
-- Description: Read a file from the workspace and return its text content.
-
-### write_file
-- Provider: editor
-- Signature: (path: str, content: str) -> str
-- Description: Write or update text content in a workspace file.
-
-### create_file
-- Provider: editor
-- Signature: (path: str, kind: str = 'file') -> str
-- Description: Create a new empty file or directory inside the workspace.
-
-### list_directory
-- Provider: editor
-- Signature: (path: str = '') -> str
-- Description: List the workspace directory tree (optionally rooted at a relative path).
-
-`
-
 ### workspace/agents/assistant/agent.json
 
 `json
@@ -7204,6 +9537,16 @@ sdfsd
 
 UNKNOWN
 
+`
+
+### workspace/hello_world.py
+
+`python
+def hello_world():
+    print('Hello, World!')
+
+if __name__ == '__main__':
+    hello_world()
 `
 
 ### workspace/interface.py
@@ -7609,7 +9952,7 @@ import json
 import re
 from pathlib import Path
 
-from core_engine.agent_factory import AGENTS_ROOT, AGENT_MD_TEMPLATE
+from core_engine.agent_factory import AGENT_ENVIRONMENTS, AGENT_MD_TEMPLATE, AGENTS_ROOT
 
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
@@ -7622,25 +9965,40 @@ DEFAULT_TOOLS = [
     "project_status",
 ]
 
+CODEBUILDER_DEFAULT_TOOLS = [
+    "calculator",
+    "read_file",
+    "write_file",
+    "create_file",
+    "list_directory",
+    "run_python_code",
+    "send_code_to_editor",
+    "run_code_in_editor",
+]
 
-def _validate_id(agent_id: str) -> str:
+
+def _validate_id(agent_id: str, environment: str = "workspace") -> str:
     agent_id = agent_id.strip().lower()
     if not _ID_PATTERN.match(agent_id):
         raise ValueError(
             "agent_id must be lowercase letters, digits, '-' or '_', starting alphanumeric, max 64 chars.")
+    if environment not in AGENT_ENVIRONMENTS:
+        raise ValueError(f"Unknown agent environment: {environment}")
     return agent_id
 
 
 def scaffold_agent(agent_id: str, name: str, description: str = "",
-                   mode: str = "chat", squad: str = "") -> dict:
-    """Create agent.json + agent.md in the canonical workspace/agents/ home."""
-    agent_id = _validate_id(agent_id)
+                   mode: str = "chat", squad: str = "",
+                   environment: str = "workspace") -> dict:
+    """Create agent.json + agent.md in the selected environment's agent home."""
+    agent_id = _validate_id(agent_id, environment)
     if not name.strip():
         raise ValueError("Agent name must not be empty.")
 
-    agent_dir = AGENTS_ROOT / agent_id
+    agents_root = AGENT_ENVIRONMENTS[environment]
+    agent_dir = agents_root / agent_id
     if agent_dir.exists():
-        raise ValueError(f"Agent already exists: {agent_id}")
+        raise ValueError(f"Agent already exists in {environment}: {agent_id}")
 
     agent_dir.mkdir(parents=True, exist_ok=True)
 
@@ -7651,32 +10009,52 @@ def scaffold_agent(agent_id: str, name: str, description: str = "",
         "mode": mode if mode in ("chat", "agent") else "chat",
         "model": "qwen2.5-coder:latest",
         "squad": squad.strip(),
-        "tools": list(DEFAULT_TOOLS) if mode == "agent" else [],
+        "tools": (
+            list(CODEBUILDER_DEFAULT_TOOLS if environment == "codebuilder" else DEFAULT_TOOLS)
+            if mode == "agent" else []
+        ),
+        "environment": environment,
     }
 
-    purpose = description.strip() or f"Serve as the {name.strip()} for this workspace."
+    purpose = description.strip() or (
+        f"Serve as the {name.strip()} for the {environment} environment."
+    )
     purpose += " Act strategically toward that goal and always deliver a clear, structured result."
+    agent_template = AGENT_MD_TEMPLATE
+    if environment == "codebuilder":
+        agent_template = AGENT_MD_TEMPLATE.replace(
+            "Novous workspace agent",
+            "Novous CodeBuilder agent",
+        )
+        if mode == "agent":
+            agent_template += """
+
+## codebuilder editor workflow
+Whenever you provide or revise Python code, call `send_code_to_editor` with the complete code so it is placed in the active Monaco editor. Also include a fenced `python` code block in your reply so the user can review it and send it manually if needed. When the user asks to run the code, send any changed code first, then call `run_code_in_editor`.
+"""
     (agent_dir / "agent.md").write_text(
-        AGENT_MD_TEMPLATE.format(name=name.strip(), purpose=purpose), encoding="utf-8")
+        agent_template.format(name=name.strip(), purpose=purpose), encoding="utf-8")
     (agent_dir / "agent.json").write_text(
         json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
-    return {"created": True, "agent_id": agent_id, "path": f"agents/{agent_id}",
+    return {"created": True, "agent_id": agent_id,
+            "path": f"{'codebuilder/' if environment == 'codebuilder' else ''}agents/{agent_id}",
+            "environment": environment,
             "agent": meta}
 
 
-def delete_agent(agent_id: str) -> dict:
-    agent_id = _validate_id(agent_id)
-    agent_dir = AGENTS_ROOT / agent_id
+def delete_agent(agent_id: str, environment: str = "workspace") -> dict:
+    agent_id = _validate_id(agent_id, environment)
+    agent_dir = AGENT_ENVIRONMENTS[environment] / agent_id
     if not agent_dir.is_dir():
-        raise FileNotFoundError(f"Agent not found: {agent_id}")
+        raise FileNotFoundError(f"Agent not found in {environment}: {agent_id}")
     for child in agent_dir.iterdir():
         if child.is_file():
             child.unlink()
         else:
             raise ValueError(f"Refusing to delete nested directory in agent folder: {child.name}")
     agent_dir.rmdir()
-    return {"deleted": True, "agent_id": agent_id}
+    return {"deleted": True, "agent_id": agent_id, "environment": environment}
 
 
 def save_agent_meta(agent_id: str, meta: dict) -> dict:

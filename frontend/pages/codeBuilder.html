@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodeBuilder — Novous Agent Factory</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/codebuilder.css">
+</head>
+<body class="bg-dark text-light">
+  <div class="app-container">
+    <header class="navbar">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">NOVOUS <strong>AGENT FACTORY</strong></span>
+      </div>
+      <nav class="nav-links">
+        <a class="nav-btn" href="/">Dashboard</a>
+        <a class="nav-btn" href="/editor">File &amp; Agent Editor</a>
+        <a class="nav-btn active" href="/codebuilder">Code Builder</a>
+        <a class="nav-btn" href="/chat">Chat Console</a>
+        <a class="nav-btn" href="/test">Prompt Testing</a>
+      </nav>
+      <div class="badge badge-success">Python Editor</div>
+    </header>
+
+    <main id="view-container" class="main-content"></main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.min.js"></script>
+  <script type="module">
+    import { renderCodeBuilderView } from '/static/js/codebuilder/codebuilder.js';
+    renderCodeBuilderView(document.getElementById('view-container'));
+  </script>
+</body>
+</html>
