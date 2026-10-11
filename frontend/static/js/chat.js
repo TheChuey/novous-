@@ -327,6 +327,27 @@ export function renderChatView(container) {
     loadTodoFiles(true);
   }, 5000);
 
+  async function pollPendingQuestions() {
+    try {
+      const data = await Api.getPendingQuestions();
+      for (const item of (data.pending || [])) {
+        if (!document.querySelector(`[data-request-id="${item.request_id}"]`)) {
+          openQuestionDialogModal(item.request_id, item.questions || []);
+        }
+      }
+    } catch (_) {
+      // Quiet polling: ignore transient errors while the chat turn is in flight.
+    }
+  }
+
+  const questionPollInterval = setInterval(() => {
+    if (!container.isConnected) {
+      clearInterval(questionPollInterval);
+      return;
+    }
+    pollPendingQuestions();
+  }, 2000);
+
   chatForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const text = chatInput.value.trim();
@@ -400,4 +421,86 @@ export function renderChatView(container) {
     messagesBox.appendChild(badgeDiv);
     messagesBox.scrollTop = messagesBox.scrollHeight;
   }
+}
+
+/**
+ * Render a step-by-step Human-in-the-Loop question dialog.
+ * Answers are submitted back to the server, which resumes the paused agent tool.
+ */
+function openQuestionDialogModal(requestId, questions) {
+  let currentIndex = 0;
+  const userAnswers = {};
+
+  const overlay = document.createElement('div');
+  overlay.className = 'question-dialog-overlay';
+  overlay.dataset.requestId = requestId;
+
+  const modal = document.createElement('div');
+  modal.className = 'card question-dialog';
+  overlay.appendChild(modal);
+
+  const questionText = item =>
+    (item && typeof item === 'object') ? String(item.question ?? '') : String(item ?? '');
+  const questionId = (item, index) =>
+    (item && typeof item === 'object' && item.id != null) ? String(item.id) : String(index);
+
+  function renderQuestion() {
+    const item = questions[currentIndex];
+    const qText = questionText(item);
+    const qId = questionId(item, currentIndex);
+    const isLast = currentIndex === questions.length - 1;
+    const pct = Math.round(((currentIndex + 1) / questions.length) * 100);
+
+    modal.innerHTML = `
+      <div class="question-dialog-head">
+        <h3>Question ${currentIndex + 1} of ${questions.length}</h3>
+        <span class="badge badge-accent">${pct}%</span>
+      </div>
+      <p class="question-dialog-prompt">${esc(qText)}</p>
+      <textarea id="dialog-answer-input" class="form-input question-dialog-input" rows="4"
+        placeholder="Type your answer here..."></textarea>
+      <p class="question-dialog-error text-danger"></p>
+      <div class="question-dialog-actions">
+        <button type="button" id="dialog-prev-btn" class="btn btn-sm" ${currentIndex === 0 ? 'disabled' : ''}>Back</button>
+        <button type="button" id="dialog-next-btn" class="btn btn-sm btn-primary">
+          ${isLast ? 'Submit All Answers' : 'Next Question'}
+        </button>
+      </div>`;
+
+    const textarea = modal.querySelector('#dialog-answer-input');
+    textarea.value = userAnswers[qId] ?? '';
+    textarea.focus();
+
+    modal.querySelector('#dialog-prev-btn').onclick = () => {
+      userAnswers[qId] = textarea.value;
+      if (currentIndex > 0) {
+        currentIndex -= 1;
+        renderQuestion();
+      }
+    };
+
+    modal.querySelector('#dialog-next-btn').onclick = async () => {
+      userAnswers[qId] = textarea.value;
+      if (!isLast) {
+        currentIndex += 1;
+        renderQuestion();
+        return;
+      }
+
+      const nextBtn = modal.querySelector('#dialog-next-btn');
+      nextBtn.disabled = true;
+      nextBtn.textContent = 'Submitting...';
+      try {
+        await Api.submitAnswers(requestId, userAnswers);
+        overlay.remove();
+      } catch (err) {
+        nextBtn.disabled = false;
+        nextBtn.textContent = 'Submit All Answers';
+        modal.querySelector('.question-dialog-error').textContent = `Submission failed: ${err.message}`;
+      }
+    };
+  }
+
+  renderQuestion();
+  document.body.appendChild(overlay);
 }

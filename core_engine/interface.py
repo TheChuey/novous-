@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from core_engine import agent_factory, tool_catalog
+from core_engine import agent_factory, hitl, tool_catalog
 from core_engine.runtime import Agent, AgentProfile
 from editor.editor_schemas import EditorEventType
 from editor.editor_session import manager as editor_session_manager
@@ -151,6 +151,25 @@ def api_chat_reset(session_id: str):
     return {"reset": reset_session(session_id)}
 
 
+class AnswerSubmissionRequest(BaseModel):
+    request_id: str = Field(..., min_length=1)
+    answers: dict = Field(default_factory=dict)
+
+
+@router.get("/api/chat/pending-questions")
+async def api_get_pending_questions():
+    """Return active Human-in-the-Loop questionnaires awaiting user input."""
+    return {"pending": hitl.list_pending()}
+
+
+@router.post("/api/chat/submit-answers")
+async def api_submit_answers(req: AnswerSubmissionRequest):
+    """Store user answers and resume the paused agent tool thread."""
+    if not hitl.submit_answers(req.request_id, req.answers):
+        raise HTTPException(status_code=404, detail="Question request not found or already completed.")
+    return {"status": "success", "message": "Answers submitted successfully."}
+
+
 @router.post("/api/chat/export")
 def api_export_chat_session(req: ExportSessionRequest):
     agent = SESSIONS.get(req.session_id)
@@ -210,7 +229,8 @@ def api_export_chat_session(req: ExportSessionRequest):
 @router.get("/api/tools")
 def api_tools():
     return {"tools": tool_catalog.list_tools(),
-            "providers": tool_catalog.PROVIDER_BINDINGS}
+            "providers": tool_catalog.PROVIDER_BINDINGS,
+            "load_errors": tool_catalog.get_load_errors()}
 
 
 def list_models() -> dict:

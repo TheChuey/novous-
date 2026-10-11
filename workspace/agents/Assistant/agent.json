@@ -11,6 +11,7 @@
     "write_file",
     "create_file",
     "list_directory",
-    "project_status"
+    "project_status",
+    "ask_user_questions"
   ]
 }

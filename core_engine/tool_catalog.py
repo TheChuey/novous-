@@ -21,6 +21,7 @@ from core_engine import langgraph_tools
 REGISTRY: dict[str, dict] = {}
 CUSTOM_TOOLS_DIR = Path(__file__).resolve().parent.parent / "workspace" / "tools"
 _LOADED_CUSTOM_TOOLS: set[Path] = set()
+LOAD_ERRORS: dict[str, str] = {}
 
 _OPERATORS = {
     ast.Add: operator.add,
@@ -213,6 +214,12 @@ def list_tools() -> list[dict]:
     ]
 
 
+def get_load_errors() -> dict[str, str]:
+    """Return per-module errors from the last custom-tools load pass."""
+    load_custom_tools()
+    return dict(LOAD_ERRORS)
+
+
 def get_tools(names: list[str] | None = None) -> list[Callable]:
     """Resolve registered tool callables, filtered by an optional allow-list."""
     load_custom_tools()
@@ -227,7 +234,11 @@ def get_tools(names: list[str] | None = None) -> list[Callable]:
 
 
 def load_custom_tools(reload: bool = False) -> None:
-    """Load promoted workspace tools into the runtime registry."""
+    """Load promoted workspace tools into the runtime registry.
+
+    A single broken tool module must not take down the whole catalog: load
+    errors are captured per file in LOAD_ERRORS and loading continues.
+    """
     if reload:
         custom_names = [
             name for name, meta in REGISTRY.items()
@@ -240,6 +251,8 @@ def load_custom_tools(reload: bool = False) -> None:
                 sys.modules.pop(module_name, None)
         _LOADED_CUSTOM_TOOLS.clear()
 
+    LOAD_ERRORS.clear()
+
     if not CUSTOM_TOOLS_DIR.is_dir():
         return
 
@@ -248,66 +261,74 @@ def load_custom_tools(reload: bool = False) -> None:
         if resolved_path in _LOADED_CUSTOM_TOOLS:
             continue
 
-        module_name = f"novous_workspace_tool_{path.stem}"
-        spec = importlib.util.spec_from_file_location(module_name, resolved_path)
-        if spec is None or spec.loader is None:
-            raise ImportError(f"Could not load custom tool module '{path}'.")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
         try:
-            spec.loader.exec_module(module)
-        except Exception:
-            sys.modules.pop(module_name, None)
-            raise
+            _load_custom_tool_file(path, resolved_path)
+            _LOADED_CUSTOM_TOOLS.add(resolved_path)
+        except Exception as exc:
+            LOAD_ERRORS[str(resolved_path)] = f"{type(exc).__name__}: {exc}"
 
-        if path.name == "tool_library.py":
-            functions = []
-            function_names = set()
-            for node in ast.parse(path.read_text(encoding="utf-8")).body:
-                if isinstance(node, ast.AsyncFunctionDef) and not node.name.startswith("_"):
-                    raise ValueError(
-                        f"Tool library function '{node.name}' must be synchronous."
-                    )
-                if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
-                    if node.name in function_names:
-                        raise ValueError(
-                            f"Tool library defines '{node.name}' more than once."
-                        )
-                    function_names.add(node.name)
-                    function = getattr(module, node.name, None)
-                    if not inspect.isfunction(function) or function.__module__ != module_name:
-                        raise ValueError(
-                            f"Could not load tool library function '{node.name}'."
-                        )
-                    functions.append((node.name, function))
-        else:
-            function = getattr(module, path.stem, None)
-            if not inspect.isfunction(function) or function.__module__ != module_name:
-                sys.modules.pop(module_name, None)
+
+def _load_custom_tool_file(path: Path, resolved_path: Path) -> None:
+    """Import a single custom-tool module and register its functions."""
+    module_name = f"novous_workspace_tool_{path.stem}"
+    spec = importlib.util.spec_from_file_location(module_name, resolved_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load custom tool module '{path}'.")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
+
+    if path.name == "tool_library.py":
+        functions = []
+        function_names = set()
+        for node in ast.parse(path.read_text(encoding="utf-8")).body:
+            if isinstance(node, ast.AsyncFunctionDef) and not node.name.startswith("_"):
                 raise ValueError(
-                    f"Custom tool module '{path.name}' must define a function named '{path.stem}'."
+                    f"Tool library function '{node.name}' must be synchronous."
                 )
-            functions = [(path.stem, function)]
-
-        conflicts = [name for name, _ in functions if name in REGISTRY]
-        if conflicts:
+            if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
+                if node.name in function_names:
+                    raise ValueError(
+                        f"Tool library defines '{node.name}' more than once."
+                    )
+                function_names.add(node.name)
+                function = getattr(module, node.name, None)
+                if not inspect.isfunction(function) or function.__module__ != module_name:
+                    raise ValueError(
+                        f"Could not load tool library function '{node.name}'."
+                    )
+                functions.append((node.name, function))
+    else:
+        function = getattr(module, path.stem, None)
+        if not inspect.isfunction(function) or function.__module__ != module_name:
             sys.modules.pop(module_name, None)
             raise ValueError(
-                f"Custom tool '{conflicts[0]}' conflicts with a registered tool."
+                f"Custom tool module '{path.name}' must define a function named '{path.stem}'."
             )
+        functions = [(path.stem, function)]
 
-        for name, function in functions:
-            doc = inspect.getdoc(function) or ""
-            function.name = name
-            function.provider = "core_engine"
-            REGISTRY[name] = {
-                "name": name,
-                "function": function,
-                "provider": "core_engine",
-                "description": doc.splitlines() if doc else "",
-                "signature": str(inspect.signature(function)),
-            }
-        _LOADED_CUSTOM_TOOLS.add(resolved_path)
+    conflicts = [name for name, _ in functions if name in REGISTRY]
+    if conflicts:
+        sys.modules.pop(module_name, None)
+        raise ValueError(
+            f"Custom tool '{conflicts[0]}' conflicts with a registered tool."
+        )
+
+    for name, function in functions:
+        doc = inspect.getdoc(function) or ""
+        function.name = name
+        function.provider = "core_engine"
+        REGISTRY[name] = {
+            "name": name,
+            "function": function,
+            "provider": "core_engine",
+            "description": doc.splitlines() if doc else "",
+            "signature": str(inspect.signature(function)),
+        }
 
 
 # Register CodeBuilder's local tool library (imported last so the @tool

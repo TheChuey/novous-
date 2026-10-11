@@ -89,6 +89,14 @@ export const Api = {
     return send('POST', `/api/chat/reset?session_id=${encodeURIComponent(sessionId)}`);
   },
 
+  async getPendingQuestions() {
+    return get('/api/chat/pending-questions');
+  },
+
+  async submitAnswers(requestId, answers) {
+    return send('POST', '/api/chat/submit-answers', { request_id: requestId, answers });
+  },
+
   async exportSession(sessionId) {
     const safeSessionId = String(sessionId).replace(/[^A-Za-z0-9_.-]/g, '_');
     const suggestedName = `novous_${safeSessionId}_${new Date().toISOString().replace(/[:.]/g, '-')}.md`;

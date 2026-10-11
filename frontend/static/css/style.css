@@ -424,6 +424,33 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .tool-workbench-library-item code { color: var(--primary); }
 .tool-workbench-library-item span { color: var(--text-muted); overflow-wrap: anywhere; }
 
+/* --- Human-in-the-Loop Question Dialog ------------------------------------- */
+.question-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 9999;
+}
+.question-dialog {
+  width: min(480px, 92vw);
+  padding: 1.5rem;
+  background: var(--bg-card);
+}
+.question-dialog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.question-dialog-head h3 { margin: 0; font-size: 1.05rem; }
+.question-dialog-prompt { font-size: 1.05rem; font-weight: 500; margin: 0 0 1rem; }
+.question-dialog-input { width: 100%; resize: vertical; margin-bottom: 0.6rem; }
+.question-dialog-error { min-height: 1rem; margin: 0 0 0.6rem; font-size: 0.85rem; }
+.question-dialog-actions { display: flex; justify-content: space-between; align-items: center; }
+
 /* --- Responsive ------------------------------------------------------------ */
 @media (max-width: 1100px) {
   .editor-layout { grid-template-columns: 220px 1fr; }

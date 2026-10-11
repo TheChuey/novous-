@@ -11,7 +11,8 @@
     "write_file",
     "create_file",
     "list_directory",
-    "run_python_code"
+    "run_python_code",
+    "ask_user_questions"
   ],
   "environment": "codebuilder"
 }

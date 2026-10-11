@@ -1,57 +1,47 @@
 {
   "categories": [
     {
-      "id": "role",
-      "name": "Role & Identity",
-      "description": "Who the agent is: persona, expertise, stance.",
-      "required_header": "role"
+      "id": "problem-identifier",
+      "name": "Role",
+      "description": "Role will be used to idenfiy and focus the job of the AI agent",
+      "required_header": "Role"
     },
     {
-      "id": "purpose",
-      "name": "Purpose & Goals",
-      "description": "What the agent is for and what success looks like.",
-      "required_header": "purpose"
+      "id": "thinking-process",
+      "name": "Investigation Process",
+      "description": "Steps",
+      "required_header": "Process"
     },
     {
-      "id": "boundaries",
-      "name": "Boundaries & Safety",
-      "description": "Hard limits, refusals, and scope guards.",
-      "required_header": "boundaries"
-    },
-    {
-      "id": "output_format",
-      "name": "Output Format",
-      "description": "Structure, tone, and formatting rules for replies.",
-      "required_header": "output format"
-    },
-    {
-      "id": "tone",
-      "name": "Tone & Style",
-      "description": "Voice, reading level, and stylistic preferences."
-    },
-    {
-      "id": "tool",
-      "name": "Rule",
-      "description": "Rules",
+      "id": "rules",
+      "name": "Rules",
+      "description": "Evidance and Accuracy",
       "required_header": "Rules"
     },
     {
-      "id": "1",
-      "name": "Thought Process",
-      "description": "",
-      "required_header": "Thinking"
+      "id": "questions",
+      "name": "Questions",
+      "description": ""
     },
     {
-      "id": "agent-instructions",
-      "name": "Instructions",
-      "description": "Instruction Description",
-      "required_header": "Instructions"
+      "id": "reporting-problem-identificaiton-agent",
+      "name": "Reporting",
+      "description": ""
     },
     {
-      "id": "primary-goal",
-      "name": "Goal",
-      "description": "Primary Goal",
-      "required_header": "Goal"
+      "id": "investigation-report",
+      "name": "Investigation",
+      "description": ""
+    },
+    {
+      "id": "criteria",
+      "name": "Criteria",
+      "description": ""
+    },
+    {
+      "id": "skill",
+      "name": "Skill for Problem solving agent",
+      "description": ""
     }
   ]
 }

@@ -1,8 +1,0 @@
-{
-  "id": "assistant",
-  "name": "Assistant",
-  "description": "General-purpose chat agent for answering questions and drafting content.",
-  "mode": "chat",
-  "model": "qwen2.5-coder:latest",
-  "squad": ""
-}
