@@ -80,18 +80,6 @@ def run_python_code(code: str) -> str:
     return json.dumps(result.model_dump(), ensure_ascii=False)
 
 
-@tool(provider="codebuilder")
-def send_code_to_editor(code: str) -> str:
-    """Queue generated Python code for insertion into the active CodeBuilder Monaco editor."""
-    if not code.strip():
-        raise ValueError("Code to send to the editor must not be empty.")
-    return "CodeBuilder will insert this code into the active Monaco editor after the chat turn."
-
-
-@tool(provider="codebuilder")
-def run_code_in_editor() -> str:
-    """Queue execution of the current contents of the active CodeBuilder editor."""
-    return "CodeBuilder will run the active editor buffer after the chat turn."
 
 
 # --- Core System Tools ---
@@ -320,3 +308,8 @@ def load_custom_tools(reload: bool = False) -> None:
                 "signature": str(inspect.signature(function)),
             }
         _LOADED_CUSTOM_TOOLS.add(resolved_path)
+
+
+# Register CodeBuilder's local tool library (imported last so the @tool
+# decorator resolved above is available without a broken import cycle).
+from codebuilder.tools import tool_library  # noqa: E402,F401

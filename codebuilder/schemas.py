@@ -7,7 +7,11 @@ from pydantic import BaseModel, Field
 
 class CodeExecutionRequest(BaseModel):
     code: str = Field(..., description="Python source code to execute")
-    timeout_seconds: float = Field(default=5.0, description="Execution timeout in seconds")
+    timeout_seconds: float = Field(default=10.0, description="Execution timeout in seconds")
+    mode: str = Field(
+        default="safe",
+        description="Execution mode: 'safe' runs in-process; 'risky' runs in an isolated subprocess",
+    )
 
 
 class DiagnosticItem(BaseModel):

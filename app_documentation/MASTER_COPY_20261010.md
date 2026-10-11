@@ -1,6 +1,6 @@
 # Novous Agent Factory — Master Copy
 
-Generated from `E:\novous` — 94 files.
+Generated from `E:\novous` — 93 files.
 
 ## `.pytest_cache/README.md`
 ```md
@@ -5839,7 +5839,7 @@ Do not invent missing fields from a tool result.
 Date: 2026-10-10
 Name: Novous Application Snapshot
 Filename: NOVOUS_APP_SNAPSHOT_20261010_new.md
-Commit: 8fffe40
+Commit: 90e67f9
 Description: Self-contained reference for an AI agent. Captures Novous app purpose, architecture, file structure, and complete source code. Designed for grounding/understanding without repo access.
 
 # NOVOUS APPLICATION SNAPSHOT
@@ -5878,9 +5878,6 @@ Key components:
 - codebuilder/agent_codebuilder.py
 - codebuilder/agent_loader.py
 - codebuilder/agents/
-- codebuilder/agents/codebuilder-agent/
-- codebuilder/agents/codebuilder-agent/agent.json
-- codebuilder/agents/codebuilder-agent/agent.md
 - codebuilder/agents/codingagent/
 - codebuilder/agents/codingagent/agent.json
 - codebuilder/agents/codingagent/agent.md
@@ -5890,6 +5887,7 @@ Key components:
 - codebuilder/execution_codebuilder.py
 - codebuilder/interface.py
 - codebuilder/interface_codebuilder.py
+- codebuilder/runner.py
 - codebuilder/schemas.py
 - codebuilder/tools/
 - codebuilder/tools/tool_library.py
@@ -6122,52 +6120,6 @@ def load_codebuilder_agent_meta() -> Dict[str, Any]:
 
 `
 
-### codebuilder/agents/codebuilder-agent/agent.json
-
-`json
-{
-  "id": "codebuilder-agent",
-  "name": "CodeBuilder Specialist",
-  "description": "Specialized agent for writing, analyzing, and refactoring Python code in Novous.",
-  "mode": "agent",
-  "model": "qwen2.5-coder:latest",
-  "environment": "codebuilder",
-  "tools": [
-    "read_file",
-    "write_file",
-    "create_file",
-    "list_directory",
-    "run_python_code",
-    "send_code_to_editor",
-    "run_code_in_editor"
-  ]
-}
-
-`
-
-### codebuilder/agents/codebuilder-agent/agent.md
-
-`markdown
-# CodeBuilder Specialist
-
-## role
-You are CodeBuilder, a specialist AI software engineer inside Novous. You analyze requirements, inspect workspace code, and generate precise, structured code edits.
-
-## purpose
-Your purpose is to assist users in building, refactoring, and debugging Python applications. Always test syntax and verify workspace context before proposing edits.
-
-## boundaries
-- Only suggest changes that adhere to separation of concerns.
-- Whenever you provide or revise Python code, call `send_code_to_editor` with the complete code so it is placed in the active Monaco editor. Also include a fenced `python` code block in your reply so the user can review it and send it manually if needed.
-- When the user asks to run the code, call `send_code_to_editor` first if you generated or changed the code, then call `run_code_in_editor`. The calls may be combined in that order.
-- Use `run_python_code` only when the user asks for a standalone snippet that should not replace the editor contents.
-- Never make unverified assumptions about file paths.
-
-## output format
-Briefly describe what you changed and whether you placed code in the editor or ran the editor contents. Refer to the Run Output panel for execution results.
-
-`
-
 ### codebuilder/agents/codingagent/agent.json
 
 `json
@@ -6232,6 +6184,10 @@ Be honest: Never claim code was executed or tested unless it actually was. If so
 
 Deliver functional, understandable, and maintainable code that solves the user's request with minimal unnecessary complexity.
 
+## Output Format
+
+Whenever you provide, explain, or revise code, always wrap every code snippet in a fenced code block using standard markdown triple backticks with the language tag on the opening fence (for example, ```python or ```json). Never output code as bare or plain text: a complete, copy-and-paste-ready fenced code block must be included every time code is shown.
+
 ## CodeAgent
 
 Purpose: What the code does.
@@ -6294,20 +6250,193 @@ def funnel_diagnostics(items: Iterable[Any]) -> List[dict]:
 ### codebuilder/execution.py
 
 `python
-"""Execution engine for Python snippets and structured diagnostics."""
+"""Compatibility wrapper: the public CodeBuilder execution entry points.
+
+The implementation lives in :mod:`codebuilder.runner`; this module keeps the
+historical import surface (``execute_python_code``) working for callers such as
+``core_engine.tool_catalog`` and ``codebuilder.interface``.
+"""
+
+from .runner import (
+    execute_python_code,
+    execute_risky,
+    execute_safe,
+    resolve_python,
+    run_risky,
+)
+
+__all__ = ["execute_python_code", "execute_risky", "execute_safe", "resolve_python", "run_risky"]
+`
+
+### codebuilder/execution_codebuilder.py
+
+`python
+"""Compatibility wrapper for the CodeBuilder execution engine."""
+
+from .execution import execute_python_code
+
+__all__ = ["execute_python_code"]
+
+`
+
+### codebuilder/interface.py
+
+`python
+"""CodeBuilder doorway: FastAPI router for execution and structured edits."""
+
+import json
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+
+from .agent_loader import load_codebuilder_agent_meta
+from .execution import execute_python_code
+from .runner import run_risky
+from .schemas import CodeExecutionRequest, CodeExecutionResult, StructuredEditRequest
+from core_engine.agent_factory import list_agents
+
+router = APIRouter(prefix="/api/codebuilder", tags=["CodeBuilder"])
+
+
+@router.get("/health")
+def api_codebuilder_health():
+    """Return the health state of the CodeBuilder pillar."""
+    return {"status": "ok", "pillar": "codebuilder"}
+
+
+@router.get("/agent")
+def api_get_agent():
+    """Return the CodeBuilder specialist profile."""
+    return load_codebuilder_agent_meta()
+
+
+@router.get("/agents")
+def api_codebuilder_agents():
+    """List only agents stored in the CodeBuilder environment."""
+    return {"agents": list_agents("codebuilder")}
+
+
+@router.post("/execute", response_model=CodeExecutionResult)
+def api_execute_code(req: CodeExecutionRequest):
+    """Execute Python source and return any collected diagnostics."""
+    try:
+        return execute_python_code(req)
+    except Exception as exc:  # pragma: no cover - surfaced as HTTP 500
+        raise HTTPException(status_code=500, detail=f"CodeBuilder execution error: {exc}") from exc
+
+
+def _sse_events(events):
+    for event in events:
+        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
+@router.post("/execute/stream")
+def api_stream_execute(req: CodeExecutionRequest):
+    """Stream risky-mode execution output live as Server-Sent Events."""
+    if req.mode != "risky":
+        raise HTTPException(status_code=400, detail="Streaming is only supported in risky mode.")
+
+    def stream():
+        for event in _sse_events(run_risky(req)):
+            yield event
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@router.post("/edit")
+def api_apply_structured_edit(req: StructuredEditRequest):
+    """Write an approved file update to the workspace."""
+    target = Path(req.target_path)
+    if not target.is_absolute():
+        target = Path.cwd() / target
+
+    if target.exists() and target.is_dir():
+        raise HTTPException(status_code=400, detail="Target path points to a directory, not a file.")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(req.content, encoding="utf-8")
+
+    return {
+        "status": "applied",
+        "target_path": str(target),
+        "bytes_written": len(req.content.encode("utf-8")),
+        "explanation": req.explanation,
+    }
+
+`
+
+### codebuilder/interface_codebuilder.py
+
+`python
+"""Compatibility wrapper for the CodeBuilder router."""
+
+from .interface import router
+
+__all__ = ["router"]
+
+`
+
+### codebuilder/runner.py
+
+`python
+"""CodeBuilder execution runner: safe (in-process) and risky (isolated subprocess) modes.
+
+The risky chain runs each snippet in a fresh Python subprocess so real interpreter
+errors surface, ``input()`` reaches an immediate EOF instead of hanging, a hard
+timeout is enforced, and output is streamed event-by-event to the caller.
+"""
 
 import io
+import json
+import os
+import queue
+import re
+import subprocess
 import sys
+import tempfile
+import threading
+import time
 import traceback
 import uuid
-from typing import List
+from pathlib import Path
+from typing import Dict, Iterator, List, Optional, Union
 
 from .schemas import CodeExecutionRequest, CodeExecutionResult, DiagnosticItem
 
+MAX_STREAM_BYTES = 64 * 1024
+DEFAULT_TIMEOUT_SECONDS = 10.0
+_STDERR_LINE = re.compile(r"[Ll]ine (\d+)(?:,| )")
 
-def execute_python_code(req: CodeExecutionRequest) -> CodeExecutionResult:
-    """Execute Python code in an isolated namespace and capture diagnostics."""
-    run_id = f"run_{uuid.uuid4().hex[:8]}"
+
+def _run_id() -> str:
+    return f"run_{uuid.uuid4().hex[:8]}"
+
+
+def resolve_python() -> str:
+    """Resolve the interpreter used for risky mode: env override, else server Python."""
+    return os.environ.get("NOVOUS_PYTHON") or sys.executable
+
+
+def _runner_environment(root: Path) -> dict:
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = str(root) + (os.pathsep + existing if existing else "")
+    return env
+
+
+def execute_safe(req: CodeExecutionRequest) -> CodeExecutionResult:
+    """Execute Python in-process in an isolated namespace and capture diagnostics."""
+    run_id = _run_id()
     stdout_buffer = io.StringIO()
     stderr_buffer = io.StringIO()
     diagnostics: List[DiagnosticItem] = []
@@ -6358,94 +6487,233 @@ def execute_python_code(req: CodeExecutionRequest) -> CodeExecutionResult:
         diagnostics=diagnostics,
     )
 
-`
 
-### codebuilder/execution_codebuilder.py
+def run_risky(req: CodeExecutionRequest, run_id: Optional[str] = None) -> Iterator[dict]:
+    """Stream an isolated subprocess execution as a sequence of event dicts.
 
-`python
-"""Compatibility wrapper for the CodeBuilder execution engine."""
+    Events: ``start``, ``stdout``, ``stderr``, ``syntax_error``, ``done``.
+    stdin is closed immediately so code calling ``input()`` streams its earlier
+    output and then fails fast with ``EOFError`` instead of hanging.
+    """
+    run_id = run_id or _run_id()
+    interpreter = resolve_python()
+    timeout = max(0.1, req.timeout_seconds or DEFAULT_TIMEOUT_SECONDS)
 
-from .execution import execute_python_code
-
-__all__ = ["execute_python_code"]
-
-`
-
-### codebuilder/interface.py
-
-`python
-"""CodeBuilder doorway: FastAPI router for execution and structured edits."""
-
-from pathlib import Path
-
-from fastapi import APIRouter, HTTPException
-
-from .agent_loader import load_codebuilder_agent_meta
-from .execution import execute_python_code
-from .schemas import CodeExecutionRequest, CodeExecutionResult, StructuredEditRequest
-from core_engine.agent_factory import list_agents
-
-router = APIRouter(prefix="/api/codebuilder", tags=["CodeBuilder"])
-
-
-@router.get("/health")
-def api_codebuilder_health():
-    """Return the health state of the CodeBuilder pillar."""
-    return {"status": "ok", "pillar": "codebuilder"}
-
-
-@router.get("/agent")
-def api_get_agent():
-    """Return the CodeBuilder specialist profile."""
-    return load_codebuilder_agent_meta()
-
-
-@router.get("/agents")
-def api_codebuilder_agents():
-    """List only agents stored in the CodeBuilder environment."""
-    return {"agents": list_agents("codebuilder")}
-
-
-@router.post("/execute", response_model=CodeExecutionResult)
-def api_execute_code(req: CodeExecutionRequest):
-    """Execute Python source and return any collected diagnostics."""
     try:
-        return execute_python_code(req)
-    except Exception as exc:  # pragma: no cover - surfaced as HTTP 500
-        raise HTTPException(status_code=500, detail=f"CodeBuilder execution error: {exc}") from exc
+        compile(req.code, "<codebuilder>", "exec")
+    except SyntaxError as exc:
+        yield {
+            "type": "syntax_error",
+            "run_id": run_id,
+            "line": exc.lineno,
+            "column": exc.offset,
+            "message": f"SyntaxError: {exc.msg}",
+        }
+        yield {
+            "type": "done",
+            "run_id": run_id,
+            "return_code": 1,
+            "status": "ERROR",
+            "timed_out": False,
+        }
+        return
 
-
-@router.post("/edit")
-def api_apply_structured_edit(req: StructuredEditRequest):
-    """Write an approved file update to the workspace."""
-    target = Path(req.target_path)
-    if not target.is_absolute():
-        target = Path.cwd() / target
-
-    if target.exists() and target.is_dir():
-        raise HTTPException(status_code=400, detail="Target path points to a directory, not a file.")
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(req.content, encoding="utf-8")
-
-    return {
-        "status": "applied",
-        "target_path": str(target),
-        "bytes_written": len(req.content.encode("utf-8")),
-        "explanation": req.explanation,
+    yield {
+        "type": "start",
+        "run_id": run_id,
+        "mode": "risky",
+        "python": interpreter,
+        "timeout_seconds": timeout,
     }
 
-`
+    process: Optional[subprocess.Popen] = None
+    timed_out = False
+    return_code = None
+    try:
+        with tempfile.TemporaryDirectory(prefix="codebuilder-") as temp_dir:
+            script_path = Path(temp_dir) / "codebuilder_script.py"
+            script_path.write_text(req.code, encoding="utf-8")
+            process = subprocess.Popen(
+                [interpreter, "-u", str(script_path)],
+                cwd=str(Path.cwd()),
+                env=_runner_environment(Path.cwd()),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+            )
+            if process.stdin is not None:
+                process.stdin.close()  # immediate EOF for any input() calls
 
-### codebuilder/interface_codebuilder.py
+            line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
 
-`python
-"""Compatibility wrapper for the CodeBuilder router."""
+            def _reader() -> None:
+                try:
+                    if process.stdout is not None:
+                        for line in process.stdout:
+                            line_queue.put(line)
+                finally:
+                    line_queue.put(None)
 
-from .interface import router
+            threading.Thread(target=_reader, daemon=True).start()
 
-__all__ = ["router"]
+            deadline = time.monotonic() + timeout
+            emitted = 0
+            truncated = False
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait()
+                    break
+                try:
+                    line = line_queue.get(timeout=remaining)
+                except queue.Empty:
+                    timed_out = True
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait()
+                    break
 
+                if line is None:
+                    if process.poll() is not None:
+                        break
+                    try:
+                        process.wait(timeout=deadline - time.monotonic())
+                    except subprocess.TimeoutExpired:
+                        timed_out = True
+                        process.kill()
+                        process.wait()
+                    break
+
+                if truncated:
+                    continue
+
+                if emitted + len(line) > MAX_STREAM_BYTES:
+                    keep = max(0, MAX_STREAM_BYTES - emitted)
+                    if keep:
+                        yield {"type": "stdout", "text": line[:keep]}
+                    yield {"type": "truncated", "run_id": run_id}
+                    truncated = True
+                    continue
+
+                emitted += len(line)
+                yield {"type": "stdout", "text": line}
+
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            return_code = process.returncode
+
+            if timed_out:
+                yield {
+                    "type": "stderr",
+                    "text": f"\nTimeoutError: code execution exceeded {timeout:g} seconds.\n",
+                }
+    except OSError as exc:
+        yield {
+            "type": "stderr",
+            "text": f"Could not start Python interpreter: {exc}\n",
+        }
+        yield {
+            "type": "done",
+            "run_id": run_id,
+            "return_code": None,
+            "status": "ERROR",
+            "timed_out": False,
+            "error": str(exc),
+        }
+        return
+    finally:
+        if process is not None and process.poll() is None:
+            try:
+                process.kill()
+                process.wait()
+            except OSError:
+                pass
+
+    status = "ERROR" if (return_code or 0) != 0 else "SUCCESS"
+    yield {
+        "type": "done",
+        "run_id": run_id,
+        "return_code": return_code,
+        "status": status,
+        "timed_out": timed_out,
+    }
+
+
+def _diagnostic_from_output(text: str, run_id: str, return_code: Optional[int]) -> Optional[DiagnosticItem]:
+    line: Optional[int] = None
+    for match in _STDERR_LINE.finditer(text):
+        line = int(match.group(1))
+    last_words = [part.strip() for part in text.splitlines() if part.strip()]
+    if last_words:
+        message = last_words[-1][:200]
+    elif return_code is not None:
+        message = f"Process exited with code {return_code}"
+    else:
+        message = "Execution failed"
+    return DiagnosticItem(line=line, message=message, severity="error", run_id=run_id)
+
+
+def execute_risky(req: CodeExecutionRequest) -> CodeExecutionResult:
+    """Run the risky chain to completion and return a CodeExecutionResult."""
+    run_id = _run_id()
+    out_parts: List[str] = []
+    err_parts: List[str] = []
+    diagnostics: List[DiagnosticItem] = []
+    status = "SUCCESS"
+    return_code = None
+    timed_out = False
+
+    for event in run_risky(req, run_id=run_id):
+        event_type = event.get("type")
+        if event_type == "stdout":
+            out_parts.append(event["text"])
+        elif event_type == "stderr":
+            err_parts.append(event["text"])
+        elif event_type == "syntax_error":
+            diagnostics.append(
+                DiagnosticItem(
+                    line=event.get("line"),
+                    column=event.get("column"),
+                    message=event.get("message", "SyntaxError"),
+                    severity="error",
+                    run_id=run_id,
+                )
+            )
+        elif event_type == "done":
+            status = event.get("status", "ERROR")
+            return_code = event.get("return_code")
+            timed_out = event.get("timed_out", False)
+
+    stdout = "".join(out_parts)
+    stderr = "".join(err_parts)
+    if timed_out and not stderr:
+        stderr += f"TimeoutError: code execution exceeded {req.timeout_seconds:g} seconds.\n"
+    if status == "ERROR" and not diagnostics:
+        diagnostic = _diagnostic_from_output(stdout + stderr, run_id, return_code)
+        if diagnostic:
+            diagnostics.append(diagnostic)
+
+    return CodeExecutionResult(
+        run_id=run_id,
+        status=status,
+        stdout=stdout,
+        stderr=stderr,
+        diagnostics=diagnostics,
+    )
+
+
+def execute_python_code(req: CodeExecutionRequest) -> CodeExecutionResult:
+    """Public dispatcher: pick the engine based on the requested mode."""
+    if req.mode == "risky":
+        return execute_risky(req)
+    return execute_safe(req)
 `
 
 ### codebuilder/schemas.py
@@ -6460,7 +6728,11 @@ from pydantic import BaseModel, Field
 
 class CodeExecutionRequest(BaseModel):
     code: str = Field(..., description="Python source code to execute")
-    timeout_seconds: float = Field(default=5.0, description="Execution timeout in seconds")
+    timeout_seconds: float = Field(default=10.0, description="Execution timeout in seconds")
+    mode: str = Field(
+        default="safe",
+        description="Execution mode: 'safe' runs in-process; 'risky' runs in an isolated subprocess",
+    )
 
 
 class DiagnosticItem(BaseModel):
@@ -6490,19 +6762,27 @@ class StructuredEditRequest(BaseModel):
 ### codebuilder/tools/tool_library.py
 
 `python
-"""Custom tools promoted from the Function Testing Workbench."""
+"""CodeBuilder tools kept out of the core catalogue so the registry stays slim.
+
+Importing this module registers each decorated function into the core
+tool catalogue via the shared @tool decorator.
+"""
+
+from core_engine.tool_catalog import tool
 
 
-def calculate_shipping(weight_kg: float, distance_km: float) -> dict:
-    """Calculate shipping fee from package weight and distance."""
-    base_rate = 5.0
-    cost = base_rate + (weight_kg * 1.5) + (distance_km * 0.05)
-    return {
-        "weight_kg": weight_kg,
-        "distance_km": distance_km,
-        "shipping_cost": round(cost, 2)
-    }
+@tool(provider="codebuilder")
+def send_code_to_editor(code: str) -> str:
+    """Queue generated Python code for insertion into the active CodeBuilder Monaco editor."""
+    if not code.strip():
+        raise ValueError("Code to send to the editor must not be empty.")
+    return "CodeBuilder will insert this code into the active Monaco editor after the chat turn."
 
+
+@tool(provider="codebuilder")
+def run_code_in_editor() -> str:
+    """Queue execution of the current contents of the active CodeBuilder editor."""
+    return "CodeBuilder will run the active editor buffer after the chat turn."
 `
 
 ### core_engine/__init__.py
@@ -7355,18 +7635,6 @@ def run_python_code(code: str) -> str:
     return json.dumps(result.model_dump(), ensure_ascii=False)
 
 
-@tool(provider="codebuilder")
-def send_code_to_editor(code: str) -> str:
-    """Queue generated Python code for insertion into the active CodeBuilder Monaco editor."""
-    if not code.strip():
-        raise ValueError("Code to send to the editor must not be empty.")
-    return "CodeBuilder will insert this code into the active Monaco editor after the chat turn."
-
-
-@tool(provider="codebuilder")
-def run_code_in_editor() -> str:
-    """Queue execution of the current contents of the active CodeBuilder editor."""
-    return "CodeBuilder will run the active editor buffer after the chat turn."
 
 
 # --- Core System Tools ---
@@ -7595,6 +7863,11 @@ def load_custom_tools(reload: bool = False) -> None:
                 "signature": str(inspect.signature(function)),
             }
         _LOADED_CUSTOM_TOOLS.add(resolved_path)
+
+
+# Register CodeBuilder's local tool library (imported last so the @tool
+# decorator resolved above is available without a broken import cycle).
+from codebuilder.tools import tool_library  # noqa: E402,F401
 
 `
 
@@ -8027,6 +8300,7 @@ async def api_ws(websocket: WebSocket):
   <title>CodeBuilder — Novous Agent Factory</title>
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/codebuilder.css">
+  <link rel="stylesheet" href="/static/css/test_panel.css">
 </head>
 <body class="bg-dark text-light">
   <div class="app-container">
@@ -8246,18 +8520,73 @@ async def api_ws(websocket: WebSocket):
   opacity: 0.7;
 }
 
-.codebuilder-layout {
-  display: grid;
-  grid-template-columns: 210px minmax(0, 1fr) minmax(250px, 300px);
-  flex: 1;
-  min-height: 250px;
-  gap: 0.6rem;
+.codebuilder-run-mode {
+  display: inline-flex;
+  align-items: center;
 }
 
-.codebuilder-sidebar,
+.codebuilder-run-mode select {
+  max-width: 190px;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.78rem;
+}
+
+/* ---------- Layout grid ----------
+   Columns: chat | v-resizer | editor | v-resizer | console
+   Rows:    main panes | h-resizer | agents strip
+   Sizes are driven by CSS variables so drag handles and collapse
+   toggles only need to mutate variables. */
+.codebuilder-layout {
+  display: grid;
+  grid-template-columns:
+    var(--chat-w, 320px) 6px minmax(0, 1fr) 6px var(--console-w, 300px);
+  grid-template-rows:
+    minmax(0, 1fr) 6px var(--agents-h, 220px);
+  flex: 1;
+  min-height: 250px;
+  overflow: hidden;
+}
+
+.codebuilder-chat-panel {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.codebuilder-resizer[data-resize="chat"] {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.codebuilder-editor-panel {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.codebuilder-resizer[data-resize="console"] {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+.codebuilder-console-panel {
+  grid-column: 5;
+  grid-row: 1;
+}
+
+.codebuilder-resizer[data-resize="agents"] {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.codebuilder-agents-panel {
+  grid-column: 1 / -1;
+  grid-row: 3;
+}
+
+/* ---------- Panes ---------- */
+.codebuilder-chat-panel,
 .codebuilder-editor-panel,
 .codebuilder-console-panel,
-.codebuilder-chat-panel {
+.codebuilder-agents-panel {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -8266,36 +8595,73 @@ async def api_ws(websocket: WebSocket):
   border-radius: var(--radius);
 }
 
-.codebuilder-sidebar {
+.codebuilder-chat-panel,
+.codebuilder-console-panel,
+.codebuilder-agents-panel {
   display: flex;
   flex-direction: column;
-  padding: 0.5rem;
-  gap: 0.5rem;
 }
 
-.codebuilder-sidebar-heading {
+/* ---------- Resizers ---------- */
+.codebuilder-resizer {
+  background: var(--border-color);
+  opacity: 0.5;
+}
+
+.codebuilder-resizer:hover,
+body.is-resizing .codebuilder-resizer.is-dragging {
+  background: var(--primary);
+  opacity: 0.9;
+}
+
+.codebuilder-resizer[data-resize="chat"],
+.codebuilder-resizer[data-resize="console"] {
+  cursor: col-resize;
+}
+
+.codebuilder-resizer[data-resize="agents"] {
+  cursor: row-resize;
+}
+
+body.is-resizing {
+  cursor: default;
+  user-select: none;
+}
+
+/* ---------- Agents panel (bottom strip) ---------- */
+.codebuilder-agents-heading {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  min-height: 34px;
+  min-height: 36px;
+  padding: 0.35rem 0.55rem;
+  border-bottom: 1px solid var(--border-color);
 }
 
-.codebuilder-sidebar-toggle,
-.codebuilder-agent-refresh {
-  flex: 0 0 auto;
-  padding: 0.25rem 0.5rem;
-}
-
-.codebuilder-sidebar-title {
+.codebuilder-agents-title {
   flex: 1;
   min-width: 0;
   overflow: hidden;
 }
 
-.codebuilder-sidebar-title h2,
-.codebuilder-chat-heading h2 {
+.codebuilder-agents-title h2 {
   margin: 0;
   font-size: 0.86rem;
+}
+
+.codebuilder-agents-toggle,
+.codebuilder-agent-refresh,
+.codebuilder-console-collapse,
+.codebuilder-chat-expand {
+  flex: 0 0 auto;
+  min-width: 30px;
+  padding: 0.2rem 0.45rem;
+  line-height: 1.2;
+}
+
+.codebuilder-agent-refresh {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .codebuilder-agent-status {
@@ -8306,58 +8672,33 @@ async def api_ws(websocket: WebSocket):
 }
 
 .codebuilder-agent-list {
-  display: flex;
   flex: 1;
-  flex-direction: column;
-  gap: 0.25rem;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.6rem;
   overflow-y: auto;
+  padding: 0.6rem 0.75rem;
 }
 
 .codebuilder-agent-list > p {
+  grid-column: 1 / -1;
   margin: 0;
   padding: 0.35rem;
 }
 
-.codebuilder-agent-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.35rem;
-  width: 100%;
-  padding: 0.45rem 0.5rem;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-main);
-  text-align: left;
-  cursor: pointer;
-}
-
-.codebuilder-agent-item:hover,
-.codebuilder-agent-item.selected {
+.codebuilder-agent-tile.selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
   background: var(--bg-elev);
-  border-color: var(--border-color);
 }
 
-.codebuilder-agent-item.selected {
-  box-shadow: inset 3px 0 var(--primary);
+.codebuilder-agent-tile.selected i,
+.codebuilder-agent-tile.selected svg {
+  color: var(--primary);
 }
 
-.codebuilder-agent-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.8rem;
-}
-
-.codebuilder-agent-mode {
-  flex: 0 0 auto;
-  color: var(--text-muted);
-  font-size: 0.64rem;
-  text-transform: uppercase;
-}
-
+/* ---------- Editor panel ---------- */
 .codebuilder-editor-panel {
   display: flex;
   flex-direction: column;
@@ -8402,6 +8743,7 @@ async def api_ws(websocket: WebSocket):
   margin-right: auto;
 }
 
+/* ---------- Console panel ---------- */
 .codebuilder-console-panel {
   display: flex;
   flex-direction: column;
@@ -8410,7 +8752,7 @@ async def api_ws(websocket: WebSocket):
 .codebuilder-console-heading,
 .codebuilder-chat-heading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.7rem 0.85rem;
@@ -8503,54 +8845,19 @@ button.diagnostic-item {
   border-left-color: var(--primary);
 }
 
-.codebuilder-shell.sidebar-collapsed .codebuilder-layout {
-  grid-template-columns: 52px minmax(0, 1fr) minmax(250px, 300px);
-}
-
-.codebuilder-sidebar.collapsed .codebuilder-sidebar-title,
-.codebuilder-sidebar.collapsed .codebuilder-agent-refresh,
-.codebuilder-sidebar.collapsed .codebuilder-agent-name,
-.codebuilder-sidebar.collapsed .codebuilder-agent-mode,
-.codebuilder-sidebar.collapsed .codebuilder-agent-list > p {
-  display: none;
-}
-
-.codebuilder-sidebar.collapsed .codebuilder-sidebar-heading {
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.codebuilder-sidebar.collapsed .codebuilder-agent-item {
-  justify-content: center;
-  padding: 0.4rem 0.15rem;
-}
-
-.codebuilder-chat-panel {
-  flex: 0 0 185px;
-  display: flex;
-  flex-direction: column;
-  transition: flex-basis 180ms ease;
-}
-
-.codebuilder-chat-panel.expanded {
-  flex-basis: clamp(300px, 42vh, 520px);
-}
-
+/* ---------- Chat panel (left column) ---------- */
 .codebuilder-chat-heading {
   flex: 0 0 auto;
-  align-items: center;
   padding: 0.45rem 0.75rem;
 }
 
-.codebuilder-chat-expand {
-  flex: 0 0 auto;
-  min-width: 30px;
-  padding: 0.2rem 0.45rem;
-  line-height: 1.2;
+.codebuilder-chat-heading h2 {
+  margin: 0;
+  font-size: 0.86rem;
 }
 
 .codebuilder-chat-heading .text-muted {
-  max-width: 65%;
+  max-width: 60%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -8608,10 +8915,40 @@ button.diagnostic-item {
   font-size: 0.7rem;
 }
 
-.codebuilder-send-code {
+.codebuilder-code-language {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: lowercase;
+}
+
+.codebuilder-code-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.codebuilder-copy-code,
+.codebuilder-send-code,
+.codebuilder-expand-code,
+.codebuilder-modal-close {
   padding: 0.2rem 0.45rem;
   font-family: inherit;
   font-size: 0.7rem;
+}
+
+.codebuilder-chat-code {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 0 0 6px 6px;
+  background: var(--bg-dark);
+}
+
+.codebuilder-chat-code .monaco-editor,
+.codebuilder-chat-code .monaco-editor .margin,
+.codebuilder-chat-code .monaco-editor-background {
+  background: var(--bg-dark);
 }
 
 .codebuilder-code-block pre {
@@ -8631,6 +8968,12 @@ button.diagnostic-item {
   white-space: pre;
 }
 
+.codebuilder-chat-code > pre {
+  height: 100%;
+  max-height: none;
+  box-sizing: border-box;
+}
+
 .codebuilder-chat-message.user {
   align-self: flex-end;
   background: var(--primary);
@@ -8645,7 +8988,7 @@ button.diagnostic-item {
 
 .codebuilder-chat-form {
   display: grid;
-  grid-template-columns: minmax(145px, 190px) minmax(0, 560px) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: 0.5rem;
   padding: 0.45rem 0.65rem;
@@ -8653,8 +8996,8 @@ button.diagnostic-item {
 }
 
 .codebuilder-model-picker {
+  grid-column: 1 / -1;
   display: flex;
-  flex: 0 0 190px;
   flex-direction: column;
   gap: 0.2rem;
 }
@@ -8667,6 +9010,7 @@ button.diagnostic-item {
 }
 
 .codebuilder-chat-form textarea {
+  grid-column: 1;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
@@ -8677,36 +9021,167 @@ button.diagnostic-item {
   font-size: 0.82rem;
 }
 
-.codebuilder-chat-form button {
-  justify-self: start;
+.codebuilder-chat-actions {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
+.codebuilder-chat-actions .btn {
+  width: 100%;
+}
+
+/* ---------- Expanded code modal ---------- */
+.codebuilder-code-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgba(8, 10, 16, 0.72);
+}
+
+.codebuilder-code-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, 94vw);
+  max-height: 88vh;
+  overflow: hidden;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.codebuilder-code-modal-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.72rem;
+}
+
+.codebuilder-code-modal-heading .codebuilder-code-actions {
+  gap: 0.4rem;
+}
+
+.codebuilder-code-modal-body {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-dark);
+}
+
+.codebuilder-code-modal-body .monaco-editor,
+.codebuilder-code-modal-body .monaco-editor .margin,
+.codebuilder-code-modal-body .monaco-editor-background {
+  background: var(--bg-dark);
+}
+
+body.codebuilder-modal-open {
+  overflow: hidden;
+}
+
+/* ---------- Collapse rails ---------- */
+.codebuilder-shell.chat-collapsed {
+  --chat-w: 44px;
+}
+
+.codebuilder-shell.console-collapsed {
+  --console-w: 44px;
+}
+
+.codebuilder-shell.agents-collapsed {
+  --agents-h: 38px;
+}
+
+.codebuilder-shell.chat-collapsed .codebuilder-chat-heading {
+  justify-content: center;
+  padding: 0.45rem 0.2rem;
+}
+
+.codebuilder-shell.chat-collapsed .codebuilder-chat-heading h2,
+.codebuilder-shell.chat-collapsed .codebuilder-chat-heading .text-muted,
+.codebuilder-shell.chat-collapsed .codebuilder-chat-messages,
+.codebuilder-shell.chat-collapsed .codebuilder-chat-form {
+  display: none;
+}
+
+.codebuilder-shell.console-collapsed .codebuilder-console-heading {
+  justify-content: center;
+  padding: 0.45rem 0.2rem;
+}
+
+.codebuilder-shell.console-collapsed .codebuilder-console-heading h2,
+.codebuilder-shell.console-collapsed .codebuilder-console-subtitle,
+.codebuilder-shell.console-collapsed .codebuilder-output-section,
+.codebuilder-shell.console-collapsed .codebuilder-problems-section {
+  display: none;
+}
+
+.codebuilder-shell.agents-collapsed .codebuilder-agents-heading {
+  justify-content: flex-end;
+}
+
+.codebuilder-shell.agents-collapsed .codebuilder-agents-title {
+  display: none;
+}
+
+.codebuilder-shell.agents-collapsed .codebuilder-agent-list {
+  display: none;
+}
+
+/* ---------- Responsive: medium ---------- */
 @media (max-width: 1100px) {
-  .codebuilder-layout,
-  .codebuilder-shell.sidebar-collapsed .codebuilder-layout {
-    grid-template-columns: 185px minmax(0, 1fr);
-    grid-template-rows: minmax(280px, 1fr) minmax(200px, 0.65fr);
+  .codebuilder-layout {
+    grid-template-columns: var(--chat-w, 280px) 6px minmax(0, 1fr);
+    grid-template-rows:
+      minmax(280px, 1.2fr) minmax(180px, 0.6fr) 6px var(--agents-h, 200px);
   }
 
-  .codebuilder-sidebar {
-    grid-row: 1 / span 2;
+  .codebuilder-chat-panel {
+    grid-column: 1;
+    grid-row: 1;
   }
 
-  .codebuilder-editor-panel {
+  .codebuilder-resizer[data-resize="chat"] {
     grid-column: 2;
     grid-row: 1;
   }
 
+  .codebuilder-editor-panel {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .codebuilder-resizer[data-resize="console"] {
+    display: none;
+  }
+
   .codebuilder-console-panel {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 2;
   }
 
-  .codebuilder-shell.sidebar-collapsed .codebuilder-layout {
-    grid-template-columns: 52px minmax(0, 1fr);
+  .codebuilder-resizer[data-resize="agents"] {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  .codebuilder-agents-panel {
+    grid-column: 1 / -1;
+    grid-row: 4;
   }
 }
 
+/* ---------- Responsive: small ---------- */
 @media (max-width: 700px) {
   .codebuilder-shell {
     height: auto;
@@ -8720,6 +9195,14 @@ button.diagnostic-item {
 
   .codebuilder-toolbar-actions {
     width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .codebuilder-run-mode,
+  .codebuilder-run-mode select {
+    flex: 1;
+    max-width: none;
+    width: 100%;
   }
 
   .codebuilder-toolbar-actions .btn {
@@ -8728,21 +9211,21 @@ button.diagnostic-item {
     font-size: 0.75rem;
   }
 
-  .codebuilder-layout,
-  .codebuilder-shell.sidebar-collapsed .codebuilder-layout {
+  .codebuilder-layout {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(350px, 55vh) minmax(260px, 35vh);
+    grid-template-rows:
+      auto minmax(350px, 55vh) minmax(260px, 35vh) var(--agents-h, 190px);
+    min-height: 900px;
   }
 
-  .codebuilder-sidebar,
-  .codebuilder-shell.sidebar-collapsed .codebuilder-sidebar {
+  .codebuilder-resizer {
+    display: none;
+  }
+
+  .codebuilder-chat-panel {
     grid-column: 1;
     grid-row: 1;
-    max-height: 190px;
-  }
-
-  .codebuilder-shell.sidebar-collapsed .codebuilder-sidebar {
-    max-height: 48px;
+    height: 460px;
   }
 
   .codebuilder-editor-panel {
@@ -8755,31 +9238,9 @@ button.diagnostic-item {
     grid-row: 3;
   }
 
-  .codebuilder-chat-panel {
-    flex-basis: 215px;
-  }
-
-  .codebuilder-chat-panel.expanded {
-    flex-basis: min(45vh, 420px);
-    min-height: 300px;
-  }
-
-  .codebuilder-model-picker {
-    grid-column: 1 / -1;
-  }
-
-  .codebuilder-chat-form {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .codebuilder-chat-form textarea {
+  .codebuilder-agents-panel {
     grid-column: 1;
-    grid-row: 2;
-  }
-
-  .codebuilder-chat-form button {
-    grid-column: 2;
-    grid-row: 2;
+    grid-row: 4;
   }
 
   .codebuilder-statusbar {
@@ -8787,7 +9248,6 @@ button.diagnostic-item {
     font-size: 0.65rem;
   }
 }
-
 `
 
 ### frontend/static/css/style.css
@@ -10326,26 +10786,157 @@ export function renderChatView(container) {
 ### frontend/static/js/codebuilder/codebuilder.js
 
 `javascript
-import { attachCodeBuilderEditor } from './codebuilder_editor.js';
+import { attachCodeBuilderEditor, loadMonaco } from './codebuilder_editor.js';
 
 const DEMO_CODE = `print("Hello from Novous CodeBuilder!")
 for i in range(3):
     print(f"count={i}")
 `;
 
+const CODE_LANGUAGE_MAP = {
+  py: 'python', python: 'python', python3: 'python',
+  js: 'javascript', javascript: 'javascript', node: 'javascript',
+  ts: 'typescript', typescript: 'typescript',
+  html: 'html', css: 'css', scss: 'scss', json: 'json',
+  sh: 'shell', bash: 'shell', shell: 'shell', zsh: 'shell', powershell: 'powershell',
+  yaml: 'yaml', yml: 'yaml', ini: 'ini', toml: 'ini', xml: 'xml',
+  md: 'markdown', markdown: 'markdown', text: 'plaintext', txt: 'plaintext',
+};
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch { /* fall through to legacy copy */ }
+  }
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.top = '0';
+  area.style.left = '0';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { ok = false; }
+  area.remove();
+  return ok;
+}
+
+const PREFS_KEY = 'novous.codebuilder.';
+const PANEL_CONF = {
+  chat:    { var: '--chat-w',    min: 240, maxFactor: 0.45, rail: 44, default: 320 },
+  console: { var: '--console-w', min: 220, maxFactor: 0.45, rail: 44, default: 300 },
+  agents:  { var: '--agents-h',  min: 120, max: 340,        rail: 38, default: 220 },
+};
+const PANEL_LABELS = { chat: 'Chat', console: 'Console', agents: 'Agents' };
+const PANEL_GLYPHS = { chat: ['«', '»'], console: ['»', '«'], agents: ['⌄', '⌃'] };
+const PANEL_BUTTONS = {
+  chat: '#codebuilder-chat-expand',
+  console: '#codebuilder-console-collapse',
+  agents: '#codebuilder-agents-toggle',
+};
+
+const readPref = key => {
+  try { return localStorage.getItem(PREFS_KEY + key); } catch { return null; }
+};
+const writePref = (key, value) => {
+  try { localStorage.setItem(PREFS_KEY + key, value); } catch { /* storage unavailable */ }
+};
+const readVar = (element, name) => parseFloat(
+  element.style.getPropertyValue(name) || getComputedStyle(element).getPropertyValue(name)
+);
+
+const clampSize = (layout, name, value) => {
+  const conf = PANEL_CONF[name];
+  const max = conf.max ?? Math.max(conf.min, layout.clientWidth * conf.maxFactor);
+  return Math.round(Math.min(Math.max(value, conf.min), max));
+};
+
+function restoreLayoutState(shell) {
+  const layout = shell.querySelector('.codebuilder-layout');
+  if (!layout) return;
+  for (const name of Object.keys(PANEL_CONF)) {
+    const conf = PANEL_CONF[name];
+    const saved = parseFloat(readPref(name + 'Width'));
+    if (Number.isFinite(saved)) layout.style.setProperty(conf.var, clampSize(layout, name, saved) + 'px');
+    if (readPref(name + 'Collapsed') === '1') {
+      shell.classList.add(name + '-collapsed');
+      layout.style.setProperty(conf.var, conf.rail + 'px');
+    }
+  }
+}
+
+function refreshPanelToggle(shell, name) {
+  const button = shell.querySelector(PANEL_BUTTONS[name]);
+  if (!button) return;
+  const collapsed = shell.classList.contains(name + '-collapsed');
+  const label = PANEL_LABELS[name];
+  button.textContent = collapsed ? PANEL_GLYPHS[name][1] : PANEL_GLYPHS[name][0];
+  button.title = collapsed ? `Expand ${label} panel` : `Collapse ${label} panel`;
+  button.setAttribute('aria-label', button.title);
+  button.setAttribute('aria-expanded', String(!collapsed));
+}
+
+function setupResizers(shell) {
+  const layout = shell.querySelector('.codebuilder-layout');
+  if (!layout) return;
+  shell.querySelectorAll('.codebuilder-resizer').forEach(resizer => {
+    const name = resizer.dataset.resize;
+    const conf = PANEL_CONF[name];
+    if (!conf) return;
+    resizer.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      if (shell.classList.contains(name + '-collapsed')) {
+        shell.classList.remove(name + '-collapsed');
+        writePref(name + 'Collapsed', '0');
+        refreshPanelToggle(shell, name);
+      }
+      const axis = name === 'agents' ? 'clientY' : 'clientX';
+      const startPos = event[axis];
+      const start = clampSize(layout, name, readVar(layout, conf.var) || conf.default);
+      resizer.setPointerCapture(event.pointerId);
+      document.body.classList.add('is-resizing');
+      resizer.classList.add('is-dragging');
+      const onMove = moveEvent => {
+        layout.style.setProperty(
+          conf.var,
+          clampSize(layout, name, start + (moveEvent[axis] - startPos)) + 'px'
+        );
+      };
+      const onUp = () => {
+        resizer.removeEventListener('pointermove', onMove);
+        resizer.removeEventListener('pointerup', onUp);
+        document.body.classList.remove('is-resizing');
+        resizer.classList.remove('is-dragging');
+        const final = readVar(layout, conf.var);
+        if (Number.isFinite(final)) writePref(name + 'Width', String(final));
+      };
+      resizer.addEventListener('pointermove', onMove);
+      resizer.addEventListener('pointerup', onUp);
+    });
+  });
+}
+
+const RISKY_CODE_PATTERN = /\b(?:subprocess|os\.system|os\.popen|os\.spawn|pty|commands)\b|shell\s*[:=]\s*true|\binput\s*\(|^\s*!/im;
+const RUN_MODE_KEY = 'codebuilder.runMode';
+
 export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
   const root = document.getElementById(rootId);
   const output = document.getElementById('codebuilder-output');
   const diagnostics = document.getElementById('diagnostics');
   const runButton = document.getElementById('run-code');
+  const runMode = document.getElementById('codebuilder-run-mode');
   const demoButton = document.getElementById('load-demo');
   const clearButton = document.getElementById('clear-console');
   const status = document.getElementById('codebuilder-status');
   const agentList = document.getElementById('codebuilder-agent-list');
-  const agentStatus = document.getElementById('codebuilder-agent-status');
   const agentRefresh = document.getElementById('codebuilder-agent-refresh');
-  const sidebar = document.getElementById('codebuilder-sidebar');
-  const sidebarToggle = document.getElementById('codebuilder-sidebar-toggle');
+  const agentsPanel = document.getElementById('codebuilder-agents-panel');
+  const agentsToggle = document.getElementById('codebuilder-agents-toggle');
   const modelSelect = document.getElementById('codebuilder-model');
   const chatForm = document.getElementById('codebuilder-chat-form');
   const chatInput = document.getElementById('codebuilder-chat-input');
@@ -10353,20 +10944,39 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
   const chatStatus = document.getElementById('codebuilder-chat-status');
   const chatPanel = document.getElementById('codebuilder-chat-panel');
   const chatExpand = document.getElementById('codebuilder-chat-expand');
+  const chatClear = document.getElementById('codebuilder-chat-clear');
+  const consoleCollapse = document.getElementById('codebuilder-console-collapse');
+  const shell = agentsPanel?.closest('.codebuilder-shell') ?? root.closest('.codebuilder-shell');
+  const layout = shell?.querySelector('.codebuilder-layout');
 
-  if (!root || !output || !diagnostics || !runButton || !demoButton || !clearButton ||
-      !agentList || !agentStatus || !agentRefresh || !sidebar || !sidebarToggle ||
+  if (!root || !output || !diagnostics || !runButton || !runMode || !demoButton || !clearButton ||
+      !agentList || !agentRefresh || !agentsPanel || !agentsToggle ||
       !modelSelect || !chatForm || !chatInput || !chatMessages || !chatStatus ||
-      !chatPanel || !chatExpand) {
+      !chatPanel || !chatExpand || !chatClear || !consoleCollapse || !shell || !layout) {
     console.error('CodeBuilder could not start because a required page element is missing.');
     return null;
   }
+
+  restoreLayoutState(shell);
+  setupResizers(shell);
 
   const editor = await attachCodeBuilderEditor(root, DEMO_CODE);
   let agents = [];
   let selectedAgent = null;
   let defaultModel = 'qwen2.5-coder:latest';
   let chatPending = false;
+  let manualRunMode = null;
+  const chatCodeEditors = new Set();
+
+  const detectRunMode = () => (RISKY_CODE_PATTERN.test(editor.getValue()) ? 'risky' : 'safe');
+  const currentRunMode = () => (manualRunMode || detectRunMode());
+
+  const disposeChatCodeEditors = () => {
+    chatCodeEditors.forEach(editor => {
+      try { editor.dispose(); } catch { /* already disposed */ }
+    });
+    chatCodeEditors.clear();
+  };
 
   const renderDiagnostics = (items = []) => {
     diagnostics.replaceChildren();
@@ -10391,19 +11001,121 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     });
   };
 
+  const streamRiskyRun = async () => {
+    const timeoutSeconds = 10;
+    const response = await fetch('/api/codebuilder/execute/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: editor.getValue(), timeout_seconds: timeoutSeconds, mode: 'risky' })
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.detail || `Stream request failed (${response.status}).`);
+    }
+    if (!response.body || typeof response.body.getReader !== 'function') {
+      throw new Error('Live streaming is not supported by this browser.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let returnCode = 0;
+    let runStatus = 'SUCCESS';
+    let streamedText = '';
+    let syntaxError = null;
+
+    const ingest = (event) => {
+      switch (event.type) {
+        case 'stdout':
+          output.textContent += event.text;
+          streamedText += event.text;
+          break;
+        case 'stderr':
+          output.textContent += event.text;
+          streamedText += event.text;
+          break;
+        case 'truncated':
+          output.textContent += '\n[Earlier output truncated]\n';
+          break;
+        case 'syntax_error':
+          syntaxError = { line: event.line, message: event.message };
+          break;
+        case 'done':
+          returnCode = event.return_code ?? returnCode;
+          runStatus = event.status || runStatus;
+          break;
+        default:
+          break;
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let separator = buffer.indexOf('\n\n');
+      while (separator !== -1) {
+        const rawEvent = buffer.slice(0, separator);
+        buffer = buffer.slice(separator + 2);
+        for (const line of rawEvent.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            ingest(JSON.parse(line.slice(6)));
+          } catch { /* ignore malformed event */ }
+        }
+        separator = buffer.indexOf('\n\n');
+      }
+    }
+    const remainder = buffer.trim();
+    if (remainder.startsWith('data: ')) {
+      try { ingest(JSON.parse(remainder.slice(6))); } catch { /* ignore */ }
+    }
+
+    if (syntaxError) {
+      renderDiagnostics([{ severity: 'error', line: syntaxError.line, message: syntaxError.message }]);
+      editor.setDiagnostics([{ severity: 'error', line: syntaxError.line, message: syntaxError.message }]);
+      status.textContent = 'Finished with errors';
+    } else if (runStatus === 'ERROR') {
+      const lastLine = [...streamedText.trim().split('\n')].filter(Boolean).pop() || '';
+      const message = lastLine || `Process exited with code ${returnCode}.`;
+      renderDiagnostics([{ severity: 'error', message }]);
+      editor.setDiagnostics([]);
+      status.textContent = 'Finished with errors';
+    } else {
+      renderDiagnostics([]);
+      editor.setDiagnostics([]);
+    }
+
+    return {
+      status: runStatus === 'SUCCESS' ? 'SUCCESS' : 'ERROR',
+      stdout: streamedText,
+      stderr: '',
+      diagnostics: [],
+    };
+  };
+
   const runCode = async () => {
+    const mode = currentRunMode();
     runButton.disabled = true;
-    runButton.textContent = 'Running…';
-    output.textContent = 'Running Python code…';
+    runButton.textContent = mode === 'risky' ? 'Running… (stream)' : 'Running…';
+    output.textContent = '';
     status.textContent = 'Running';
     diagnostics.replaceChildren();
     editor.setDiagnostics([]);
 
     try {
+      if (mode === 'risky') {
+        const result = await streamRiskyRun();
+        if (result && !output.textContent.trim()) {
+          output.textContent = 'Execution completed with no output.';
+        }
+        return result;
+      }
+
       const response = await fetch('/api/codebuilder/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: editor.getValue(), timeout_seconds: 5.0 })
+        body: JSON.stringify({ code: editor.getValue(), timeout_seconds: 10, mode: 'safe' })
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -10468,6 +11180,104 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     }
   };
 
+  const createCopyCodeButton = (code) => {
+    const copyButton = document.createElement('button');
+    copyButton.type = 'button';
+    copyButton.className = 'btn btn-sm codebuilder-copy-code';
+    copyButton.textContent = 'Copy Code';
+    copyButton.setAttribute('aria-label', 'Copy code to clipboard');
+    copyButton.addEventListener('click', async () => {
+      const ok = await copyTextToClipboard(code);
+      copyButton.textContent = ok ? 'Copied!' : 'Copy failed';
+      copyButton.disabled = ok;
+      setTimeout(() => {
+        copyButton.textContent = 'Copy Code';
+        copyButton.disabled = false;
+      }, 2000);
+    });
+    return copyButton;
+  };
+
+  const createSendToEditorButton = (code) => {
+    const sendButton = document.createElement('button');
+    sendButton.type = 'button';
+    sendButton.className = 'btn btn-sm codebuilder-send-code';
+    sendButton.textContent = 'Send to editor';
+    sendButton.setAttribute('aria-label', 'Send code to the editor');
+    sendButton.addEventListener('click', () => {
+      if (sendCodeToEditor(code)) {
+        sendButton.textContent = 'Sent to editor';
+        sendButton.disabled = true;
+      }
+    });
+    return sendButton;
+  };
+
+  const openChatCodeModal = (code, codeLanguage) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'codebuilder-code-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', `Expanded ${codeLanguage} code block`);
+
+    const panel = document.createElement('div');
+    panel.className = 'codebuilder-code-modal';
+
+    const heading = document.createElement('div');
+    heading.className = 'codebuilder-code-modal-heading';
+    const title = document.createElement('span');
+    title.className = 'codebuilder-code-language';
+    title.textContent = codeLanguage;
+    heading.appendChild(title);
+
+    const actions = document.createElement('div');
+    actions.className = 'codebuilder-code-actions';
+    actions.append(createCopyCodeButton(code), createSendToEditorButton(code));
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'btn btn-sm codebuilder-modal-close';
+    closeButton.textContent = 'Close';
+    closeButton.setAttribute('aria-label', 'Close expanded code block');
+    actions.appendChild(closeButton);
+    heading.appendChild(actions);
+
+    const body = document.createElement('div');
+    body.className = 'codebuilder-code-modal-body';
+
+    const pre = document.createElement('pre');
+    const codeElement = document.createElement('code');
+    codeElement.className = `language-${codeLanguage}`;
+    codeElement.textContent = code;
+    pre.appendChild(codeElement);
+    body.appendChild(pre);
+
+    panel.append(heading, body);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    let modalEditor = null;
+    const close = () => {
+      if (modalEditor) {
+        try { modalEditor.dispose(); } catch { /* already disposed */ }
+      }
+      overlay.remove();
+      document.body.classList.remove('codebuilder-modal-open');
+      document.removeEventListener('keydown', onKey);
+    };
+    const onKey = event => { if (event.key === 'Escape') close(); };
+
+    overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+    closeButton.addEventListener('click', close);
+    document.addEventListener('keydown', onKey);
+    document.body.classList.add('codebuilder-modal-open');
+
+    mountChatCodeEditor(body, pre, code, codeLanguage, {
+      maxHeight: Math.round(window.innerHeight * 0.6),
+      wordWrap: 'off',
+      addToRegistry: false,
+    }).then(editor => { modalEditor = editor; });
+  };
+
   const appendAssistantMessage = (message, content) => {
     content = String(content ?? '');
     const codeBlockPattern = /```([^\r\n`]*)\r?\n([\s\S]*?)```/g;
@@ -10482,46 +11292,98 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
       message.appendChild(paragraph);
     };
 
-    while ((match = codeBlockPattern.exec(content)) !== null) {
-      appendText(content.slice(lastIndex, match.index));
-
-      const language = match[1].trim().split(/\s+/, 1)[0].toLowerCase();
-      const code = match[2];
-      const isPython = !language || ['py', 'python', 'python3'].includes(language);
+    const buildCodeBlock = (code, rawLanguage) => {
+      const language = rawLanguage || 'python';
       const block = document.createElement('section');
       block.className = 'codebuilder-code-block';
 
       const heading = document.createElement('div');
       heading.className = 'codebuilder-code-heading';
       const languageLabel = document.createElement('span');
-      languageLabel.textContent = isPython ? 'Python' : language;
+      languageLabel.className = 'codebuilder-code-language';
+      languageLabel.textContent = language;
       heading.appendChild(languageLabel);
 
-      if (isPython) {
-        const sendButton = document.createElement('button');
-        sendButton.type = 'button';
-        sendButton.className = 'btn btn-sm codebuilder-send-code';
-        sendButton.textContent = 'Send to editor';
-        sendButton.addEventListener('click', () => {
-          if (sendCodeToEditor(code)) {
-            sendButton.textContent = 'Sent to editor';
-            sendButton.disabled = true;
-          }
-        });
-        heading.appendChild(sendButton);
-      }
+      const actions = document.createElement('div');
+      actions.className = 'codebuilder-code-actions';
+      actions.append(createCopyCodeButton(code), createSendToEditorButton(code));
+
+      const expandButton = document.createElement('button');
+      expandButton.type = 'button';
+      expandButton.className = 'btn btn-sm codebuilder-expand-code';
+      expandButton.textContent = 'Expand';
+      expandButton.setAttribute('aria-label', 'Open this code block in a larger view');
+      expandButton.addEventListener('click', () => openChatCodeModal(code, language));
+      actions.appendChild(expandButton);
+      heading.appendChild(actions);
+
+      const body = document.createElement('div');
+      body.className = 'codebuilder-chat-code';
 
       const pre = document.createElement('pre');
       const codeElement = document.createElement('code');
-      codeElement.className = isPython ? 'language-python' : `language-${language || 'text'}`;
+      codeElement.className = `language-${language}`;
       codeElement.textContent = code;
       pre.appendChild(codeElement);
-      block.append(heading, pre);
+      body.appendChild(pre);
+
+      block.append(heading, body);
       message.appendChild(block);
+
+      mountChatCodeEditor(body, pre, code, language, {
+        maxHeight: 420,
+        wordWrap: 'on',
+        addToRegistry: true,
+      });
+    };
+
+    while ((match = codeBlockPattern.exec(content)) !== null) {
+      appendText(content.slice(lastIndex, match.index));
+      let rawLanguage = match[1].trim().split(/\s+/, 1)[0].toLowerCase();
+      let snippet = match[2].trimEnd();
+      if (rawLanguage === 'json' || ['text', 'txt', 'plaintext', ''].includes(rawLanguage)) {
+        try {
+          snippet = JSON.stringify(JSON.parse(snippet), null, 2);
+          rawLanguage = 'python';
+        } catch { /* keep the raw snippet when it is not valid JSON */ }
+      }
+      buildCodeBlock(snippet, rawLanguage);
       lastIndex = codeBlockPattern.lastIndex;
     }
 
     appendText(content.slice(lastIndex));
+  };
+
+  const mountChatCodeEditor = (container, fallbackPre, code, rawLanguage, options = {}) => {
+    const { maxHeight = 360, wordWrap = 'on', addToRegistry = true } = options;
+    const language = CODE_LANGUAGE_MAP[rawLanguage] || rawLanguage || 'plaintext';
+    const lineCount = code.split('\n').length;
+    container.style.height = `${Math.min(maxHeight, Math.max(72, lineCount * 18 + 16))}px`;
+
+    return loadMonaco().then(monaco => {
+      if (!container.isConnected || !chatCodeEditors) return null;
+      if (!monaco?.editor || typeof monaco.editor.create !== 'function') return null;
+      fallbackPre.remove();
+      const editor = monaco.editor.create(container, {
+        value: code,
+        language,
+        theme: 'vs-dark',
+        readOnly: true,
+        automaticLayout: true,
+        minimap: { enabled: false },
+        folding: false,
+        glyphMargin: false,
+        lineDecorationsWidth: 0,
+        lineNumbers: 'off',
+        renderLineHighlight: 'none',
+        scrollBeyondLastLine: false,
+        wordWrap,
+        contextmenu: false,
+        fixedOverflowWidgets: true,
+      });
+      if (addToRegistry) chatCodeEditors.add(editor);
+      return editor;
+    }).catch(() => null);
   };
 
   const appendChatMessage = (role, content) => {
@@ -10542,37 +11404,122 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     sendButton.disabled = chatPending || !selectedAgent || !modelSelect.value || modelSelect.disabled;
   };
 
+  const FUTURE_AGENT_OPTIONS = [
+    { id: 'debugAgent', label: 'Debug Agent', icon: 'bug' },
+    { id: 'diagnostics', label: 'Diagnostics', icon: 'activity' },
+  ];
+
+  const hasAgentFunctions = agent => Array.isArray(agent.tools) && agent.tools.length > 0;
+
+  const AGENT_TILE_ICONS = {
+    bot: [
+      'M12 8V4H8',
+      'M4 8v12a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1Z',
+      'M8 13v2',
+      'M12 13v2',
+      'M16 13v2',
+    ],
+    bug: [
+      'm8 2 1.88 1.88',
+      'M14.12 3.88 16 2',
+      'M9 7.13v-1a3.003 3.003 0 1 1 6 0v1',
+      'M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6',
+      'M12 20v-9',
+      'M6.53 9C4.6 8.8 3 7.1 3 5',
+      'M6 13H2',
+      'M3 21c0-2.1 1.7-3.9 3.8-4',
+      'M20.97 5c0 2.1-1.6 3.8-3.5 4',
+      'M22 13h-4',
+      'M17.2 17c2.1.1 3.8 1.9 3.8 4',
+    ],
+    activity: [
+      'M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2',
+    ],
+  };
+
+  const buildTileIcon = (name) => {
+    const iconPath = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(iconPath, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '20');
+    svg.setAttribute('height', '20');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    (AGENT_TILE_ICONS[name] || []).forEach(pathData => {
+      const path = document.createElementNS(iconPath, 'path');
+      path.setAttribute('d', pathData);
+      svg.appendChild(path);
+    });
+    return svg;
+  };
+
+  const buildAgentTile = (label, icon, title, onClick, isSelected) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'test-function codebuilder-agent-tile';
+    button.title = title;
+    if (isSelected) button.classList.add('selected');
+    button.setAttribute('aria-pressed', String(Boolean(isSelected)));
+
+    const iconElement = buildTileIcon(icon);
+    const labelElement = document.createElement('span');
+    labelElement.textContent = label;
+
+    if (typeof onClick === 'function') {
+      button.addEventListener('click', onClick);
+    } else {
+      button.disabled = true;
+      button.classList.add('disabled');
+    }
+    button.append(iconElement, labelElement);
+    return button;
+  };
+
   const renderAgents = () => {
     agentList.replaceChildren();
+
+    agents.forEach(agent => {
+      const isSelected = selectedAgent?.id === agent.id;
+      const hasFunctions = hasAgentFunctions(agent);
+      const tile = buildAgentTile(
+        agent.name,
+        'bot',
+        hasFunctions
+          ? (agent.description || agent.name)
+          : `${agent.name} — no tools available`,
+        () => selectAgent(agent),
+        isSelected
+      );
+      tile.setAttribute('aria-label', `${agent.name} agent`);
+      if (chatPending || !hasFunctions) {
+        tile.disabled = true;
+        tile.classList.add('disabled');
+      }
+      agentList.appendChild(tile);
+    });
+
+    FUTURE_AGENT_OPTIONS.forEach(option => {
+      const tile = buildAgentTile(
+        option.label,
+        option.icon,
+        `${option.label} — not implemented yet`,
+        null,
+        false
+      );
+      agentList.appendChild(tile);
+    });
+
     if (!agents.length) {
+      selectedAgent = null;
       const empty = document.createElement('p');
       empty.className = 'text-muted small';
       empty.textContent = 'No agents found in the workspace agents folder.';
       agentList.appendChild(empty);
-      selectedAgent = null;
-      updateChatControls();
-      return;
     }
-
-    agents.forEach(agent => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'codebuilder-agent-item';
-      button.classList.toggle('selected', selectedAgent?.id === agent.id);
-      button.title = agent.description || agent.name;
-      button.setAttribute('aria-pressed', String(selectedAgent?.id === agent.id));
-      button.disabled = chatPending;
-
-      const name = document.createElement('span');
-      name.className = 'codebuilder-agent-name';
-      name.textContent = agent.name;
-      const mode = document.createElement('span');
-      mode.className = 'codebuilder-agent-mode';
-      mode.textContent = agent.mode || 'agent';
-      button.append(name, mode);
-      button.addEventListener('click', () => selectAgent(agent));
-      agentList.appendChild(button);
-    });
 
     updateChatControls();
   };
@@ -10585,13 +11532,13 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
       modelSelect.value = preferredModel;
     }
     chatMessages.replaceChildren();
+    disposeChatCodeEditors();
     appendChatMessage('system', `Chatting with ${agent.name}.`);
     chatStatus.textContent = `Agent: ${agent.name}`;
   };
 
   const loadAgents = async () => {
     agentRefresh.disabled = true;
-    agentStatus.textContent = 'Loading agents…';
     try {
       const data = await fetch('/api/codebuilder/agents').then(async response => {
         const payload = await response.json();
@@ -10599,13 +11546,11 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
         return payload;
       });
       agents = data.agents || [];
-      agentStatus.textContent = `${agents.length} agent${agents.length === 1 ? '' : 's'}`;
       const selectedId = selectedAgent?.id;
       selectedAgent = agents.find(agent => agent.id === selectedId) || agents[0] || null;
       renderAgents();
       if (selectedAgent) selectAgent(selectedAgent);
     } catch (error) {
-      agentStatus.textContent = 'Could not load agents.';
       const message = document.createElement('p');
       message.className = 'text-danger small';
       message.textContent = error instanceof Error ? error.message : String(error);
@@ -10672,23 +11617,50 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
   });
   runButton.addEventListener('click', runCode);
   editor.setRunHandler(runCode);
+
+  const persistedRunMode = readPref(RUN_MODE_KEY);
+  if (persistedRunMode === 'risky' || persistedRunMode === 'safe') {
+    manualRunMode = persistedRunMode;
+    runMode.value = persistedRunMode;
+  }
+  runMode.addEventListener('change', () => {
+    manualRunMode = runMode.value;
+    writePref(RUN_MODE_KEY, runMode.value);
+  });
+  editor.onChange(() => {
+    if (manualRunMode) return;
+    if (runMode.value !== detectRunMode()) runMode.value = detectRunMode();
+  });
   agentRefresh.addEventListener('click', loadAgents);
-  sidebarToggle.addEventListener('click', () => {
-    const collapsed = sidebar.classList.toggle('collapsed');
-    sidebar.closest('.codebuilder-shell').classList.toggle('sidebar-collapsed', collapsed);
-    sidebarToggle.setAttribute('aria-expanded', String(!collapsed));
-    sidebarToggle.setAttribute('aria-label', collapsed ? 'Expand agent sidebar' : 'Collapse agent sidebar');
-  });
-  chatExpand.addEventListener('click', () => {
-    const expanded = chatPanel.classList.toggle('expanded');
-    chatExpand.setAttribute('aria-expanded', String(expanded));
-    chatExpand.setAttribute(
-      'aria-label',
-      expanded ? 'Shrink chat panel' : 'Expand chat panel'
-    );
-    chatExpand.title = expanded ? 'Shrink chat panel' : 'Expand chat panel';
-    chatExpand.textContent = expanded ? '⌄' : '⌃';
-  });
+
+  const togglePanel = (name) => {
+    const conf = PANEL_CONF[name];
+    const collapsed = !shell.classList.contains(name + '-collapsed');
+    if (collapsed) {
+      const current = readVar(layout, conf.var);
+      if (Number.isFinite(current) && current > conf.rail) writePref(name + 'Width', String(current));
+      shell.classList.add(name + '-collapsed');
+      layout.style.setProperty(conf.var, conf.rail + 'px');
+    } else {
+      const saved = parseFloat(readPref(name + 'Width'));
+      layout.style.setProperty(
+        conf.var,
+        (Number.isFinite(saved) ? clampSize(layout, name, saved) : conf.default) + 'px'
+      );
+      shell.classList.remove(name + '-collapsed');
+    }
+    writePref(name + 'Collapsed', collapsed ? '1' : '0');
+    return collapsed;
+  };
+
+  chatExpand.addEventListener('click', () => { togglePanel('chat'); refreshPanelToggle(shell, 'chat'); });
+  consoleCollapse.addEventListener('click', () => { togglePanel('console'); refreshPanelToggle(shell, 'console'); });
+  agentsToggle.addEventListener('click', () => { togglePanel('agents'); refreshPanelToggle(shell, 'agents'); });
+
+  refreshPanelToggle(shell, 'chat');
+  refreshPanelToggle(shell, 'console');
+  refreshPanelToggle(shell, 'agents');
+
   chatForm.addEventListener('submit', async event => {
     event.preventDefault();
     const message = chatInput.value.trim();
@@ -10740,6 +11712,19 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
       chatForm.requestSubmit();
     }
   });
+  chatClear.addEventListener('click', () => {
+    chatInput.value = '';
+    chatMessages.replaceChildren();
+    disposeChatCodeEditors();
+    if (selectedAgent) {
+      appendChatMessage('system', 'Chat cleared. Ask a new question.');
+      chatStatus.textContent = `Agent: ${selectedAgent.name}`;
+    } else {
+      appendChatMessage('system', 'Chat cleared.');
+      chatStatus.textContent = 'Chat cleared';
+    }
+    chatInput.focus();
+  });
 
   renderDiagnostics([]);
   status.textContent = 'Ready';
@@ -10760,6 +11745,12 @@ export function renderCodeBuilderView(container) {
           <span class="badge badge-success">Python</span>
         </div>
         <div class="codebuilder-toolbar-actions">
+          <label class="codebuilder-run-mode">
+            <select id="codebuilder-run-mode" aria-label="Choose how to run Python code">
+              <option value="safe">Safe (in-process)</option>
+              <option value="risky">Risky (isolated, streams)</option>
+            </select>
+          </label>
           <button id="load-demo" class="btn btn-sm" type="button" title="Load the sample Python program">Sample</button>
           <button id="clear-console" class="btn btn-sm" type="button" title="Clear console and diagnostics">Clear Output</button>
           <button id="run-code" class="btn btn-sm btn-primary" type="button" title="Run Python (Ctrl+Enter)">▶ Run Python</button>
@@ -10767,19 +11758,37 @@ export function renderCodeBuilderView(container) {
       </div>
 
       <main class="codebuilder-layout">
-        <aside id="codebuilder-sidebar" class="codebuilder-sidebar" aria-label="Workspace agents">
-          <div class="codebuilder-sidebar-heading">
-            <button id="codebuilder-sidebar-toggle" class="btn btn-sm codebuilder-sidebar-toggle"
-                    type="button" aria-label="Collapse agent sidebar" aria-expanded="true" title="Collapse sidebar">‹</button>
-            <div class="codebuilder-sidebar-title">
-              <h2>Agents</h2>
-              <span id="codebuilder-agent-status" class="text-muted small">Loading…</span>
-            </div>
-            <button id="codebuilder-agent-refresh" class="btn btn-sm codebuilder-agent-refresh"
-                    type="button" title="Refresh agents" aria-label="Refresh agents">↻</button>
+        <section id="codebuilder-chat-panel" class="codebuilder-chat-panel" aria-label="Chat with an agent">
+          <div class="codebuilder-chat-heading">
+            <h2>Ask an Agent</h2>
+            <span id="codebuilder-chat-status" class="text-muted small">Select an agent to start.</span>
+            <button id="codebuilder-chat-expand" class="btn btn-sm codebuilder-chat-expand"
+                    type="button" aria-label="Collapse chat panel" aria-expanded="true"
+                    title="Collapse chat panel">«</button>
           </div>
-          <div id="codebuilder-agent-list" class="codebuilder-agent-list"></div>
-        </aside>
+          <div id="codebuilder-chat-messages" class="codebuilder-chat-messages" aria-live="polite">
+            <div class="codebuilder-chat-message system">Messages with your selected agent appear here.</div>
+          </div>
+          <form id="codebuilder-chat-form" class="codebuilder-chat-form">
+            <label class="codebuilder-model-picker">
+              <span class="text-muted small">Model</span>
+              <select id="codebuilder-model" class="form-select" aria-label="Choose model">
+                <option value="">Loading models…</option>
+              </select>
+            </label>
+            <textarea id="codebuilder-chat-input" class="form-input" rows="4"
+                      placeholder="Ask the selected agent about your Python code…"
+                      aria-label="Message to agent"></textarea>
+            <div class="codebuilder-chat-actions">
+              <button id="codebuilder-chat-clear" class="btn btn-sm"
+                      type="button" aria-label="Clear chat" title="Clear the chat conversation">Clear</button>
+              <button class="btn btn-primary" type="submit" disabled>Send</button>
+            </div>
+          </form>
+        </section>
+
+        <div class="codebuilder-resizer" data-resize="chat" role="separator"
+             aria-orientation="vertical" aria-label="Resize chat panel"></div>
 
         <section class="codebuilder-editor-panel" aria-label="Python editor">
           <div id="codebuilder-editor" class="editor-surface"></div>
@@ -10791,10 +11800,16 @@ export function renderCodeBuilderView(container) {
           </div>
         </section>
 
+        <div class="codebuilder-resizer" data-resize="console" role="separator"
+             aria-orientation="vertical" aria-label="Resize console panel"></div>
+
         <aside class="codebuilder-console-panel" aria-label="Run output and diagnostics">
           <div class="codebuilder-console-heading">
             <h2>Run Output</h2>
             <span class="codebuilder-console-subtitle">Console &amp; Problems</span>
+            <button id="codebuilder-console-collapse" class="btn btn-sm codebuilder-console-collapse"
+                    type="button" aria-label="Collapse console panel" aria-expanded="true"
+                    title="Collapse console panel">»</button>
           </div>
           <section class="codebuilder-output-section">
             <h3>Console</h3>
@@ -10805,877 +11820,17 @@ export function renderCodeBuilderView(container) {
             <div id="diagnostics" class="diagnostics-list"></div>
           </section>
         </aside>
-      </main>
 
-      <section id="codebuilder-chat-panel" class="codebuilder-chat-panel" aria-label="Chat with an agent">
-        <div class="codebuilder-chat-heading">
-          <h2>Ask an Agent</h2>
-          <span id="codebuilder-chat-status" class="text-muted small">Select an agent to start.</span>
-          <button id="codebuilder-chat-expand" class="btn btn-sm codebuilder-chat-expand"
-                  type="button" aria-label="Expand chat panel" aria-expanded="false"
-                  title="Expand chat panel">⌃</button>
-        </div>
-        <div id="codebuilder-chat-messages" class="codebuilder-chat-messages" aria-live="polite">
-          <div class="codebuilder-chat-message system">Messages with your selected agent appear here.</div>
-        </div>
-        <form id="codebuilder-chat-form" class="codebuilder-chat-form">
-          <label class="codebuilder-model-picker">
-            <span class="text-muted small">Model</span>
-            <select id="codebuilder-model" class="form-select" aria-label="Choose model">
-              <option value="">Loading models…</option>
-            </select>
-          </label>
-          <textarea id="codebuilder-chat-input" class="form-input" rows="2"
-                    placeholder="Ask the selected agent about your Python code…"
-                    aria-label="Message to agent"></textarea>
-          <button class="btn btn-primary" type="submit" disabled>Send</button>
-        </form>
-      </section>
-    </div>
-  `;
-
-  setupCodeBuilderPage();
-}
-
-if (typeof window !== 'undefined' && document.readyState !== 'loading') {
-  const root = document.getElementById('codebuilder-editor');
-  if (root) setupCodeBuilderPage();
-}
-
-`
-
-### frontend/static/js/codebuilder/codebuilder_editor.js
-
-`javascript
-const MONACO_VS_PATH = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs';
-let monacoPromise;
-
-function loadMonaco() {
-  if (window.monaco?.editor) return Promise.resolve(window.monaco);
-  if (monacoPromise) return monacoPromise;
-
-  monacoPromise = new Promise((resolve, reject) => {
-    if (typeof window.require !== 'function') {
-      reject(new Error('The Monaco Editor loader is unavailable.'));
-      return;
-    }
-
-    window.require.config({ paths: { vs: MONACO_VS_PATH } });
-    window.require(['vs/editor/editor.main'], () => {
-      if (!window.monaco?.editor) {
-        reject(new Error('Monaco Editor failed to initialize.'));
-        return;
-      }
-      resolve(window.monaco);
-    }, reject);
-  });
-  return monacoPromise;
-}
-
-function createTextareaEditor(element, initialValue) {
-  const textarea = document.createElement('textarea');
-  textarea.className = 'codebuilder-textarea';
-  textarea.value = initialValue;
-  textarea.setAttribute('aria-label', 'Python source code');
-  element.replaceChildren(textarea);
-  let runHandler = null;
-  textarea.addEventListener('keydown', event => {
-    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-      event.preventDefault();
-      runHandler?.();
-    }
-  });
-
-  return {
-    getValue: () => textarea.value,
-    setValue: (value) => { textarea.value = value; },
-    setDiagnostics: () => {},
-    setRunHandler: (handler) => { runHandler = handler; },
-    revealLine: (line) => {
-      const lineStart = textarea.value.split('\n').slice(0, Math.max(0, line - 1)).join('\n').length;
-      textarea.focus();
-      textarea.setSelectionRange(lineStart, lineStart);
-    },
-    focus: () => textarea.focus(),
-    dispose: () => textarea.remove(),
-  };
-}
-
-export async function attachCodeBuilderEditor(element, initialValue = "print('Hello from Novous CodeBuilder!')\n") {
-  if (!element) {
-    throw new Error('The CodeBuilder editor container was not found.');
-  }
-
-  try {
-    const monaco = await loadMonaco();
-    const editor = monaco.editor.create(element, {
-      value: initialValue,
-      language: 'python',
-      theme: 'vs-dark',
-      automaticLayout: true,
-      ariaLabel: 'Python code editor',
-      accessibilitySupport: 'auto',
-      bracketPairColorization: { enabled: true },
-      cursorBlinking: 'smooth',
-      detectIndentation: false,
-      folding: true,
-      fontSize: 14,
-      fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace",
-      fontLigatures: true,
-      formatOnPaste: true,
-      guides: { bracketPairs: true, indentation: true },
-      lineNumbers: 'on',
-      minimap: { enabled: true, scale: 0.8 },
-      padding: { top: 12, bottom: 12 },
-      renderLineHighlight: 'all',
-      scrollBeyondLastLine: false,
-      smoothScrolling: true,
-      stickyScroll: { enabled: true },
-      tabSize: 4,
-      insertSpaces: true,
-      wordWrap: 'off',
-    });
-    let runHandler = null;
-    editor.addAction({
-      id: 'codebuilder.runPython',
-      label: 'Run Python',
-      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
-      run: () => runHandler?.(),
-    });
-
-    return {
-      getValue: () => editor.getValue(),
-      setValue: (value) => editor.setValue(value),
-      focus: () => editor.focus(),
-      setRunHandler: (handler) => { runHandler = handler; },
-      revealLine: (line) => {
-        editor.revealLineInCenter(line);
-        editor.setPosition({ lineNumber: line, column: 1 });
-        editor.focus();
-      },
-      setDiagnostics: (items) => {
-        const model = editor.getModel();
-        if (!model) return;
-        monaco.editor.setModelMarkers(model, 'codebuilder', items.map(item => ({
-          severity: item.severity === 'warning'
-            ? monaco.MarkerSeverity.Warning
-            : item.severity === 'info'
-              ? monaco.MarkerSeverity.Info
-              : monaco.MarkerSeverity.Error,
-          message: item.message,
-          startLineNumber: item.line || 1,
-          endLineNumber: item.line || 1,
-          startColumn: item.column || 1,
-          endColumn: (item.column || 1) + 1,
-        })));
-      },
-      dispose: () => editor.dispose(),
-    };
-  } catch (error) {
-    console.error('Monaco Editor could not be loaded; using the basic Python editor instead.', error);
-    return createTextareaEditor(element, initialValue);
-  }
-}
-
-`
-
-### frontend/static/js/editor.js
-
-`javascript
-import { Api } from './api.js';
-import { renderTree } from './tree.js';
-
-function esc(value) {
-  return String(value ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
-}
-
-const state = {
-  path: null,
-  dirty: false,
-  ws: null
-};
-
-/**
- * File & Agent Editor Component (textarea editor + live session event bus).
- * @param {HTMLElement} container
- * @param {string|null} initialPath
- */
-export function renderEditorView(container, initialPath = null) {
-  container.innerHTML = `
-    <div class="editor-layout">
-      <aside class="editor-sidebar">
-        <h3 class="sidebar-title">Workspace</h3>
-        <div id="editor-tree" class="tree-pane"></div>
-      </aside>
-
-      <section class="editor-main">
-        <div class="editor-toolbar">
-          <span id="editor-path" class="editor-path">No file open</span>
-          <span id="editor-dirty" class="badge badge-warning hidden">Unsaved</span>
-          <span class="spacer"></span>
-          <span id="editor-ws" class="badge badge-success" title="Session event bus">WS ●</span>
-          <button class="btn btn-sm" id="editor-reload">Reload</button>
-          <button class="btn btn-sm btn-primary" id="editor-save">Save (Ctrl+S)</button>
-        </div>
-        <textarea id="editor-textarea" class="editor-textarea" spellcheck="false"
-                  placeholder="Select a file from the tree to edit…"></textarea>
-        <div class="editor-status">
-          <span id="editor-pos">Ln 1, Col 1</span>
-          <span class="spacer"></span>
-          <span id="editor-bytes">0 bytes</span>
-        </div>
-      </section>
-
-      <aside class="editor-events">
-        <h3 class="sidebar-title">Session Events</h3>
-        <div class="event-export">
-          <button class="btn btn-sm btn-primary" id="event-save-log">Save Events Log (.md)</button>
-        </div>
-        <div id="event-log" class="event-log">
-          <p class="text-muted">Connecting to event bus…</p>
-        </div>
-      </aside>
-    </div>`;
-
-  container.insertAdjacentHTML('beforeend', `
-    <dialog id="editor-save-dialog" class="workspace-save-dialog">
-      <form id="editor-save-form">
-        <h2>Save to Workspace</h2>
-        <p class="text-muted">Choose a workspace folder and file name.</p>
-        <label for="editor-save-directory">Folder</label>
-        <select id="editor-save-directory" class="form-select"></select>
-        <label for="editor-save-filename">File name</label>
-        <input id="editor-save-filename" class="form-input" type="text" required>
-        <p id="editor-save-error" class="text-danger hidden" role="alert"></p>
-        <div class="workspace-save-actions">
-          <button id="editor-save-cancel" class="btn" type="button">Cancel</button>
-          <button id="editor-save-confirm" class="btn btn-primary" type="submit">Save</button>
-        </div>
-      </form>
-    </dialog>`);
-
-  const textarea = container.querySelector('#editor-textarea');
-  const pathLabel = container.querySelector('#editor-path');
-  const dirtyBadge = container.querySelector('#editor-dirty');
-  const bytesLabel = container.querySelector('#editor-bytes');
-  const posLabel = container.querySelector('#editor-pos');
-  const eventLog = container.querySelector('#event-log');
-  const wsBadge = container.querySelector('#editor-ws');
-  const saveLogButton = container.querySelector('#event-save-log');
-  const saveDialog = container.querySelector('#editor-save-dialog');
-  const saveDirectory = container.querySelector('#editor-save-directory');
-  const saveFilename = container.querySelector('#editor-save-filename');
-  const saveError = container.querySelector('#editor-save-error');
-  const saveConfirm = container.querySelector('#editor-save-confirm');
-  const sessionEvents = [];
-  let saveDialogFiles = new Set();
-
-  saveLogButton.addEventListener('click', async () => {
-    saveLogButton.disabled = true;
-    try {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const rows = sessionEvents.map(event => {
-        const escapeCell = value => String(value || '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
-        const details = event.data && Object.keys(event.data).length
-          ? JSON.stringify(event.data)
-          : '';
-        return `| ${escapeCell(event.type.replace(/_/g, ' '))} | ${escapeCell(event.path)} | ${escapeCell(event.session_id)} | ${escapeCell(details)} |`;
-      });
-      const markdown = [
-        '# Novous Session Events Log',
-        '',
-        `Exported: ${new Date().toLocaleString()}`,
-        '',
-        '| Event | Path / Tool | Session | Details |',
-        '| --- | --- | --- | --- |',
-        ...(rows.length ? rows : ['| No events recorded | | | |']),
-        ''
-      ].join('\n');
-      const result = await Api.saveMarkdown(markdown, `novous-session-events-${timestamp}.md`);
-      alert(result.locationChosen
-        ? `Events log saved as ${result.filename} in the location you selected.`
-        : `Events log download started: ${result.filename}\n\nChoose the save location in your browser's download settings.`);
-    } catch (err) {
-      if (err.name !== 'AbortError') alert(`Failed to save events log: ${err.message}`);
-    } finally {
-      saveLogButton.disabled = false;
-    }
-  });
-
-  const workspaceTree = renderTree(container.querySelector('#editor-tree'), {
-    onSelect: (path) => openFile(path)
-  });
-
-  async function openFile(path) {
-    if (state.dirty && !confirm('Discard unsaved changes?')) return;
-    try {
-      const data = await Api.readFile(path);
-      state.path = data.path;
-      state.dirty = false;
-      textarea.value = data.content;
-      pathLabel.textContent = data.path;
-      dirtyBadge.classList.add('hidden');
-      updateBytes();
-      updatePos();
-      sendWs({ type: 'file_opened', path: data.path });
-      appendEvent({ type: 'file_opened', path: data.path, session_id: 'you' });
-      textarea.focus();
-    } catch (err) {
-      alert(err.message);
-    }
-  }
-
-  async function openSaveDialog() {
-    try {
-      const tree = await Api.getFileTree();
-      const folders = [];
-      const files = new Set();
-      function collect(node) {
-        if (node.type === 'directory') {
-          if (node.path) folders.push(node.path);
-          (node.children || []).forEach(collect);
-        } else {
-          files.add(node.path);
-        }
-      }
-      collect(tree);
-      folders.sort((a, b) => a.localeCompare(b));
-
-      saveDirectory.replaceChildren();
-      const rootOption = document.createElement('option');
-      rootOption.value = '';
-      rootOption.textContent = '/ (workspace root)';
-      saveDirectory.appendChild(rootOption);
-      folders.forEach(path => {
-        const option = document.createElement('option');
-        option.value = path;
-        option.textContent = path;
-        saveDirectory.appendChild(option);
-      });
-
-      const currentParts = (state.path || '').split('/');
-      const currentFilename = currentParts.pop() || 'untitled.txt';
-      const currentDirectory = currentParts.join('/');
-      saveDirectory.value = folders.includes(currentDirectory) ? currentDirectory : '';
-      saveFilename.value = currentFilename;
-      saveError.textContent = '';
-      saveError.classList.add('hidden');
-      saveDialog.showModal();
-      saveFilename.focus();
-      saveFilename.select();
-      saveDialogFiles = files;
-    } catch (err) {
-      alert(`Could not open the workspace save picker: ${err.message}`);
-    }
-  }
-
-  async function saveFile() {
-    if (!saveDialog.open) {
-      await openSaveDialog();
-      return;
-    }
-
-    const filename = saveFilename.value.trim();
-    if (!filename || filename === '.' || filename === '..' || /[\\/]/.test(filename)) {
-      saveError.textContent = 'Enter a file name without folder separators.';
-      saveError.classList.remove('hidden');
-      saveFilename.focus();
-      return;
-    }
-
-    const targetPath = [saveDirectory.value, filename].filter(Boolean).join('/');
-    if (saveDialogFiles.has(targetPath) && targetPath !== state.path &&
-        !confirm(`"${targetPath}" already exists. Overwrite it?`)) {
-      return;
-    }
-
-    saveConfirm.disabled = true;
-    try {
-      await Api.writeFile(targetPath, textarea.value);
-      state.path = targetPath;
-      state.dirty = false;
-      dirtyBadge.classList.add('hidden');
-      pathLabel.textContent = targetPath;
-      appendEvent({ type: 'file_saved', path: targetPath, session_id: 'you' });
-      updateBytes();
-      saveDialog.close();
-      workspaceTree.reload();
-    } catch (err) {
-      saveError.textContent = `Save failed: ${err.message}`;
-      saveError.classList.remove('hidden');
-    } finally {
-      saveConfirm.disabled = false;
-    }
-  }
-
-  function updateBytes() {
-    bytesLabel.textContent = `${new Blob([textarea.value]).size} bytes`;
-  }
-
-  function updatePos() {
-    const upto = textarea.value.slice(0, textarea.selectionStart);
-    const lines = upto.split('\n');
-    posLabel.textContent = `Ln ${lines.length}, Col ${lines[lines.length - 1].length + 1}`;
-  }
-
-  textarea.addEventListener('input', () => {
-    if (!state.dirty) { state.dirty = true; dirtyBadge.classList.remove('hidden'); }
-    updateBytes();
-  });
-  textarea.addEventListener('keyup', updatePos);
-  textarea.addEventListener('click', updatePos);
-  textarea.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(); }
-  });
-
-  container.querySelector('#editor-save').addEventListener('click', openSaveDialog);
-  container.querySelector('#editor-save-form').addEventListener('submit', (event) => {
-    event.preventDefault();
-    saveFile();
-  });
-  container.querySelector('#editor-save-cancel').addEventListener('click', () => saveDialog.close());
-  container.querySelector('#editor-reload').addEventListener('click', () => {
-    if (state.path) openFile(state.path);
-  });
-
-  // --- WebSocket session event bus ----------------------------------------
-  function connectWs() {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/api/ws`);
-    state.ws = ws;
-
-    ws.onopen = () => { wsBadge.textContent = 'WS ●'; wsBadge.className = 'badge badge-success'; };
-    ws.onclose = () => {
-      wsBadge.textContent = 'WS ○'; wsBadge.className = 'badge badge-danger';
-      eventLog.insertAdjacentHTML('beforeend',
-        '<p class="text-muted small">Disconnected. Reconnecting…</p>');
-      setTimeout(connectWs, 3000);
-    };
-    ws.onerror = () => ws.close();
-    ws.onmessage = (msg) => {
-      try {
-        const data = JSON.parse(msg.data);
-        if (data.type === 'connected') {
-          if (!sessionEvents.length) {
-            eventLog.innerHTML = `<p class="text-muted small">Connected as session ${esc(data.session_id)}</p>`;
-          }
-        } else if (data.type !== 'pong') {
-          appendEvent(data);
-        }
-      } catch (_) { /* non-JSON frame */ }
-    };
-  }
-
-  function sendWs(payload) {
-    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-      state.ws.send(JSON.stringify(payload));
-    }
-  }
-
-  function appendEvent(data) {
-    if (eventLog.querySelector('.text-muted.small') && eventLog.children.length === 1 &&
-        eventLog.textContent.includes('Disconnected')) {
-      eventLog.innerHTML = '';
-    }
-    const el = document.createElement('div');
-    el.className = `event-item ${data.type}`;
-    const eventData = {
-      type: String(data.type || 'unknown'),
-      path: data.path || '',
-      session_id: data.session_id || '',
-      data: data.data || {}
-    };
-    sessionEvents.push(eventData);
-    const detailText = eventData.type === 'tool_executed'
-      ? `${eventData.data.status || 'unknown'}${eventData.data.origin ? ` · ${eventData.data.origin}` : ''}\nArgs: ${JSON.stringify(eventData.data.args || {})}${eventData.data.error ? `\nError: ${eventData.data.error}` : ''}`
-      : '';
-    const eventText = [
-      eventData.type.replace(/_/g, ' '),
-      eventData.path,
-      eventData.session_id,
-      detailText
-    ].filter(Boolean).join('\n');
-    const detailElement = detailText
-      ? `<span class="event-details">${esc(detailText)}</span>`
-      : '';
-    el.innerHTML = `<span class="event-type">${esc(eventData.type.replace(/_/g, ' '))}</span>
-      <span class="event-path">${esc(eventData.path)}</span>
-      <span class="event-who text-muted">${esc(eventData.session_id)}</span>${detailElement}`;
-    const copyButton = document.createElement('button');
-    copyButton.type = 'button';
-    copyButton.className = 'btn btn-sm btn-ghost event-copy-btn';
-    copyButton.textContent = 'Copy';
-    copyButton.setAttribute('aria-label', `Copy ${eventData.type.replace(/_/g, ' ')} event`);
-    copyButton.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(eventText);
-        copyButton.textContent = 'Copied!';
-        setTimeout(() => { copyButton.textContent = 'Copy'; }, 2000);
-      } catch (err) {
-        copyButton.textContent = 'Copy failed';
-      }
-    });
-    el.appendChild(copyButton);
-    eventLog.appendChild(el);
-    while (sessionEvents.length > 60) {
-      sessionEvents.shift();
-      const firstEvent = eventLog.querySelector('.event-item');
-      if (firstEvent) firstEvent.remove();
-    }
-    eventLog.scrollTop = eventLog.scrollHeight;
-  }
-
-  connectWs();
-
-  if (initialPath) openFile(initialPath);
-}
-
-`
-
-### frontend/static/js/prompt_creation.js
-
-`javascript
-import { Api } from './api.js';
-
-function esc(value) {
-  return String(value ?? '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
-}
-
-export function renderPromptCreationView(container) {
-  container.innerHTML = `
-    <div class="testing-layout">
-      <section class="card testing-builder">
-        <div class="card-head">
-          <h3>Prompt Creation & Assembly</h3>
-          <div class="toolbar-row" style="margin:0;">
-            <button type="button" class="btn btn-sm" id="tb-toggle-cat-form">+ Category</button>
-            <button type="button" class="btn btn-sm" id="tb-toggle-part-form">+ Part</button>
-            <button type="button" class="btn btn-sm btn-primary" id="tb-assemble">Assemble</button>
-          </div>
-        </div>
-
-        <div id="tb-cat-form" class="card bg-elev hidden" style="margin-bottom: 0.75rem; padding: 0.75rem;">
-          <h4 style="margin-bottom: 0.5rem;">Add New Category</h4>
-          <div class="form-row">
-            <input type="text" id="cat-id-input" class="form-input" placeholder="Category ID / Slug (e.g. constraints)" required>
-            <input type="text" id="cat-name-input" class="form-input" placeholder="Category Name (e.g. Constraints)" required>
-          </div>
-          <div class="form-row">
-            <input type="text" id="cat-desc-input" class="form-input" placeholder="Description (optional)">
-            <input type="text" id="cat-header-input" class="form-input" placeholder="Required Header (e.g. constraints)">
-          </div>
-          <div class="toolbar-row">
-            <button type="button" class="btn btn-sm btn-primary" id="cat-save-btn">Save Category</button>
-            <button type="button" class="btn btn-sm" id="cat-cancel-btn">Cancel</button>
-          </div>
-        </div>
-
-        <div id="tb-part-form" class="card bg-elev hidden" style="margin-bottom: 0.75rem; padding: 0.75rem;">
-          <h4 style="margin-bottom: 0.5rem;">Add New Prompt Part</h4>
-          <div class="form-row">
-            <select id="part-cat-select" class="form-select"></select>
-            <input type="text" id="part-title-input" class="form-input" placeholder="Part Title (e.g. JSON Format)" required>
-          </div>
-          <div class="form-row">
-            <input type="text" id="part-slug-input" class="form-input" placeholder="Slug ID (optional)">
-          </div>
-          <div class="form-row">
-            <textarea id="part-content-input" class="form-input" style="width: 100%; height: 80px;" placeholder="Prompt part markdown content…" required></textarea>
-          </div>
-          <div class="toolbar-row">
-            <button type="button" class="btn btn-sm btn-primary" id="part-save-btn">Save Part</button>
-            <button type="button" class="btn btn-sm" id="part-cancel-btn">Cancel</button>
-          </div>
-        </div>
-
-        <div id="tb-categories" class="category-grid">
-          <p class="text-muted">Loading categories…</p>
-        </div>
-
-        <textarea id="tb-preview" class="prompt-preview" readonly placeholder="Assembled prompt preview will appear here…"></textarea>
-        <div class="toolbar-row">
-          <span id="tb-stats" class="text-muted small"></span>
-          <span class="spacer"></span>
-          <select id="tb-publish-agent" class="form-select" style="max-width: 180px;">
-            <option value="">Select agent…</option>
-          </select>
-          <button type="button" class="btn btn-sm" id="tb-copy">Copy</button>
-          <button type="button" class="btn btn-sm btn-primary" id="tb-publish">Save to Agent</button>
-        </div>
-        <p id="tb-msg" class="small hidden"></p>
-      </section>
-
-      <section class="card">
-        <div class="card-head">
-          <h3>Available Core Engine Tools</h3>
-          <button type="button" class="btn btn-sm" id="btn-refresh-tools">Refresh Tools</button>
-        </div>
-        <p class="text-muted small">Tools retrieved from <code>core_engine/interface.py</code> for prompt reference.</p>
-        <button type="button" class="btn btn-sm btn-primary" id="btn-add-tools-to-prompt">
-          Add Selected Tools to Prompt
-        </button>
-        <div id="tools-list-container" style="overflow-y: auto; max-height: 500px;" class="mt-2">
-          <p class="text-muted">Loading available tools...</p>
-        </div>
-      </section>
-    </div>`;
-
-  const catBox = container.querySelector('#tb-categories');
-  const preview = container.querySelector('#tb-preview');
-  const stats = container.querySelector('#tb-stats');
-  const msg = container.querySelector('#tb-msg');
-  const toolsContainer = container.querySelector('#tools-list-container');
-  const publishAgentSel = container.querySelector('#tb-publish-agent');
-
-  const catForm = container.querySelector('#tb-cat-form');
-  const partForm = container.querySelector('#tb-part-form');
-  const partCatSelect = container.querySelector('#part-cat-select');
-
-  let manifest = { categories: [] };
-  let availableTools = [];
-  let promptBase = '';
-  let promptPartCount = 0;
-  const promptTools = new Map();
-
-  function showMsg(text, isError = false) {
-    msg.textContent = text;
-    msg.className = `small ${isError ? 'text-danger' : 'text-success'}`;
-  }
-
-  async function loadCoreTools() {
-    try {
-      toolsContainer.innerHTML = '<p class="text-muted">Fetching tools from core_engine...</p>';
-      const res = await Api.getTools();
-      availableTools = res.tools || [];
-
-      if (!availableTools.length) {
-        toolsContainer.innerHTML = '<p class="text-muted">No tools currently registered in core engine.</p>';
-        return;
-      }
-
-      toolsContainer.innerHTML = availableTools.map((t, index) => `
-        <div class="category-block mt-2">
-          <div class="category-head">
-            <label class="checkbox-row" style="margin:0;">
-              <input type="checkbox" value="${index}" data-tool>
-              <strong>🛠️ ${esc(t.name)}</strong>
-            </label>
-            <span class="badge badge-accent">${esc(t.provider)}</span>
-          </div>
-          <p class="text-muted small mt-2"><code>${esc(t.signature)}</code></p>
-          <p class="small text-light">${esc(Array.isArray(t.description) ? t.description.join(' ') : t.description)}</p>
-        </div>
-      `).join('');
-    } catch (err) {
-      toolsContainer.innerHTML = `<p class="text-danger">Failed to retrieve tools: ${esc(err.message)}</p>`;
-    }
-  }
-
-  function updatePromptPreview() {
-    const toolSection = [...promptTools.values()].map(tool => {
-      const description = Array.isArray(tool.description)
-        ? tool.description.join(' ')
-        : tool.description;
-      return [
-        `### ${tool.name}`,
-        `- Provider: ${tool.provider}`,
-        `- Signature: ${tool.signature}`,
-        description ? `- Description: ${description}` : ''
-      ].filter(Boolean).join('\n');
-    }).join('\n\n');
-
-    preview.value = [promptBase, toolSection ? `## Available Tools\n\n${toolSection}` : '']
-      .filter(Boolean)
-      .join('\n\n');
-    stats.textContent = `${promptPartCount} parts · ${preview.value.length} chars`;
-  }
-
-  async function loadPromptAgents() {
-    try {
-      const [workspaceData, codeBuilderData] = await Promise.all([
-        Api.getAgents(),
-        Api.getCodeBuilderAgents()
-      ]);
-      const agents = [
-        ...(workspaceData.agents || []).map(agent => ({ ...agent, environment: 'workspace' })),
-        ...(codeBuilderData.agents || []).map(agent => ({ ...agent, environment: 'codebuilder' }))
-      ];
-      publishAgentSel.innerHTML = agents.length
-        ? agents.map(a => `<option value="${esc(a.environment)}:${esc(a.id)}">${esc(a.name)} (${esc(a.id)}) — ${a.environment === 'codebuilder' ? 'CodeBuilder' : 'Workspace'}</option>`).join('')
-        : '<option value="">No agents found</option>';
-    } catch (err) {
-      publishAgentSel.innerHTML = `<option value="">${esc(err.message)}</option>`;
-    }
-  }
-
-  async function loadManifest() {
-    try {
-      const data = await Api.getPromptCategories();
-      manifest = data;
-      renderCategories(manifest);
-      populateCategoryDropdown(manifest.categories || []);
-    } catch (err) {
-      catBox.innerHTML = `<p class="text-danger">${esc(err.message)}</p>`;
-    }
-  }
-
-  function populateCategoryDropdown(categories) {
-    partCatSelect.innerHTML = categories.length
-      ? categories.map(c => `<option value="${esc(c.id)}">${esc(c.name)} (${esc(c.id)})</option>`).join('')
-      : '<option value="">No categories available</option>';
-  }
-
-  function renderCategories(data) {
-    const cats = data.categories || [];
-    const uncategorized = data.uncategorized_parts || [];
-
-    let html = cats.map(cat => `
-      <div class="category-block">
-        <div class="category-head">
-          <div style="display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
-            <strong>${esc(cat.name)}</strong>
-            ${cat.required_header ? `<span class="badge badge-accent">## ${esc(cat.required_header)}</span>` : ''}
-          </div>
-          <button type="button" class="btn btn-ghost btn-sm text-danger" title="Delete category '${esc(cat.name)}'" data-del-cat="${esc(cat.id)}" style="padding: 0 0.3rem;">✕</button>
-        </div>
-        <p class="text-muted small">${esc(cat.description || '')}</p>
-        ${(cat.parts || []).map(p => `
-          <div class="part-row" style="display: flex; align-items: center; justify-content: space-between; gap: 0.25rem;">
-            <label class="checkbox-row" style="flex: 1; margin: 0;">
-              <input type="checkbox" value="${esc(p.id)}" data-part>
-              <span>${esc(p.title)}</span>
-            </label>
-            <button type="button" class="btn btn-ghost btn-sm text-muted" title="Delete part" data-del-part="${esc(p.id)}" style="padding: 0 0.3rem;">✕</button>
-          </div>`).join('') || '<p class="text-muted small">No parts.</p>'}
-      </div>`).join('');
-
-    if (uncategorized.length) {
-      html += `
-        <div class="category-block">
-          <div class="category-head">
-            <strong>Uncategorized</strong>
-          </div>
-          <p class="text-muted small">Parts without a matching category definition.</p>
-          ${uncategorized.map(p => `
-            <div class="part-row" style="display: flex; align-items: center; justify-content: space-between; gap: 0.25rem;">
-              <label class="checkbox-row" style="flex: 1; margin: 0;">
-                <input type="checkbox" value="${esc(p.id)}" data-part>
-                <span>${esc(p.title)}</span>
-              </label>
-              <button type="button" class="btn btn-ghost btn-sm text-muted" title="Delete part" data-del-part="${esc(p.id)}" style="padding: 0 0.3rem;">✕</button>
-            </div>`).join('')}
-        </div>`;
-    }
-
-    catBox.innerHTML = html || '<p class="text-danger">No categories found.</p>';
-  }
-
-  loadCoreTools();
-  loadManifest();
-  loadPromptAgents();
-
-  container.querySelector('#btn-refresh-tools').addEventListener('click', loadCoreTools);
-
-  container.querySelector('#btn-add-tools-to-prompt').addEventListener('click', () => {
-    const selected = [...toolsContainer.querySelectorAll('[data-tool]:checked')];
-    if (!selected.length) return showMsg('Select at least one core engine tool.', true);
-
-    selected.forEach(input => {
-      const tool = availableTools[Number(input.value)];
-      if (tool) promptTools.set(tool.name, tool);
-    });
-    updatePromptPreview();
-    showMsg(`${selected.length} selected tool${selected.length === 1 ? '' : 's'} added to the prompt.`);
-  });
-
-  container.querySelector('#tb-toggle-cat-form').addEventListener('click', () => {
-    catForm.classList.toggle('hidden');
-    partForm.classList.add('hidden');
-  });
-
-  container.querySelector('#cat-cancel-btn').addEventListener('click', () => {
-    catForm.classList.add('hidden');
-  });
-
-  container.querySelector('#tb-toggle-part-form').addEventListener('click', () => {
-    partForm.classList.toggle('hidden');
-    catForm.classList.add('hidden');
-  });
-
-  container.querySelector('#part-cancel-btn').addEventListener('click', () => {
-    partForm.classList.add('hidden');
-  });
-
-  async function submitCategory() {
-    const id = container.querySelector('#cat-id-input').value.trim();
-    const name = container.querySelector('#cat-name-input').value.trim();
-    const desc = container.querySelector('#cat-desc-input').value.trim();
-    const header = container.querySelector('#cat-header-input').value.trim();
-
-    if (!id || !name) return showMsg('Category ID and Name are required.', true);
-
-    try {
-      await Api.addPromptCategory(id, name, desc, header);
-      catForm.classList.add('hidden');
-      container.querySelector('#cat-id-input').value = '';
-      container.querySelector('#cat-name-input').value = '';
-      container.querySelector('#cat-desc-input').value = '';
-      container.querySelector('#cat-header-input').value = '';
-      showMsg(`Category '${name}' added successfully.`);
-      await loadManifest();
-    } catch (err) {
-      showMsg(err.message, true);
-    }
-  }
-
-  container.querySelector('#cat-save-btn').addEventListener('click', submitCategory);
-
-  catForm.querySelectorAll('input').forEach(input => {
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        submitCategory();
-      }
-    });
-  });
-
-  async function submitPart() {
-    const category = partCatSelect.value;
-    const title = container.querySelector('#part-title-input').value.trim();
-    const slug = container.querySelector('#part-slug-input').value.trim();
-    const content = container.querySelector('#part-content-input').value.trim();
-
-    if (!category || !title || !content) return showMsg('Category, Part Title, and Content are required.', true);
-
-    try {
-      await Api.addPromptPart(category, title, content, slug || null);
-      partForm.classList.add('hidden');
-      container.querySelector('#part-title-input').value = '';
-      container.querySelector('#part-slug-input').value = '';
-      container.querySelector('#part-content-input').value = '';
-      showMsg(`Prompt Part '${title}' added successfully.`);
-      await loadManifest();
-    } catch (err) {
-      showMsg(err.message, true);
-    }
-  }
-
-  container.querySelector('#part-save-btn').addEventListener('click', submitPart);
-
-  partForm.querySelectorAll('input, textarea').forEach(input => {
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
-        e.preventDefault();
-        submitPart();
-      }
-    });
-  });
-
-  catBox.addEventListener(
+        <div class="codebuilder-resizer" data-resize="agents" role="separator"
+             aria-orientation="horizontal" aria-label="Resize agents panel"></div>
+
+        <aside id="codebuilder-agents-panel" class="codebuilder-agents-panel" aria-label="Workspace agents">
+          <div class="codebuilder-agents-heading">
+            <button id="codebuilder-agents-toggle" class="btn btn-sm codebuilder-agents-toggle"
+                    type="button" aria-label="Collapse agents panel" aria-expanded="true"
+                    title="Collapse agents panel">⌄</button>
+            <button id="codebuilder-agent-refresh" class="btn btn-sm codebuilder-agent-refresh"
+                    type=
 ... <truncated> ...
 ```
 
@@ -11737,50 +11892,6 @@ def load_codebuilder_agent_meta() -> Dict[str, Any]:
         "mode": "agent",
         "tools": ["list_files", "read_file", "edit_file", "check_syntax", "run_code"],
     }
-
-```
-
-## `codebuilder/agents/codebuilder-agent/agent.json`
-```json
-{
-  "id": "codebuilder-agent",
-  "name": "CodeBuilder Specialist",
-  "description": "Specialized agent for writing, analyzing, and refactoring Python code in Novous.",
-  "mode": "agent",
-  "model": "qwen2.5-coder:latest",
-  "environment": "codebuilder",
-  "tools": [
-    "read_file",
-    "write_file",
-    "create_file",
-    "list_directory",
-    "run_python_code",
-    "send_code_to_editor",
-    "run_code_in_editor"
-  ]
-}
-
-```
-
-## `codebuilder/agents/codebuilder-agent/agent.md`
-```md
-# CodeBuilder Specialist
-
-## role
-You are CodeBuilder, a specialist AI software engineer inside Novous. You analyze requirements, inspect workspace code, and generate precise, structured code edits.
-
-## purpose
-Your purpose is to assist users in building, refactoring, and debugging Python applications. Always test syntax and verify workspace context before proposing edits.
-
-## boundaries
-- Only suggest changes that adhere to separation of concerns.
-- Whenever you provide or revise Python code, call `send_code_to_editor` with the complete code so it is placed in the active Monaco editor. Also include a fenced `python` code block in your reply so the user can review it and send it manually if needed.
-- When the user asks to run the code, call `send_code_to_editor` first if you generated or changed the code, then call `run_code_in_editor`. The calls may be combined in that order.
-- Use `run_python_code` only when the user asks for a standalone snippet that should not replace the editor contents.
-- Never make unverified assumptions about file paths.
-
-## output format
-Briefly describe what you changed and whether you placed code in the editor or ran the editor contents. Refer to the Run Output panel for execution results.
 
 ```
 
@@ -11846,6 +11957,10 @@ Be honest: Never claim code was executed or tested unless it actually was. If so
 
 Deliver functional, understandable, and maintainable code that solves the user's request with minimal unnecessary complexity.
 
+## Output Format
+
+Whenever you provide, explain, or revise code, always wrap every code snippet in a fenced code block using standard markdown triple backticks with the language tag on the opening fence (for example, ```python or ```json). Never output code as bare or plain text: a complete, copy-and-paste-ready fenced code block must be included every time code is shown.
+
 ## CodeAgent
 
 Purpose: What the code does.
@@ -11905,20 +12020,189 @@ def funnel_diagnostics(items: Iterable[Any]) -> List[dict]:
 
 ## `codebuilder/execution.py`
 ```py
-"""Execution engine for Python snippets and structured diagnostics."""
+"""Compatibility wrapper: the public CodeBuilder execution entry points.
+
+The implementation lives in :mod:`codebuilder.runner`; this module keeps the
+historical import surface (``execute_python_code``) working for callers such as
+``core_engine.tool_catalog`` and ``codebuilder.interface``.
+"""
+
+from .runner import (
+    execute_python_code,
+    execute_risky,
+    execute_safe,
+    resolve_python,
+    run_risky,
+)
+
+__all__ = ["execute_python_code", "execute_risky", "execute_safe", "resolve_python", "run_risky"]
+```
+
+## `codebuilder/execution_codebuilder.py`
+```py
+"""Compatibility wrapper for the CodeBuilder execution engine."""
+
+from .execution import execute_python_code
+
+__all__ = ["execute_python_code"]
+
+```
+
+## `codebuilder/interface.py`
+```py
+"""CodeBuilder doorway: FastAPI router for execution and structured edits."""
+
+import json
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+
+from .agent_loader import load_codebuilder_agent_meta
+from .execution import execute_python_code
+from .runner import run_risky
+from .schemas import CodeExecutionRequest, CodeExecutionResult, StructuredEditRequest
+from core_engine.agent_factory import list_agents
+
+router = APIRouter(prefix="/api/codebuilder", tags=["CodeBuilder"])
+
+
+@router.get("/health")
+def api_codebuilder_health():
+    """Return the health state of the CodeBuilder pillar."""
+    return {"status": "ok", "pillar": "codebuilder"}
+
+
+@router.get("/agent")
+def api_get_agent():
+    """Return the CodeBuilder specialist profile."""
+    return load_codebuilder_agent_meta()
+
+
+@router.get("/agents")
+def api_codebuilder_agents():
+    """List only agents stored in the CodeBuilder environment."""
+    return {"agents": list_agents("codebuilder")}
+
+
+@router.post("/execute", response_model=CodeExecutionResult)
+def api_execute_code(req: CodeExecutionRequest):
+    """Execute Python source and return any collected diagnostics."""
+    try:
+        return execute_python_code(req)
+    except Exception as exc:  # pragma: no cover - surfaced as HTTP 500
+        raise HTTPException(status_code=500, detail=f"CodeBuilder execution error: {exc}") from exc
+
+
+def _sse_events(events):
+    for event in events:
+        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
+@router.post("/execute/stream")
+def api_stream_execute(req: CodeExecutionRequest):
+    """Stream risky-mode execution output live as Server-Sent Events."""
+    if req.mode != "risky":
+        raise HTTPException(status_code=400, detail="Streaming is only supported in risky mode.")
+
+    def stream():
+        for event in _sse_events(run_risky(req)):
+            yield event
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@router.post("/edit")
+def api_apply_structured_edit(req: StructuredEditRequest):
+    """Write an approved file update to the workspace."""
+    target = Path(req.target_path)
+    if not target.is_absolute():
+        target = Path.cwd() / target
+
+    if target.exists() and target.is_dir():
+        raise HTTPException(status_code=400, detail="Target path points to a directory, not a file.")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(req.content, encoding="utf-8")
+
+    return {
+        "status": "applied",
+        "target_path": str(target),
+        "bytes_written": len(req.content.encode("utf-8")),
+        "explanation": req.explanation,
+    }
+
+```
+
+## `codebuilder/interface_codebuilder.py`
+```py
+"""Compatibility wrapper for the CodeBuilder router."""
+
+from .interface import router
+
+__all__ = ["router"]
+
+```
+
+## `codebuilder/runner.py`
+```py
+"""CodeBuilder execution runner: safe (in-process) and risky (isolated subprocess) modes.
+
+The risky chain runs each snippet in a fresh Python subprocess so real interpreter
+errors surface, ``input()`` reaches an immediate EOF instead of hanging, a hard
+timeout is enforced, and output is streamed event-by-event to the caller.
+"""
 
 import io
+import json
+import os
+import queue
+import re
+import subprocess
 import sys
+import tempfile
+import threading
+import time
 import traceback
 import uuid
-from typing import List
+from pathlib import Path
+from typing import Dict, Iterator, List, Optional, Union
 
 from .schemas import CodeExecutionRequest, CodeExecutionResult, DiagnosticItem
 
+MAX_STREAM_BYTES = 64 * 1024
+DEFAULT_TIMEOUT_SECONDS = 10.0
+_STDERR_LINE = re.compile(r"[Ll]ine (\d+)(?:,| )")
 
-def execute_python_code(req: CodeExecutionRequest) -> CodeExecutionResult:
-    """Execute Python code in an isolated namespace and capture diagnostics."""
-    run_id = f"run_{uuid.uuid4().hex[:8]}"
+
+def _run_id() -> str:
+    return f"run_{uuid.uuid4().hex[:8]}"
+
+
+def resolve_python() -> str:
+    """Resolve the interpreter used for risky mode: env override, else server Python."""
+    return os.environ.get("NOVOUS_PYTHON") or sys.executable
+
+
+def _runner_environment(root: Path) -> dict:
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = str(root) + (os.pathsep + existing if existing else "")
+    return env
+
+
+def execute_safe(req: CodeExecutionRequest) -> CodeExecutionResult:
+    """Execute Python in-process in an isolated namespace and capture diagnostics."""
+    run_id = _run_id()
     stdout_buffer = io.StringIO()
     stderr_buffer = io.StringIO()
     diagnostics: List[DiagnosticItem] = []
@@ -11969,91 +12253,233 @@ def execute_python_code(req: CodeExecutionRequest) -> CodeExecutionResult:
         diagnostics=diagnostics,
     )
 
-```
 
-## `codebuilder/execution_codebuilder.py`
-```py
-"""Compatibility wrapper for the CodeBuilder execution engine."""
+def run_risky(req: CodeExecutionRequest, run_id: Optional[str] = None) -> Iterator[dict]:
+    """Stream an isolated subprocess execution as a sequence of event dicts.
 
-from .execution import execute_python_code
+    Events: ``start``, ``stdout``, ``stderr``, ``syntax_error``, ``done``.
+    stdin is closed immediately so code calling ``input()`` streams its earlier
+    output and then fails fast with ``EOFError`` instead of hanging.
+    """
+    run_id = run_id or _run_id()
+    interpreter = resolve_python()
+    timeout = max(0.1, req.timeout_seconds or DEFAULT_TIMEOUT_SECONDS)
 
-__all__ = ["execute_python_code"]
-
-```
-
-## `codebuilder/interface.py`
-```py
-"""CodeBuilder doorway: FastAPI router for execution and structured edits."""
-
-from pathlib import Path
-
-from fastapi import APIRouter, HTTPException
-
-from .agent_loader import load_codebuilder_agent_meta
-from .execution import execute_python_code
-from .schemas import CodeExecutionRequest, CodeExecutionResult, StructuredEditRequest
-from core_engine.agent_factory import list_agents
-
-router = APIRouter(prefix="/api/codebuilder", tags=["CodeBuilder"])
-
-
-@router.get("/health")
-def api_codebuilder_health():
-    """Return the health state of the CodeBuilder pillar."""
-    return {"status": "ok", "pillar": "codebuilder"}
-
-
-@router.get("/agent")
-def api_get_agent():
-    """Return the CodeBuilder specialist profile."""
-    return load_codebuilder_agent_meta()
-
-
-@router.get("/agents")
-def api_codebuilder_agents():
-    """List only agents stored in the CodeBuilder environment."""
-    return {"agents": list_agents("codebuilder")}
-
-
-@router.post("/execute", response_model=CodeExecutionResult)
-def api_execute_code(req: CodeExecutionRequest):
-    """Execute Python source and return any collected diagnostics."""
     try:
-        return execute_python_code(req)
-    except Exception as exc:  # pragma: no cover - surfaced as HTTP 500
-        raise HTTPException(status_code=500, detail=f"CodeBuilder execution error: {exc}") from exc
+        compile(req.code, "<codebuilder>", "exec")
+    except SyntaxError as exc:
+        yield {
+            "type": "syntax_error",
+            "run_id": run_id,
+            "line": exc.lineno,
+            "column": exc.offset,
+            "message": f"SyntaxError: {exc.msg}",
+        }
+        yield {
+            "type": "done",
+            "run_id": run_id,
+            "return_code": 1,
+            "status": "ERROR",
+            "timed_out": False,
+        }
+        return
 
-
-@router.post("/edit")
-def api_apply_structured_edit(req: StructuredEditRequest):
-    """Write an approved file update to the workspace."""
-    target = Path(req.target_path)
-    if not target.is_absolute():
-        target = Path.cwd() / target
-
-    if target.exists() and target.is_dir():
-        raise HTTPException(status_code=400, detail="Target path points to a directory, not a file.")
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(req.content, encoding="utf-8")
-
-    return {
-        "status": "applied",
-        "target_path": str(target),
-        "bytes_written": len(req.content.encode("utf-8")),
-        "explanation": req.explanation,
+    yield {
+        "type": "start",
+        "run_id": run_id,
+        "mode": "risky",
+        "python": interpreter,
+        "timeout_seconds": timeout,
     }
 
-```
+    process: Optional[subprocess.Popen] = None
+    timed_out = False
+    return_code = None
+    try:
+        with tempfile.TemporaryDirectory(prefix="codebuilder-") as temp_dir:
+            script_path = Path(temp_dir) / "codebuilder_script.py"
+            script_path.write_text(req.code, encoding="utf-8")
+            process = subprocess.Popen(
+                [interpreter, "-u", str(script_path)],
+                cwd=str(Path.cwd()),
+                env=_runner_environment(Path.cwd()),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+            )
+            if process.stdin is not None:
+                process.stdin.close()  # immediate EOF for any input() calls
 
-## `codebuilder/interface_codebuilder.py`
-```py
-"""Compatibility wrapper for the CodeBuilder router."""
+            line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
 
-from .interface import router
+            def _reader() -> None:
+                try:
+                    if process.stdout is not None:
+                        for line in process.stdout:
+                            line_queue.put(line)
+                finally:
+                    line_queue.put(None)
 
-__all__ = ["router"]
+            threading.Thread(target=_reader, daemon=True).start()
 
+            deadline = time.monotonic() + timeout
+            emitted = 0
+            truncated = False
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait()
+                    break
+                try:
+                    line = line_queue.get(timeout=remaining)
+                except queue.Empty:
+                    timed_out = True
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait()
+                    break
+
+                if line is None:
+                    if process.poll() is not None:
+                        break
+                    try:
+                        process.wait(timeout=deadline - time.monotonic())
+                    except subprocess.TimeoutExpired:
+                        timed_out = True
+                        process.kill()
+                        process.wait()
+                    break
+
+                if truncated:
+                    continue
+
+                if emitted + len(line) > MAX_STREAM_BYTES:
+                    keep = max(0, MAX_STREAM_BYTES - emitted)
+                    if keep:
+                        yield {"type": "stdout", "text": line[:keep]}
+                    yield {"type": "truncated", "run_id": run_id}
+                    truncated = True
+                    continue
+
+                emitted += len(line)
+                yield {"type": "stdout", "text": line}
+
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            return_code = process.returncode
+
+            if timed_out:
+                yield {
+                    "type": "stderr",
+                    "text": f"\nTimeoutError: code execution exceeded {timeout:g} seconds.\n",
+                }
+    except OSError as exc:
+        yield {
+            "type": "stderr",
+            "text": f"Could not start Python interpreter: {exc}\n",
+        }
+        yield {
+            "type": "done",
+            "run_id": run_id,
+            "return_code": None,
+            "status": "ERROR",
+            "timed_out": False,
+            "error": str(exc),
+        }
+        return
+    finally:
+        if process is not None and process.poll() is None:
+            try:
+                process.kill()
+                process.wait()
+            except OSError:
+                pass
+
+    status = "ERROR" if (return_code or 0) != 0 else "SUCCESS"
+    yield {
+        "type": "done",
+        "run_id": run_id,
+        "return_code": return_code,
+        "status": status,
+        "timed_out": timed_out,
+    }
+
+
+def _diagnostic_from_output(text: str, run_id: str, return_code: Optional[int]) -> Optional[DiagnosticItem]:
+    line: Optional[int] = None
+    for match in _STDERR_LINE.finditer(text):
+        line = int(match.group(1))
+    last_words = [part.strip() for part in text.splitlines() if part.strip()]
+    if last_words:
+        message = last_words[-1][:200]
+    elif return_code is not None:
+        message = f"Process exited with code {return_code}"
+    else:
+        message = "Execution failed"
+    return DiagnosticItem(line=line, message=message, severity="error", run_id=run_id)
+
+
+def execute_risky(req: CodeExecutionRequest) -> CodeExecutionResult:
+    """Run the risky chain to completion and return a CodeExecutionResult."""
+    run_id = _run_id()
+    out_parts: List[str] = []
+    err_parts: List[str] = []
+    diagnostics: List[DiagnosticItem] = []
+    status = "SUCCESS"
+    return_code = None
+    timed_out = False
+
+    for event in run_risky(req, run_id=run_id):
+        event_type = event.get("type")
+        if event_type == "stdout":
+            out_parts.append(event["text"])
+        elif event_type == "stderr":
+            err_parts.append(event["text"])
+        elif event_type == "syntax_error":
+            diagnostics.append(
+                DiagnosticItem(
+                    line=event.get("line"),
+                    column=event.get("column"),
+                    message=event.get("message", "SyntaxError"),
+                    severity="error",
+                    run_id=run_id,
+                )
+            )
+        elif event_type == "done":
+            status = event.get("status", "ERROR")
+            return_code = event.get("return_code")
+            timed_out = event.get("timed_out", False)
+
+    stdout = "".join(out_parts)
+    stderr = "".join(err_parts)
+    if timed_out and not stderr:
+        stderr += f"TimeoutError: code execution exceeded {req.timeout_seconds:g} seconds.\n"
+    if status == "ERROR" and not diagnostics:
+        diagnostic = _diagnostic_from_output(stdout + stderr, run_id, return_code)
+        if diagnostic:
+            diagnostics.append(diagnostic)
+
+    return CodeExecutionResult(
+        run_id=run_id,
+        status=status,
+        stdout=stdout,
+        stderr=stderr,
+        diagnostics=diagnostics,
+    )
+
+
+def execute_python_code(req: CodeExecutionRequest) -> CodeExecutionResult:
+    """Public dispatcher: pick the engine based on the requested mode."""
+    if req.mode == "risky":
+        return execute_risky(req)
+    return execute_safe(req)
 ```
 
 ## `codebuilder/schemas.py`
@@ -12067,7 +12493,11 @@ from pydantic import BaseModel, Field
 
 class CodeExecutionRequest(BaseModel):
     code: str = Field(..., description="Python source code to execute")
-    timeout_seconds: float = Field(default=5.0, description="Execution timeout in seconds")
+    timeout_seconds: float = Field(default=10.0, description="Execution timeout in seconds")
+    mode: str = Field(
+        default="safe",
+        description="Execution mode: 'safe' runs in-process; 'risky' runs in an isolated subprocess",
+    )
 
 
 class DiagnosticItem(BaseModel):
@@ -12096,19 +12526,27 @@ class StructuredEditRequest(BaseModel):
 
 ## `codebuilder/tools/tool_library.py`
 ```py
-"""Custom tools promoted from the Function Testing Workbench."""
+"""CodeBuilder tools kept out of the core catalogue so the registry stays slim.
+
+Importing this module registers each decorated function into the core
+tool catalogue via the shared @tool decorator.
+"""
+
+from core_engine.tool_catalog import tool
 
 
-def calculate_shipping(weight_kg: float, distance_km: float) -> dict:
-    """Calculate shipping fee from package weight and distance."""
-    base_rate = 5.0
-    cost = base_rate + (weight_kg * 1.5) + (distance_km * 0.05)
-    return {
-        "weight_kg": weight_kg,
-        "distance_km": distance_km,
-        "shipping_cost": round(cost, 2)
-    }
+@tool(provider="codebuilder")
+def send_code_to_editor(code: str) -> str:
+    """Queue generated Python code for insertion into the active CodeBuilder Monaco editor."""
+    if not code.strip():
+        raise ValueError("Code to send to the editor must not be empty.")
+    return "CodeBuilder will insert this code into the active Monaco editor after the chat turn."
 
+
+@tool(provider="codebuilder")
+def run_code_in_editor() -> str:
+    """Queue execution of the current contents of the active CodeBuilder editor."""
+    return "CodeBuilder will run the active editor buffer after the chat turn."
 ```
 
 ## `core_engine/__init__.py`
@@ -12955,18 +13393,6 @@ def run_python_code(code: str) -> str:
     return json.dumps(result.model_dump(), ensure_ascii=False)
 
 
-@tool(provider="codebuilder")
-def send_code_to_editor(code: str) -> str:
-    """Queue generated Python code for insertion into the active CodeBuilder Monaco editor."""
-    if not code.strip():
-        raise ValueError("Code to send to the editor must not be empty.")
-    return "CodeBuilder will insert this code into the active Monaco editor after the chat turn."
-
-
-@tool(provider="codebuilder")
-def run_code_in_editor() -> str:
-    """Queue execution of the current contents of the active CodeBuilder editor."""
-    return "CodeBuilder will run the active editor buffer after the chat turn."
 
 
 # --- Core System Tools ---
@@ -13195,6 +13621,11 @@ def load_custom_tools(reload: bool = False) -> None:
                 "signature": str(inspect.signature(function)),
             }
         _LOADED_CUSTOM_TOOLS.add(resolved_path)
+
+
+# Register CodeBuilder's local tool library (imported last so the @tool
+# decorator resolved above is available without a broken import cycle).
+from codebuilder.tools import tool_library  # noqa: E402,F401
 
 ```
 
@@ -13620,6 +14051,7 @@ async def api_ws(websocket: WebSocket):
   <title>CodeBuilder — Novous Agent Factory</title>
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/codebuilder.css">
+  <link rel="stylesheet" href="/static/css/test_panel.css">
 </head>
 <body class="bg-dark text-light">
   <div class="app-container">
@@ -13835,18 +14267,73 @@ async def api_ws(websocket: WebSocket):
   opacity: 0.7;
 }
 
-.codebuilder-layout {
-  display: grid;
-  grid-template-columns: 210px minmax(0, 1fr) minmax(250px, 300px);
-  flex: 1;
-  min-height: 250px;
-  gap: 0.6rem;
+.codebuilder-run-mode {
+  display: inline-flex;
+  align-items: center;
 }
 
-.codebuilder-sidebar,
+.codebuilder-run-mode select {
+  max-width: 190px;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.78rem;
+}
+
+/* ---------- Layout grid ----------
+   Columns: chat | v-resizer | editor | v-resizer | console
+   Rows:    main panes | h-resizer | agents strip
+   Sizes are driven by CSS variables so drag handles and collapse
+   toggles only need to mutate variables. */
+.codebuilder-layout {
+  display: grid;
+  grid-template-columns:
+    var(--chat-w, 320px) 6px minmax(0, 1fr) 6px var(--console-w, 300px);
+  grid-template-rows:
+    minmax(0, 1fr) 6px var(--agents-h, 220px);
+  flex: 1;
+  min-height: 250px;
+  overflow: hidden;
+}
+
+.codebuilder-chat-panel {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.codebuilder-resizer[data-resize="chat"] {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.codebuilder-editor-panel {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.codebuilder-resizer[data-resize="console"] {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+.codebuilder-console-panel {
+  grid-column: 5;
+  grid-row: 1;
+}
+
+.codebuilder-resizer[data-resize="agents"] {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.codebuilder-agents-panel {
+  grid-column: 1 / -1;
+  grid-row: 3;
+}
+
+/* ---------- Panes ---------- */
+.codebuilder-chat-panel,
 .codebuilder-editor-panel,
 .codebuilder-console-panel,
-.codebuilder-chat-panel {
+.codebuilder-agents-panel {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -13855,36 +14342,73 @@ async def api_ws(websocket: WebSocket):
   border-radius: var(--radius);
 }
 
-.codebuilder-sidebar {
+.codebuilder-chat-panel,
+.codebuilder-console-panel,
+.codebuilder-agents-panel {
   display: flex;
   flex-direction: column;
-  padding: 0.5rem;
-  gap: 0.5rem;
 }
 
-.codebuilder-sidebar-heading {
+/* ---------- Resizers ---------- */
+.codebuilder-resizer {
+  background: var(--border-color);
+  opacity: 0.5;
+}
+
+.codebuilder-resizer:hover,
+body.is-resizing .codebuilder-resizer.is-dragging {
+  background: var(--primary);
+  opacity: 0.9;
+}
+
+.codebuilder-resizer[data-resize="chat"],
+.codebuilder-resizer[data-resize="console"] {
+  cursor: col-resize;
+}
+
+.codebuilder-resizer[data-resize="agents"] {
+  cursor: row-resize;
+}
+
+body.is-resizing {
+  cursor: default;
+  user-select: none;
+}
+
+/* ---------- Agents panel (bottom strip) ---------- */
+.codebuilder-agents-heading {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  min-height: 34px;
+  min-height: 36px;
+  padding: 0.35rem 0.55rem;
+  border-bottom: 1px solid var(--border-color);
 }
 
-.codebuilder-sidebar-toggle,
-.codebuilder-agent-refresh {
-  flex: 0 0 auto;
-  padding: 0.25rem 0.5rem;
-}
-
-.codebuilder-sidebar-title {
+.codebuilder-agents-title {
   flex: 1;
   min-width: 0;
   overflow: hidden;
 }
 
-.codebuilder-sidebar-title h2,
-.codebuilder-chat-heading h2 {
+.codebuilder-agents-title h2 {
   margin: 0;
   font-size: 0.86rem;
+}
+
+.codebuilder-agents-toggle,
+.codebuilder-agent-refresh,
+.codebuilder-console-collapse,
+.codebuilder-chat-expand {
+  flex: 0 0 auto;
+  min-width: 30px;
+  padding: 0.2rem 0.45rem;
+  line-height: 1.2;
+}
+
+.codebuilder-agent-refresh {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .codebuilder-agent-status {
@@ -13895,58 +14419,33 @@ async def api_ws(websocket: WebSocket):
 }
 
 .codebuilder-agent-list {
-  display: flex;
   flex: 1;
-  flex-direction: column;
-  gap: 0.25rem;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.6rem;
   overflow-y: auto;
+  padding: 0.6rem 0.75rem;
 }
 
 .codebuilder-agent-list > p {
+  grid-column: 1 / -1;
   margin: 0;
   padding: 0.35rem;
 }
 
-.codebuilder-agent-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.35rem;
-  width: 100%;
-  padding: 0.45rem 0.5rem;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-main);
-  text-align: left;
-  cursor: pointer;
-}
-
-.codebuilder-agent-item:hover,
-.codebuilder-agent-item.selected {
+.codebuilder-agent-tile.selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
   background: var(--bg-elev);
-  border-color: var(--border-color);
 }
 
-.codebuilder-agent-item.selected {
-  box-shadow: inset 3px 0 var(--primary);
+.codebuilder-agent-tile.selected i,
+.codebuilder-agent-tile.selected svg {
+  color: var(--primary);
 }
 
-.codebuilder-agent-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.8rem;
-}
-
-.codebuilder-agent-mode {
-  flex: 0 0 auto;
-  color: var(--text-muted);
-  font-size: 0.64rem;
-  text-transform: uppercase;
-}
-
+/* ---------- Editor panel ---------- */
 .codebuilder-editor-panel {
   display: flex;
   flex-direction: column;
@@ -13991,6 +14490,7 @@ async def api_ws(websocket: WebSocket):
   margin-right: auto;
 }
 
+/* ---------- Console panel ---------- */
 .codebuilder-console-panel {
   display: flex;
   flex-direction: column;
@@ -13999,7 +14499,7 @@ async def api_ws(websocket: WebSocket):
 .codebuilder-console-heading,
 .codebuilder-chat-heading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.7rem 0.85rem;
@@ -14092,54 +14592,19 @@ button.diagnostic-item {
   border-left-color: var(--primary);
 }
 
-.codebuilder-shell.sidebar-collapsed .codebuilder-layout {
-  grid-template-columns: 52px minmax(0, 1fr) minmax(250px, 300px);
-}
-
-.codebuilder-sidebar.collapsed .codebuilder-sidebar-title,
-.codebuilder-sidebar.collapsed .codebuilder-agent-refresh,
-.codebuilder-sidebar.collapsed .codebuilder-agent-name,
-.codebuilder-sidebar.collapsed .codebuilder-agent-mode,
-.codebuilder-sidebar.collapsed .codebuilder-agent-list > p {
-  display: none;
-}
-
-.codebuilder-sidebar.collapsed .codebuilder-sidebar-heading {
-  justify-content: center;
-  flex-wrap: wrap;
-}
-
-.codebuilder-sidebar.collapsed .codebuilder-agent-item {
-  justify-content: center;
-  padding: 0.4rem 0.15rem;
-}
-
-.codebuilder-chat-panel {
-  flex: 0 0 185px;
-  display: flex;
-  flex-direction: column;
-  transition: flex-basis 180ms ease;
-}
-
-.codebuilder-chat-panel.expanded {
-  flex-basis: clamp(300px, 42vh, 520px);
-}
-
+/* ---------- Chat panel (left column) ---------- */
 .codebuilder-chat-heading {
   flex: 0 0 auto;
-  align-items: center;
   padding: 0.45rem 0.75rem;
 }
 
-.codebuilder-chat-expand {
-  flex: 0 0 auto;
-  min-width: 30px;
-  padding: 0.2rem 0.45rem;
-  line-height: 1.2;
+.codebuilder-chat-heading h2 {
+  margin: 0;
+  font-size: 0.86rem;
 }
 
 .codebuilder-chat-heading .text-muted {
-  max-width: 65%;
+  max-width: 60%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -14197,10 +14662,40 @@ button.diagnostic-item {
   font-size: 0.7rem;
 }
 
-.codebuilder-send-code {
+.codebuilder-code-language {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: lowercase;
+}
+
+.codebuilder-code-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.codebuilder-copy-code,
+.codebuilder-send-code,
+.codebuilder-expand-code,
+.codebuilder-modal-close {
   padding: 0.2rem 0.45rem;
   font-family: inherit;
   font-size: 0.7rem;
+}
+
+.codebuilder-chat-code {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 0 0 6px 6px;
+  background: var(--bg-dark);
+}
+
+.codebuilder-chat-code .monaco-editor,
+.codebuilder-chat-code .monaco-editor .margin,
+.codebuilder-chat-code .monaco-editor-background {
+  background: var(--bg-dark);
 }
 
 .codebuilder-code-block pre {
@@ -14220,6 +14715,12 @@ button.diagnostic-item {
   white-space: pre;
 }
 
+.codebuilder-chat-code > pre {
+  height: 100%;
+  max-height: none;
+  box-sizing: border-box;
+}
+
 .codebuilder-chat-message.user {
   align-self: flex-end;
   background: var(--primary);
@@ -14234,7 +14735,7 @@ button.diagnostic-item {
 
 .codebuilder-chat-form {
   display: grid;
-  grid-template-columns: minmax(145px, 190px) minmax(0, 560px) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: 0.5rem;
   padding: 0.45rem 0.65rem;
@@ -14242,8 +14743,8 @@ button.diagnostic-item {
 }
 
 .codebuilder-model-picker {
+  grid-column: 1 / -1;
   display: flex;
-  flex: 0 0 190px;
   flex-direction: column;
   gap: 0.2rem;
 }
@@ -14256,6 +14757,7 @@ button.diagnostic-item {
 }
 
 .codebuilder-chat-form textarea {
+  grid-column: 1;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
@@ -14266,36 +14768,167 @@ button.diagnostic-item {
   font-size: 0.82rem;
 }
 
-.codebuilder-chat-form button {
-  justify-self: start;
+.codebuilder-chat-actions {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
+.codebuilder-chat-actions .btn {
+  width: 100%;
+}
+
+/* ---------- Expanded code modal ---------- */
+.codebuilder-code-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgba(8, 10, 16, 0.72);
+}
+
+.codebuilder-code-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(1100px, 94vw);
+  max-height: 88vh;
+  overflow: hidden;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.codebuilder-code-modal-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.72rem;
+}
+
+.codebuilder-code-modal-heading .codebuilder-code-actions {
+  gap: 0.4rem;
+}
+
+.codebuilder-code-modal-body {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-dark);
+}
+
+.codebuilder-code-modal-body .monaco-editor,
+.codebuilder-code-modal-body .monaco-editor .margin,
+.codebuilder-code-modal-body .monaco-editor-background {
+  background: var(--bg-dark);
+}
+
+body.codebuilder-modal-open {
+  overflow: hidden;
+}
+
+/* ---------- Collapse rails ---------- */
+.codebuilder-shell.chat-collapsed {
+  --chat-w: 44px;
+}
+
+.codebuilder-shell.console-collapsed {
+  --console-w: 44px;
+}
+
+.codebuilder-shell.agents-collapsed {
+  --agents-h: 38px;
+}
+
+.codebuilder-shell.chat-collapsed .codebuilder-chat-heading {
+  justify-content: center;
+  padding: 0.45rem 0.2rem;
+}
+
+.codebuilder-shell.chat-collapsed .codebuilder-chat-heading h2,
+.codebuilder-shell.chat-collapsed .codebuilder-chat-heading .text-muted,
+.codebuilder-shell.chat-collapsed .codebuilder-chat-messages,
+.codebuilder-shell.chat-collapsed .codebuilder-chat-form {
+  display: none;
+}
+
+.codebuilder-shell.console-collapsed .codebuilder-console-heading {
+  justify-content: center;
+  padding: 0.45rem 0.2rem;
+}
+
+.codebuilder-shell.console-collapsed .codebuilder-console-heading h2,
+.codebuilder-shell.console-collapsed .codebuilder-console-subtitle,
+.codebuilder-shell.console-collapsed .codebuilder-output-section,
+.codebuilder-shell.console-collapsed .codebuilder-problems-section {
+  display: none;
+}
+
+.codebuilder-shell.agents-collapsed .codebuilder-agents-heading {
+  justify-content: flex-end;
+}
+
+.codebuilder-shell.agents-collapsed .codebuilder-agents-title {
+  display: none;
+}
+
+.codebuilder-shell.agents-collapsed .codebuilder-agent-list {
+  display: none;
+}
+
+/* ---------- Responsive: medium ---------- */
 @media (max-width: 1100px) {
-  .codebuilder-layout,
-  .codebuilder-shell.sidebar-collapsed .codebuilder-layout {
-    grid-template-columns: 185px minmax(0, 1fr);
-    grid-template-rows: minmax(280px, 1fr) minmax(200px, 0.65fr);
+  .codebuilder-layout {
+    grid-template-columns: var(--chat-w, 280px) 6px minmax(0, 1fr);
+    grid-template-rows:
+      minmax(280px, 1.2fr) minmax(180px, 0.6fr) 6px var(--agents-h, 200px);
   }
 
-  .codebuilder-sidebar {
-    grid-row: 1 / span 2;
+  .codebuilder-chat-panel {
+    grid-column: 1;
+    grid-row: 1;
   }
 
-  .codebuilder-editor-panel {
+  .codebuilder-resizer[data-resize="chat"] {
     grid-column: 2;
     grid-row: 1;
   }
 
+  .codebuilder-editor-panel {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .codebuilder-resizer[data-resize="console"] {
+    display: none;
+  }
+
   .codebuilder-console-panel {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 2;
   }
 
-  .codebuilder-shell.sidebar-collapsed .codebuilder-layout {
-    grid-template-columns: 52px minmax(0, 1fr);
+  .codebuilder-resizer[data-resize="agents"] {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  .codebuilder-agents-panel {
+    grid-column: 1 / -1;
+    grid-row: 4;
   }
 }
 
+/* ---------- Responsive: small ---------- */
 @media (max-width: 700px) {
   .codebuilder-shell {
     height: auto;
@@ -14309,6 +14942,14 @@ button.diagnostic-item {
 
   .codebuilder-toolbar-actions {
     width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .codebuilder-run-mode,
+  .codebuilder-run-mode select {
+    flex: 1;
+    max-width: none;
+    width: 100%;
   }
 
   .codebuilder-toolbar-actions .btn {
@@ -14317,21 +14958,21 @@ button.diagnostic-item {
     font-size: 0.75rem;
   }
 
-  .codebuilder-layout,
-  .codebuilder-shell.sidebar-collapsed .codebuilder-layout {
+  .codebuilder-layout {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(350px, 55vh) minmax(260px, 35vh);
+    grid-template-rows:
+      auto minmax(350px, 55vh) minmax(260px, 35vh) var(--agents-h, 190px);
+    min-height: 900px;
   }
 
-  .codebuilder-sidebar,
-  .codebuilder-shell.sidebar-collapsed .codebuilder-sidebar {
+  .codebuilder-resizer {
+    display: none;
+  }
+
+  .codebuilder-chat-panel {
     grid-column: 1;
     grid-row: 1;
-    max-height: 190px;
-  }
-
-  .codebuilder-shell.sidebar-collapsed .codebuilder-sidebar {
-    max-height: 48px;
+    height: 460px;
   }
 
   .codebuilder-editor-panel {
@@ -14344,31 +14985,9 @@ button.diagnostic-item {
     grid-row: 3;
   }
 
-  .codebuilder-chat-panel {
-    flex-basis: 215px;
-  }
-
-  .codebuilder-chat-panel.expanded {
-    flex-basis: min(45vh, 420px);
-    min-height: 300px;
-  }
-
-  .codebuilder-model-picker {
-    grid-column: 1 / -1;
-  }
-
-  .codebuilder-chat-form {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .codebuilder-chat-form textarea {
+  .codebuilder-agents-panel {
     grid-column: 1;
-    grid-row: 2;
-  }
-
-  .codebuilder-chat-form button {
-    grid-column: 2;
-    grid-row: 2;
+    grid-row: 4;
   }
 
   .codebuilder-statusbar {
@@ -14376,7 +14995,6 @@ button.diagnostic-item {
     font-size: 0.65rem;
   }
 }
-
 ```
 
 ## `frontend/static/css/style.css`
@@ -15909,26 +16527,157 @@ export function renderChatView(container) {
 
 ## `frontend/static/js/codebuilder/codebuilder.js`
 ```js
-import { attachCodeBuilderEditor } from './codebuilder_editor.js';
+import { attachCodeBuilderEditor, loadMonaco } from './codebuilder_editor.js';
 
 const DEMO_CODE = `print("Hello from Novous CodeBuilder!")
 for i in range(3):
     print(f"count={i}")
 `;
 
+const CODE_LANGUAGE_MAP = {
+  py: 'python', python: 'python', python3: 'python',
+  js: 'javascript', javascript: 'javascript', node: 'javascript',
+  ts: 'typescript', typescript: 'typescript',
+  html: 'html', css: 'css', scss: 'scss', json: 'json',
+  sh: 'shell', bash: 'shell', shell: 'shell', zsh: 'shell', powershell: 'powershell',
+  yaml: 'yaml', yml: 'yaml', ini: 'ini', toml: 'ini', xml: 'xml',
+  md: 'markdown', markdown: 'markdown', text: 'plaintext', txt: 'plaintext',
+};
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch { /* fall through to legacy copy */ }
+  }
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.top = '0';
+  area.style.left = '0';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { ok = false; }
+  area.remove();
+  return ok;
+}
+
+const PREFS_KEY = 'novous.codebuilder.';
+const PANEL_CONF = {
+  chat:    { var: '--chat-w',    min: 240, maxFactor: 0.45, rail: 44, default: 320 },
+  console: { var: '--console-w', min: 220, maxFactor: 0.45, rail: 44, default: 300 },
+  agents:  { var: '--agents-h',  min: 120, max: 340,        rail: 38, default: 220 },
+};
+const PANEL_LABELS = { chat: 'Chat', console: 'Console', agents: 'Agents' };
+const PANEL_GLYPHS = { chat: ['«', '»'], console: ['»', '«'], agents: ['⌄', '⌃'] };
+const PANEL_BUTTONS = {
+  chat: '#codebuilder-chat-expand',
+  console: '#codebuilder-console-collapse',
+  agents: '#codebuilder-agents-toggle',
+};
+
+const readPref = key => {
+  try { return localStorage.getItem(PREFS_KEY + key); } catch { return null; }
+};
+const writePref = (key, value) => {
+  try { localStorage.setItem(PREFS_KEY + key, value); } catch { /* storage unavailable */ }
+};
+const readVar = (element, name) => parseFloat(
+  element.style.getPropertyValue(name) || getComputedStyle(element).getPropertyValue(name)
+);
+
+const clampSize = (layout, name, value) => {
+  const conf = PANEL_CONF[name];
+  const max = conf.max ?? Math.max(conf.min, layout.clientWidth * conf.maxFactor);
+  return Math.round(Math.min(Math.max(value, conf.min), max));
+};
+
+function restoreLayoutState(shell) {
+  const layout = shell.querySelector('.codebuilder-layout');
+  if (!layout) return;
+  for (const name of Object.keys(PANEL_CONF)) {
+    const conf = PANEL_CONF[name];
+    const saved = parseFloat(readPref(name + 'Width'));
+    if (Number.isFinite(saved)) layout.style.setProperty(conf.var, clampSize(layout, name, saved) + 'px');
+    if (readPref(name + 'Collapsed') === '1') {
+      shell.classList.add(name + '-collapsed');
+      layout.style.setProperty(conf.var, conf.rail + 'px');
+    }
+  }
+}
+
+function refreshPanelToggle(shell, name) {
+  const button = shell.querySelector(PANEL_BUTTONS[name]);
+  if (!button) return;
+  const collapsed = shell.classList.contains(name + '-collapsed');
+  const label = PANEL_LABELS[name];
+  button.textContent = collapsed ? PANEL_GLYPHS[name][1] : PANEL_GLYPHS[name][0];
+  button.title = collapsed ? `Expand ${label} panel` : `Collapse ${label} panel`;
+  button.setAttribute('aria-label', button.title);
+  button.setAttribute('aria-expanded', String(!collapsed));
+}
+
+function setupResizers(shell) {
+  const layout = shell.querySelector('.codebuilder-layout');
+  if (!layout) return;
+  shell.querySelectorAll('.codebuilder-resizer').forEach(resizer => {
+    const name = resizer.dataset.resize;
+    const conf = PANEL_CONF[name];
+    if (!conf) return;
+    resizer.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      if (shell.classList.contains(name + '-collapsed')) {
+        shell.classList.remove(name + '-collapsed');
+        writePref(name + 'Collapsed', '0');
+        refreshPanelToggle(shell, name);
+      }
+      const axis = name === 'agents' ? 'clientY' : 'clientX';
+      const startPos = event[axis];
+      const start = clampSize(layout, name, readVar(layout, conf.var) || conf.default);
+      resizer.setPointerCapture(event.pointerId);
+      document.body.classList.add('is-resizing');
+      resizer.classList.add('is-dragging');
+      const onMove = moveEvent => {
+        layout.style.setProperty(
+          conf.var,
+          clampSize(layout, name, start + (moveEvent[axis] - startPos)) + 'px'
+        );
+      };
+      const onUp = () => {
+        resizer.removeEventListener('pointermove', onMove);
+        resizer.removeEventListener('pointerup', onUp);
+        document.body.classList.remove('is-resizing');
+        resizer.classList.remove('is-dragging');
+        const final = readVar(layout, conf.var);
+        if (Number.isFinite(final)) writePref(name + 'Width', String(final));
+      };
+      resizer.addEventListener('pointermove', onMove);
+      resizer.addEventListener('pointerup', onUp);
+    });
+  });
+}
+
+const RISKY_CODE_PATTERN = /\b(?:subprocess|os\.system|os\.popen|os\.spawn|pty|commands)\b|shell\s*[:=]\s*true|\binput\s*\(|^\s*!/im;
+const RUN_MODE_KEY = 'codebuilder.runMode';
+
 export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
   const root = document.getElementById(rootId);
   const output = document.getElementById('codebuilder-output');
   const diagnostics = document.getElementById('diagnostics');
   const runButton = document.getElementById('run-code');
+  const runMode = document.getElementById('codebuilder-run-mode');
   const demoButton = document.getElementById('load-demo');
   const clearButton = document.getElementById('clear-console');
   const status = document.getElementById('codebuilder-status');
   const agentList = document.getElementById('codebuilder-agent-list');
-  const agentStatus = document.getElementById('codebuilder-agent-status');
   const agentRefresh = document.getElementById('codebuilder-agent-refresh');
-  const sidebar = document.getElementById('codebuilder-sidebar');
-  const sidebarToggle = document.getElementById('codebuilder-sidebar-toggle');
+  const agentsPanel = document.getElementById('codebuilder-agents-panel');
+  const agentsToggle = document.getElementById('codebuilder-agents-toggle');
   const modelSelect = document.getElementById('codebuilder-model');
   const chatForm = document.getElementById('codebuilder-chat-form');
   const chatInput = document.getElementById('codebuilder-chat-input');
@@ -15936,20 +16685,39 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
   const chatStatus = document.getElementById('codebuilder-chat-status');
   const chatPanel = document.getElementById('codebuilder-chat-panel');
   const chatExpand = document.getElementById('codebuilder-chat-expand');
+  const chatClear = document.getElementById('codebuilder-chat-clear');
+  const consoleCollapse = document.getElementById('codebuilder-console-collapse');
+  const shell = agentsPanel?.closest('.codebuilder-shell') ?? root.closest('.codebuilder-shell');
+  const layout = shell?.querySelector('.codebuilder-layout');
 
-  if (!root || !output || !diagnostics || !runButton || !demoButton || !clearButton ||
-      !agentList || !agentStatus || !agentRefresh || !sidebar || !sidebarToggle ||
+  if (!root || !output || !diagnostics || !runButton || !runMode || !demoButton || !clearButton ||
+      !agentList || !agentRefresh || !agentsPanel || !agentsToggle ||
       !modelSelect || !chatForm || !chatInput || !chatMessages || !chatStatus ||
-      !chatPanel || !chatExpand) {
+      !chatPanel || !chatExpand || !chatClear || !consoleCollapse || !shell || !layout) {
     console.error('CodeBuilder could not start because a required page element is missing.');
     return null;
   }
+
+  restoreLayoutState(shell);
+  setupResizers(shell);
 
   const editor = await attachCodeBuilderEditor(root, DEMO_CODE);
   let agents = [];
   let selectedAgent = null;
   let defaultModel = 'qwen2.5-coder:latest';
   let chatPending = false;
+  let manualRunMode = null;
+  const chatCodeEditors = new Set();
+
+  const detectRunMode = () => (RISKY_CODE_PATTERN.test(editor.getValue()) ? 'risky' : 'safe');
+  const currentRunMode = () => (manualRunMode || detectRunMode());
+
+  const disposeChatCodeEditors = () => {
+    chatCodeEditors.forEach(editor => {
+      try { editor.dispose(); } catch { /* already disposed */ }
+    });
+    chatCodeEditors.clear();
+  };
 
   const renderDiagnostics = (items = []) => {
     diagnostics.replaceChildren();
@@ -15974,19 +16742,121 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     });
   };
 
+  const streamRiskyRun = async () => {
+    const timeoutSeconds = 10;
+    const response = await fetch('/api/codebuilder/execute/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: editor.getValue(), timeout_seconds: timeoutSeconds, mode: 'risky' })
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.detail || `Stream request failed (${response.status}).`);
+    }
+    if (!response.body || typeof response.body.getReader !== 'function') {
+      throw new Error('Live streaming is not supported by this browser.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let returnCode = 0;
+    let runStatus = 'SUCCESS';
+    let streamedText = '';
+    let syntaxError = null;
+
+    const ingest = (event) => {
+      switch (event.type) {
+        case 'stdout':
+          output.textContent += event.text;
+          streamedText += event.text;
+          break;
+        case 'stderr':
+          output.textContent += event.text;
+          streamedText += event.text;
+          break;
+        case 'truncated':
+          output.textContent += '\n[Earlier output truncated]\n';
+          break;
+        case 'syntax_error':
+          syntaxError = { line: event.line, message: event.message };
+          break;
+        case 'done':
+          returnCode = event.return_code ?? returnCode;
+          runStatus = event.status || runStatus;
+          break;
+        default:
+          break;
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let separator = buffer.indexOf('\n\n');
+      while (separator !== -1) {
+        const rawEvent = buffer.slice(0, separator);
+        buffer = buffer.slice(separator + 2);
+        for (const line of rawEvent.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            ingest(JSON.parse(line.slice(6)));
+          } catch { /* ignore malformed event */ }
+        }
+        separator = buffer.indexOf('\n\n');
+      }
+    }
+    const remainder = buffer.trim();
+    if (remainder.startsWith('data: ')) {
+      try { ingest(JSON.parse(remainder.slice(6))); } catch { /* ignore */ }
+    }
+
+    if (syntaxError) {
+      renderDiagnostics([{ severity: 'error', line: syntaxError.line, message: syntaxError.message }]);
+      editor.setDiagnostics([{ severity: 'error', line: syntaxError.line, message: syntaxError.message }]);
+      status.textContent = 'Finished with errors';
+    } else if (runStatus === 'ERROR') {
+      const lastLine = [...streamedText.trim().split('\n')].filter(Boolean).pop() || '';
+      const message = lastLine || `Process exited with code ${returnCode}.`;
+      renderDiagnostics([{ severity: 'error', message }]);
+      editor.setDiagnostics([]);
+      status.textContent = 'Finished with errors';
+    } else {
+      renderDiagnostics([]);
+      editor.setDiagnostics([]);
+    }
+
+    return {
+      status: runStatus === 'SUCCESS' ? 'SUCCESS' : 'ERROR',
+      stdout: streamedText,
+      stderr: '',
+      diagnostics: [],
+    };
+  };
+
   const runCode = async () => {
+    const mode = currentRunMode();
     runButton.disabled = true;
-    runButton.textContent = 'Running…';
-    output.textContent = 'Running Python code…';
+    runButton.textContent = mode === 'risky' ? 'Running… (stream)' : 'Running…';
+    output.textContent = '';
     status.textContent = 'Running';
     diagnostics.replaceChildren();
     editor.setDiagnostics([]);
 
     try {
+      if (mode === 'risky') {
+        const result = await streamRiskyRun();
+        if (result && !output.textContent.trim()) {
+          output.textContent = 'Execution completed with no output.';
+        }
+        return result;
+      }
+
       const response = await fetch('/api/codebuilder/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: editor.getValue(), timeout_seconds: 5.0 })
+        body: JSON.stringify({ code: editor.getValue(), timeout_seconds: 10, mode: 'safe' })
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -16051,6 +16921,104 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     }
   };
 
+  const createCopyCodeButton = (code) => {
+    const copyButton = document.createElement('button');
+    copyButton.type = 'button';
+    copyButton.className = 'btn btn-sm codebuilder-copy-code';
+    copyButton.textContent = 'Copy Code';
+    copyButton.setAttribute('aria-label', 'Copy code to clipboard');
+    copyButton.addEventListener('click', async () => {
+      const ok = await copyTextToClipboard(code);
+      copyButton.textContent = ok ? 'Copied!' : 'Copy failed';
+      copyButton.disabled = ok;
+      setTimeout(() => {
+        copyButton.textContent = 'Copy Code';
+        copyButton.disabled = false;
+      }, 2000);
+    });
+    return copyButton;
+  };
+
+  const createSendToEditorButton = (code) => {
+    const sendButton = document.createElement('button');
+    sendButton.type = 'button';
+    sendButton.className = 'btn btn-sm codebuilder-send-code';
+    sendButton.textContent = 'Send to editor';
+    sendButton.setAttribute('aria-label', 'Send code to the editor');
+    sendButton.addEventListener('click', () => {
+      if (sendCodeToEditor(code)) {
+        sendButton.textContent = 'Sent to editor';
+        sendButton.disabled = true;
+      }
+    });
+    return sendButton;
+  };
+
+  const openChatCodeModal = (code, codeLanguage) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'codebuilder-code-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', `Expanded ${codeLanguage} code block`);
+
+    const panel = document.createElement('div');
+    panel.className = 'codebuilder-code-modal';
+
+    const heading = document.createElement('div');
+    heading.className = 'codebuilder-code-modal-heading';
+    const title = document.createElement('span');
+    title.className = 'codebuilder-code-language';
+    title.textContent = codeLanguage;
+    heading.appendChild(title);
+
+    const actions = document.createElement('div');
+    actions.className = 'codebuilder-code-actions';
+    actions.append(createCopyCodeButton(code), createSendToEditorButton(code));
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'btn btn-sm codebuilder-modal-close';
+    closeButton.textContent = 'Close';
+    closeButton.setAttribute('aria-label', 'Close expanded code block');
+    actions.appendChild(closeButton);
+    heading.appendChild(actions);
+
+    const body = document.createElement('div');
+    body.className = 'codebuilder-code-modal-body';
+
+    const pre = document.createElement('pre');
+    const codeElement = document.createElement('code');
+    codeElement.className = `language-${codeLanguage}`;
+    codeElement.textContent = code;
+    pre.appendChild(codeElement);
+    body.appendChild(pre);
+
+    panel.append(heading, body);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    let modalEditor = null;
+    const close = () => {
+      if (modalEditor) {
+        try { modalEditor.dispose(); } catch { /* already disposed */ }
+      }
+      overlay.remove();
+      document.body.classList.remove('codebuilder-modal-open');
+      document.removeEventListener('keydown', onKey);
+    };
+    const onKey = event => { if (event.key === 'Escape') close(); };
+
+    overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+    closeButton.addEventListener('click', close);
+    document.addEventListener('keydown', onKey);
+    document.body.classList.add('codebuilder-modal-open');
+
+    mountChatCodeEditor(body, pre, code, codeLanguage, {
+      maxHeight: Math.round(window.innerHeight * 0.6),
+      wordWrap: 'off',
+      addToRegistry: false,
+    }).then(editor => { modalEditor = editor; });
+  };
+
   const appendAssistantMessage = (message, content) => {
     content = String(content ?? '');
     const codeBlockPattern = /```([^\r\n`]*)\r?\n([\s\S]*?)```/g;
@@ -16065,46 +17033,98 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
       message.appendChild(paragraph);
     };
 
-    while ((match = codeBlockPattern.exec(content)) !== null) {
-      appendText(content.slice(lastIndex, match.index));
-
-      const language = match[1].trim().split(/\s+/, 1)[0].toLowerCase();
-      const code = match[2];
-      const isPython = !language || ['py', 'python', 'python3'].includes(language);
+    const buildCodeBlock = (code, rawLanguage) => {
+      const language = rawLanguage || 'python';
       const block = document.createElement('section');
       block.className = 'codebuilder-code-block';
 
       const heading = document.createElement('div');
       heading.className = 'codebuilder-code-heading';
       const languageLabel = document.createElement('span');
-      languageLabel.textContent = isPython ? 'Python' : language;
+      languageLabel.className = 'codebuilder-code-language';
+      languageLabel.textContent = language;
       heading.appendChild(languageLabel);
 
-      if (isPython) {
-        const sendButton = document.createElement('button');
-        sendButton.type = 'button';
-        sendButton.className = 'btn btn-sm codebuilder-send-code';
-        sendButton.textContent = 'Send to editor';
-        sendButton.addEventListener('click', () => {
-          if (sendCodeToEditor(code)) {
-            sendButton.textContent = 'Sent to editor';
-            sendButton.disabled = true;
-          }
-        });
-        heading.appendChild(sendButton);
-      }
+      const actions = document.createElement('div');
+      actions.className = 'codebuilder-code-actions';
+      actions.append(createCopyCodeButton(code), createSendToEditorButton(code));
+
+      const expandButton = document.createElement('button');
+      expandButton.type = 'button';
+      expandButton.className = 'btn btn-sm codebuilder-expand-code';
+      expandButton.textContent = 'Expand';
+      expandButton.setAttribute('aria-label', 'Open this code block in a larger view');
+      expandButton.addEventListener('click', () => openChatCodeModal(code, language));
+      actions.appendChild(expandButton);
+      heading.appendChild(actions);
+
+      const body = document.createElement('div');
+      body.className = 'codebuilder-chat-code';
 
       const pre = document.createElement('pre');
       const codeElement = document.createElement('code');
-      codeElement.className = isPython ? 'language-python' : `language-${language || 'text'}`;
+      codeElement.className = `language-${language}`;
       codeElement.textContent = code;
       pre.appendChild(codeElement);
-      block.append(heading, pre);
+      body.appendChild(pre);
+
+      block.append(heading, body);
       message.appendChild(block);
+
+      mountChatCodeEditor(body, pre, code, language, {
+        maxHeight: 420,
+        wordWrap: 'on',
+        addToRegistry: true,
+      });
+    };
+
+    while ((match = codeBlockPattern.exec(content)) !== null) {
+      appendText(content.slice(lastIndex, match.index));
+      let rawLanguage = match[1].trim().split(/\s+/, 1)[0].toLowerCase();
+      let snippet = match[2].trimEnd();
+      if (rawLanguage === 'json' || ['text', 'txt', 'plaintext', ''].includes(rawLanguage)) {
+        try {
+          snippet = JSON.stringify(JSON.parse(snippet), null, 2);
+          rawLanguage = 'python';
+        } catch { /* keep the raw snippet when it is not valid JSON */ }
+      }
+      buildCodeBlock(snippet, rawLanguage);
       lastIndex = codeBlockPattern.lastIndex;
     }
 
     appendText(content.slice(lastIndex));
+  };
+
+  const mountChatCodeEditor = (container, fallbackPre, code, rawLanguage, options = {}) => {
+    const { maxHeight = 360, wordWrap = 'on', addToRegistry = true } = options;
+    const language = CODE_LANGUAGE_MAP[rawLanguage] || rawLanguage || 'plaintext';
+    const lineCount = code.split('\n').length;
+    container.style.height = `${Math.min(maxHeight, Math.max(72, lineCount * 18 + 16))}px`;
+
+    return loadMonaco().then(monaco => {
+      if (!container.isConnected || !chatCodeEditors) return null;
+      if (!monaco?.editor || typeof monaco.editor.create !== 'function') return null;
+      fallbackPre.remove();
+      const editor = monaco.editor.create(container, {
+        value: code,
+        language,
+        theme: 'vs-dark',
+        readOnly: true,
+        automaticLayout: true,
+        minimap: { enabled: false },
+        folding: false,
+        glyphMargin: false,
+        lineDecorationsWidth: 0,
+        lineNumbers: 'off',
+        renderLineHighlight: 'none',
+        scrollBeyondLastLine: false,
+        wordWrap,
+        contextmenu: false,
+        fixedOverflowWidgets: true,
+      });
+      if (addToRegistry) chatCodeEditors.add(editor);
+      return editor;
+    }).catch(() => null);
   };
 
   const appendChatMessage = (role, content) => {
@@ -16125,37 +17145,122 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     sendButton.disabled = chatPending || !selectedAgent || !modelSelect.value || modelSelect.disabled;
   };
 
+  const FUTURE_AGENT_OPTIONS = [
+    { id: 'debugAgent', label: 'Debug Agent', icon: 'bug' },
+    { id: 'diagnostics', label: 'Diagnostics', icon: 'activity' },
+  ];
+
+  const hasAgentFunctions = agent => Array.isArray(agent.tools) && agent.tools.length > 0;
+
+  const AGENT_TILE_ICONS = {
+    bot: [
+      'M12 8V4H8',
+      'M4 8v12a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1Z',
+      'M8 13v2',
+      'M12 13v2',
+      'M16 13v2',
+    ],
+    bug: [
+      'm8 2 1.88 1.88',
+      'M14.12 3.88 16 2',
+      'M9 7.13v-1a3.003 3.003 0 1 1 6 0v1',
+      'M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6',
+      'M12 20v-9',
+      'M6.53 9C4.6 8.8 3 7.1 3 5',
+      'M6 13H2',
+      'M3 21c0-2.1 1.7-3.9 3.8-4',
+      'M20.97 5c0 2.1-1.6 3.8-3.5 4',
+      'M22 13h-4',
+      'M17.2 17c2.1.1 3.8 1.9 3.8 4',
+    ],
+    activity: [
+      'M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2',
+    ],
+  };
+
+  const buildTileIcon = (name) => {
+    const iconPath = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(iconPath, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '20');
+    svg.setAttribute('height', '20');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    (AGENT_TILE_ICONS[name] || []).forEach(pathData => {
+      const path = document.createElementNS(iconPath, 'path');
+      path.setAttribute('d', pathData);
+      svg.appendChild(path);
+    });
+    return svg;
+  };
+
+  const buildAgentTile = (label, icon, title, onClick, isSelected) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'test-function codebuilder-agent-tile';
+    button.title = title;
+    if (isSelected) button.classList.add('selected');
+    button.setAttribute('aria-pressed', String(Boolean(isSelected)));
+
+    const iconElement = buildTileIcon(icon);
+    const labelElement = document.createElement('span');
+    labelElement.textContent = label;
+
+    if (typeof onClick === 'function') {
+      button.addEventListener('click', onClick);
+    } else {
+      button.disabled = true;
+      button.classList.add('disabled');
+    }
+    button.append(iconElement, labelElement);
+    return button;
+  };
+
   const renderAgents = () => {
     agentList.replaceChildren();
+
+    agents.forEach(agent => {
+      const isSelected = selectedAgent?.id === agent.id;
+      const hasFunctions = hasAgentFunctions(agent);
+      const tile = buildAgentTile(
+        agent.name,
+        'bot',
+        hasFunctions
+          ? (agent.description || agent.name)
+          : `${agent.name} — no tools available`,
+        () => selectAgent(agent),
+        isSelected
+      );
+      tile.setAttribute('aria-label', `${agent.name} agent`);
+      if (chatPending || !hasFunctions) {
+        tile.disabled = true;
+        tile.classList.add('disabled');
+      }
+      agentList.appendChild(tile);
+    });
+
+    FUTURE_AGENT_OPTIONS.forEach(option => {
+      const tile = buildAgentTile(
+        option.label,
+        option.icon,
+        `${option.label} — not implemented yet`,
+        null,
+        false
+      );
+      agentList.appendChild(tile);
+    });
+
     if (!agents.length) {
+      selectedAgent = null;
       const empty = document.createElement('p');
       empty.className = 'text-muted small';
       empty.textContent = 'No agents found in the workspace agents folder.';
       agentList.appendChild(empty);
-      selectedAgent = null;
-      updateChatControls();
-      return;
     }
-
-    agents.forEach(agent => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'codebuilder-agent-item';
-      button.classList.toggle('selected', selectedAgent?.id === agent.id);
-      button.title = agent.description || agent.name;
-      button.setAttribute('aria-pressed', String(selectedAgent?.id === agent.id));
-      button.disabled = chatPending;
-
-      const name = document.createElement('span');
-      name.className = 'codebuilder-agent-name';
-      name.textContent = agent.name;
-      const mode = document.createElement('span');
-      mode.className = 'codebuilder-agent-mode';
-      mode.textContent = agent.mode || 'agent';
-      button.append(name, mode);
-      button.addEventListener('click', () => selectAgent(agent));
-      agentList.appendChild(button);
-    });
 
     updateChatControls();
   };
@@ -16168,13 +17273,13 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
       modelSelect.value = preferredModel;
     }
     chatMessages.replaceChildren();
+    disposeChatCodeEditors();
     appendChatMessage('system', `Chatting with ${agent.name}.`);
     chatStatus.textContent = `Agent: ${agent.name}`;
   };
 
   const loadAgents = async () => {
     agentRefresh.disabled = true;
-    agentStatus.textContent = 'Loading agents…';
     try {
       const data = await fetch('/api/codebuilder/agents').then(async response => {
         const payload = await response.json();
@@ -16182,13 +17287,11 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
         return payload;
       });
       agents = data.agents || [];
-      agentStatus.textContent = `${agents.length} agent${agents.length === 1 ? '' : 's'}`;
       const selectedId = selectedAgent?.id;
       selectedAgent = agents.find(agent => agent.id === selectedId) || agents[0] || null;
       renderAgents();
       if (selectedAgent) selectAgent(selectedAgent);
     } catch (error) {
-      agentStatus.textContent = 'Could not load agents.';
       const message = document.createElement('p');
       message.className = 'text-danger small';
       message.textContent = error instanceof Error ? error.message : String(error);
@@ -16255,23 +17358,50 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
   });
   runButton.addEventListener('click', runCode);
   editor.setRunHandler(runCode);
+
+  const persistedRunMode = readPref(RUN_MODE_KEY);
+  if (persistedRunMode === 'risky' || persistedRunMode === 'safe') {
+    manualRunMode = persistedRunMode;
+    runMode.value = persistedRunMode;
+  }
+  runMode.addEventListener('change', () => {
+    manualRunMode = runMode.value;
+    writePref(RUN_MODE_KEY, runMode.value);
+  });
+  editor.onChange(() => {
+    if (manualRunMode) return;
+    if (runMode.value !== detectRunMode()) runMode.value = detectRunMode();
+  });
   agentRefresh.addEventListener('click', loadAgents);
-  sidebarToggle.addEventListener('click', () => {
-    const collapsed = sidebar.classList.toggle('collapsed');
-    sidebar.closest('.codebuilder-shell').classList.toggle('sidebar-collapsed', collapsed);
-    sidebarToggle.setAttribute('aria-expanded', String(!collapsed));
-    sidebarToggle.setAttribute('aria-label', collapsed ? 'Expand agent sidebar' : 'Collapse agent sidebar');
-  });
-  chatExpand.addEventListener('click', () => {
-    const expanded = chatPanel.classList.toggle('expanded');
-    chatExpand.setAttribute('aria-expanded', String(expanded));
-    chatExpand.setAttribute(
-      'aria-label',
-      expanded ? 'Shrink chat panel' : 'Expand chat panel'
-    );
-    chatExpand.title = expanded ? 'Shrink chat panel' : 'Expand chat panel';
-    chatExpand.textContent = expanded ? '⌄' : '⌃';
-  });
+
+  const togglePanel = (name) => {
+    const conf = PANEL_CONF[name];
+    const collapsed = !shell.classList.contains(name + '-collapsed');
+    if (collapsed) {
+      const current = readVar(layout, conf.var);
+      if (Number.isFinite(current) && current > conf.rail) writePref(name + 'Width', String(current));
+      shell.classList.add(name + '-collapsed');
+      layout.style.setProperty(conf.var, conf.rail + 'px');
+    } else {
+      const saved = parseFloat(readPref(name + 'Width'));
+      layout.style.setProperty(
+        conf.var,
+        (Number.isFinite(saved) ? clampSize(layout, name, saved) : conf.default) + 'px'
+      );
+      shell.classList.remove(name + '-collapsed');
+    }
+    writePref(name + 'Collapsed', collapsed ? '1' : '0');
+    return collapsed;
+  };
+
+  chatExpand.addEventListener('click', () => { togglePanel('chat'); refreshPanelToggle(shell, 'chat'); });
+  consoleCollapse.addEventListener('click', () => { togglePanel('console'); refreshPanelToggle(shell, 'console'); });
+  agentsToggle.addEventListener('click', () => { togglePanel('agents'); refreshPanelToggle(shell, 'agents'); });
+
+  refreshPanelToggle(shell, 'chat');
+  refreshPanelToggle(shell, 'console');
+  refreshPanelToggle(shell, 'agents');
+
   chatForm.addEventListener('submit', async event => {
     event.preventDefault();
     const message = chatInput.value.trim();
@@ -16323,6 +17453,19 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
       chatForm.requestSubmit();
     }
   });
+  chatClear.addEventListener('click', () => {
+    chatInput.value = '';
+    chatMessages.replaceChildren();
+    disposeChatCodeEditors();
+    if (selectedAgent) {
+      appendChatMessage('system', 'Chat cleared. Ask a new question.');
+      chatStatus.textContent = `Agent: ${selectedAgent.name}`;
+    } else {
+      appendChatMessage('system', 'Chat cleared.');
+      chatStatus.textContent = 'Chat cleared';
+    }
+    chatInput.focus();
+  });
 
   renderDiagnostics([]);
   status.textContent = 'Ready';
@@ -16343,6 +17486,12 @@ export function renderCodeBuilderView(container) {
           <span class="badge badge-success">Python</span>
         </div>
         <div class="codebuilder-toolbar-actions">
+          <label class="codebuilder-run-mode">
+            <select id="codebuilder-run-mode" aria-label="Choose how to run Python code">
+              <option value="safe">Safe (in-process)</option>
+              <option value="risky">Risky (isolated, streams)</option>
+            </select>
+          </label>
           <button id="load-demo" class="btn btn-sm" type="button" title="Load the sample Python program">Sample</button>
           <button id="clear-console" class="btn btn-sm" type="button" title="Clear console and diagnostics">Clear Output</button>
           <button id="run-code" class="btn btn-sm btn-primary" type="button" title="Run Python (Ctrl+Enter)">▶ Run Python</button>
@@ -16350,19 +17499,37 @@ export function renderCodeBuilderView(container) {
       </div>
 
       <main class="codebuilder-layout">
-        <aside id="codebuilder-sidebar" class="codebuilder-sidebar" aria-label="Workspace agents">
-          <div class="codebuilder-sidebar-heading">
-            <button id="codebuilder-sidebar-toggle" class="btn btn-sm codebuilder-sidebar-toggle"
-                    type="button" aria-label="Collapse agent sidebar" aria-expanded="true" title="Collapse sidebar">‹</button>
-            <div class="codebuilder-sidebar-title">
-              <h2>Agents</h2>
-              <span id="codebuilder-agent-status" class="text-muted small">Loading…</span>
-            </div>
-            <button id="codebuilder-agent-refresh" class="btn btn-sm codebuilder-agent-refresh"
-                    type="button" title="Refresh agents" aria-label="Refresh agents">↻</button>
+        <section id="codebuilder-chat-panel" class="codebuilder-chat-panel" aria-label="Chat with an agent">
+          <div class="codebuilder-chat-heading">
+            <h2>Ask an Agent</h2>
+            <span id="codebuilder-chat-status" class="text-muted small">Select an agent to start.</span>
+            <button id="codebuilder-chat-expand" class="btn btn-sm codebuilder-chat-expand"
+                    type="button" aria-label="Collapse chat panel" aria-expanded="true"
+                    title="Collapse chat panel">«</button>
           </div>
-          <div id="codebuilder-agent-list" class="codebuilder-agent-list"></div>
-        </aside>
+          <div id="codebuilder-chat-messages" class="codebuilder-chat-messages" aria-live="polite">
+            <div class="codebuilder-chat-message system">Messages with your selected agent appear here.</div>
+          </div>
+          <form id="codebuilder-chat-form" class="codebuilder-chat-form">
+            <label class="codebuilder-model-picker">
+              <span class="text-muted small">Model</span>
+              <select id="codebuilder-model" class="form-select" aria-label="Choose model">
+                <option value="">Loading models…</option>
+              </select>
+            </label>
+            <textarea id="codebuilder-chat-input" class="form-input" rows="4"
+                      placeholder="Ask the selected agent about your Python code…"
+                      aria-label="Message to agent"></textarea>
+            <div class="codebuilder-chat-actions">
+              <button id="codebuilder-chat-clear" class="btn btn-sm"
+                      type="button" aria-label="Clear chat" title="Clear the chat conversation">Clear</button>
+              <button class="btn btn-primary" type="submit" disabled>Send</button>
+            </div>
+          </form>
+        </section>
+
+        <div class="codebuilder-resizer" data-resize="chat" role="separator"
+             aria-orientation="vertical" aria-label="Resize chat panel"></div>
 
         <section class="codebuilder-editor-panel" aria-label="Python editor">
           <div id="codebuilder-editor" class="editor-surface"></div>
@@ -16374,10 +17541,16 @@ export function renderCodeBuilderView(container) {
           </div>
         </section>
 
+        <div class="codebuilder-resizer" data-resize="console" role="separator"
+             aria-orientation="vertical" aria-label="Resize console panel"></div>
+
         <aside class="codebuilder-console-panel" aria-label="Run output and diagnostics">
           <div class="codebuilder-console-heading">
             <h2>Run Output</h2>
             <span class="codebuilder-console-subtitle">Console &amp; Problems</span>
+            <button id="codebuilder-console-collapse" class="btn btn-sm codebuilder-console-collapse"
+                    type="button" aria-label="Collapse console panel" aria-expanded="true"
+                    title="Collapse console panel">»</button>
           </div>
           <section class="codebuilder-output-section">
             <h3>Console</h3>
@@ -16388,32 +17561,21 @@ export function renderCodeBuilderView(container) {
             <div id="diagnostics" class="diagnostics-list"></div>
           </section>
         </aside>
-      </main>
 
-      <section id="codebuilder-chat-panel" class="codebuilder-chat-panel" aria-label="Chat with an agent">
-        <div class="codebuilder-chat-heading">
-          <h2>Ask an Agent</h2>
-          <span id="codebuilder-chat-status" class="text-muted small">Select an agent to start.</span>
-          <button id="codebuilder-chat-expand" class="btn btn-sm codebuilder-chat-expand"
-                  type="button" aria-label="Expand chat panel" aria-expanded="false"
-                  title="Expand chat panel">⌃</button>
-        </div>
-        <div id="codebuilder-chat-messages" class="codebuilder-chat-messages" aria-live="polite">
-          <div class="codebuilder-chat-message system">Messages with your selected agent appear here.</div>
-        </div>
-        <form id="codebuilder-chat-form" class="codebuilder-chat-form">
-          <label class="codebuilder-model-picker">
-            <span class="text-muted small">Model</span>
-            <select id="codebuilder-model" class="form-select" aria-label="Choose model">
-              <option value="">Loading models…</option>
-            </select>
-          </label>
-          <textarea id="codebuilder-chat-input" class="form-input" rows="2"
-                    placeholder="Ask the selected agent about your Python code…"
-                    aria-label="Message to agent"></textarea>
-          <button class="btn btn-primary" type="submit" disabled>Send</button>
-        </form>
-      </section>
+        <div class="codebuilder-resizer" data-resize="agents" role="separator"
+             aria-orientation="horizontal" aria-label="Resize agents panel"></div>
+
+        <aside id="codebuilder-agents-panel" class="codebuilder-agents-panel" aria-label="Workspace agents">
+          <div class="codebuilder-agents-heading">
+            <button id="codebuilder-agents-toggle" class="btn btn-sm codebuilder-agents-toggle"
+                    type="button" aria-label="Collapse agents panel" aria-expanded="true"
+                    title="Collapse agents panel">⌄</button>
+            <button id="codebuilder-agent-refresh" class="btn btn-sm codebuilder-agent-refresh"
+                    type="button" title="Refresh agents" aria-label="Refresh agents">↻</button>
+          </div>
+          <div id="codebuilder-agent-list" class="codebuilder-agent-list"></div>
+        </aside>
+      </main>
     </div>
   `;
 
@@ -16432,7 +17594,7 @@ if (typeof window !== 'undefined' && document.readyState !== 'loading') {
 const MONACO_VS_PATH = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs';
 let monacoPromise;
 
-function loadMonaco() {
+export function loadMonaco() {
   if (window.monaco?.editor) return Promise.resolve(window.monaco);
   if (monacoPromise) return monacoPromise;
 
@@ -16461,6 +17623,8 @@ function createTextareaEditor(element, initialValue) {
   textarea.setAttribute('aria-label', 'Python source code');
   element.replaceChildren(textarea);
   let runHandler = null;
+  let changeHandler = null;
+  textarea.addEventListener('input', () => changeHandler?.());
   textarea.addEventListener('keydown', event => {
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
       event.preventDefault();
@@ -16470,9 +17634,10 @@ function createTextareaEditor(element, initialValue) {
 
   return {
     getValue: () => textarea.value,
-    setValue: (value) => { textarea.value = value; },
+    setValue: (value) => { textarea.value = value; changeHandler?.(); },
     setDiagnostics: () => {},
     setRunHandler: (handler) => { runHandler = handler; },
+    onChange: (handler) => { changeHandler = handler; },
     revealLine: (line) => {
       const lineStart = textarea.value.split('\n').slice(0, Math.max(0, line - 1)).join('\n').length;
       textarea.focus();
@@ -16518,6 +17683,8 @@ export async function attachCodeBuilderEditor(element, initialValue = "print('He
       wordWrap: 'off',
     });
     let runHandler = null;
+    let changeHandler = null;
+    editor.onDidChangeModelContent(() => changeHandler?.());
     editor.addAction({
       id: 'codebuilder.runPython',
       label: 'Run Python',
@@ -16527,9 +17694,10 @@ export async function attachCodeBuilderEditor(element, initialValue = "print('He
 
     return {
       getValue: () => editor.getValue(),
-      setValue: (value) => editor.setValue(value),
+      setValue: (value) => { editor.setValue(value); },
       focus: () => editor.focus(),
       setRunHandler: (handler) => { runHandler = handler; },
+      onChange: (handler) => { changeHandler = handler; },
       revealLine: (line) => {
         editor.revealLineInCenter(line);
         editor.setPosition({ lineNumber: line, column: 1 });
@@ -19058,7 +20226,7 @@ title: CodeAgent
 
 Purpose: What the code does.
 
-Code: The complete code in a copy-and-paste-ready format.
+Code: The complete code in a copy-and-paste-ready format. Always wrap every code snippet in a fenced code block using standard markdown triple backticks with the language tag on the opening fence (for example, ```python).
 
 Explanation: How the code works.
 
