@@ -1,5 +1,5 @@
 @echo off
-REM Virtualenv bootstrap for Novous2 Agent Factory (Windows)
+REM Virtualenv bootstrap for Novous Agent Factory (Windows)
 if not exist "venv" (
     python -m venv venv
 )

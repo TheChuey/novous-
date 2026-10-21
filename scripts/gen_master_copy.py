@@ -1,4 +1,4 @@
-"""Generate a single markdown master copy of the entire Novous2 source tree."""
+"""Generate a single markdown master copy of the entire Novous source tree."""
 
 from datetime import datetime
 from pathlib import Path
@@ -39,7 +39,7 @@ def collect() -> list[Path]:
 
 def main() -> None:
     files = collect()
-    chunks = ["# Novous2 Agent Factory — Master Copy", "",
+    chunks = ["# Novous Agent Factory — Master Copy", "",
               f"Generated from `{ROOT}` — {len(files)} files.", ""]
     for path in files:
         rel = path.relative_to(ROOT).as_posix()

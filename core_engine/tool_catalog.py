@@ -1,4 +1,4 @@
-"""@tool registry & provider bindings for the Novous2 core engine.
+"""@tool registry & provider bindings for the Novous core engine.
 
 Registry-only catalog: does not define any tools directly. All tool definitions
 are discovered dynamically from the tools/ directory.

@@ -260,12 +260,12 @@ def api_export_chat_session(req: ExportSessionRequest):
     safe_session_id = re.sub(r"[^A-Za-z0-9_.-]", "_", req.session_id).strip("._")
     if not safe_session_id:
         safe_session_id = "session"
-    filename = f"novous2_{safe_session_id}_{timestamp}.md"
+    filename = f"novous_{safe_session_id}_{timestamp}.md"
     exported_at = now.strftime("%Y-%m-%d %H:%M:%S")
     agent_name = agent.profile.name or req.session_id
 
     lines = [
-        f"# Novous2 Chat Session Log — {agent_name}",
+        f"# Novous Chat Session Log — {agent_name}",
         f"**Agent ID:** `{agent.profile.id}` | **Model:** `{agent.model}` | "
         f"**Session Key:** `{req.session_id}`",
         f"**Exported At:** `{exported_at}`",

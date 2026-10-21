@@ -5,7 +5,7 @@ import { mountTerminal, TERMINAL_CHANNEL } from '../terminal.js?v=2';
 import { setupFileControls } from './files_ui.js';
 import { Api } from '../api.js';
 
-const DEMO_CODE = `print("Hello from Novous2 CodeBuilder!")
+const DEMO_CODE = `print("Hello from Novous CodeBuilder!")
 for i in range(3):
     print(f"count={i}")
 `;

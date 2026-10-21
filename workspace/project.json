@@ -1,7 +1,7 @@
 {
-  "name": "Novous2 Workspace",
+  "name": "Novous Workspace",
   "version": "1.0.0",
-  "description": "Canonical project state for the Novous2 Agent Factory.",
+  "description": "Canonical project state for the Novous Agent Factory.",
   "default_model": "qwen2.5-coder:latest",
   "squad_root": "",
   "active_agent": "assistant",

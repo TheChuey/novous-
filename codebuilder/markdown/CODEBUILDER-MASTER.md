@@ -2,7 +2,7 @@
 
 ## Overview
 
-CodeBuilder provides isolated Python code execution, interactive Monaco editor integration, and human-in-the-loop questionnaire workflows for Novous2 agents.
+CodeBuilder provides isolated Python code execution, interactive Monaco editor integration, and human-in-the-loop questionnaire workflows for Novous agents.
 
 ---
 

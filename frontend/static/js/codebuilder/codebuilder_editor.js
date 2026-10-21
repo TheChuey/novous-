@@ -73,7 +73,7 @@ function createTextareaEditor(element, initialValue) {
 
 export async function attachCodeBuilderEditor(
   element,
-  initialValue = "print('Hello from Novous2 CodeBuilder!')\n",
+  initialValue = "print('Hello from Novous CodeBuilder!')\n",
   language = 'python'
 ) {
   if (!element) {

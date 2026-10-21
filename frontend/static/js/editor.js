@@ -133,7 +133,7 @@ export function renderEditorView(container, initialPath = null) {
         return `| ${escapeCell(event.type.replace(/_/g, ' '))} | ${escapeCell(event.path)} | ${escapeCell(event.session_id)} | ${escapeCell(details)} |`;
       });
       const markdown = [
-        '# Novous2 Session Events Log',
+        '# Novous Session Events Log',
         '',
         `Exported: ${new Date().toLocaleString()}`,
         '',
@@ -142,7 +142,7 @@ export function renderEditorView(container, initialPath = null) {
         ...(rows.length ? rows : ['| No events recorded | | | |']),
         ''
       ].join('\n');
-      const result = await Api.saveMarkdown(markdown, `novous2-session-events-${timestamp}.md`);
+      const result = await Api.saveMarkdown(markdown, `novous-session-events-${timestamp}.md`);
       alert(result.locationChosen
         ? `Events log saved as ${result.filename} in the location you selected.`
         : `Events log download started: ${result.filename}\n\nChoose the save location in your browser's download settings.`);

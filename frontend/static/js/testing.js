@@ -185,7 +185,7 @@ function renderToolWorkbench(container, toolPayload = null) {
         <p class="text-muted small">Tools listed here are registered from the five file-tool modules and <code>promoted_tools.py</code> in <code>tools/</code>.</p>
         <div id="tw-library" class="text-muted small">Loading tools…</div>
       </div>
-      <p class="text-muted small">Promoted code is trusted application code and will run in the Novous2 backend when an agent invokes it.</p>
+      <p class="text-muted small">Promoted code is trusted application code and will run in the Novous backend when an agent invokes it.</p>
     </section>`);
 
   const codeField = container.querySelector('#tw-code');
@@ -245,7 +245,7 @@ function renderToolWorkbench(container, toolPayload = null) {
     return html + escapeHtml(source.slice(last));
   }
 
-  const HARNESS_START = '# --- Novous2 test call';
+  const HARNESS_START = '# --- Novous test call';
   function renderCodeView() {
     const source = codeField.value.replace(/\r\n?/g, '\n');
     codeView.innerHTML = source
@@ -718,7 +718,7 @@ function renderToolWorkbench(container, toolPayload = null) {
     try {
       const saved = await Api.saveMarkdown(
         renderTestReport(lastTestReport),
-        `novous2-tool-test-${stamp}.md`
+        `novous-tool-test-${stamp}.md`
       );
       if (saved.locationChosen) {
         alert(`Test results saved as ${saved.filename}.`);
@@ -733,7 +733,7 @@ function renderToolWorkbench(container, toolPayload = null) {
   });
   promoteButton.addEventListener('click', async () => {
     if (!lastPassed || !confirm(
-      'Add this tested function to the tool library? Promoted code runs as trusted code in the Novous2 backend.'
+      'Add this tested function to the tool library? Promoted code runs as trusted code in the Novous backend.'
     )) return;
 
     try {

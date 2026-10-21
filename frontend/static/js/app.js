@@ -39,7 +39,7 @@ function renderDashboardView(container) {
     <div class="dashboard">
       <section class="dash-hero card">
         <div>
-          <h2>${esc(project.name || 'Novous2 Workspace')}</h2>
+          <h2>${esc(project.name || 'Novous Workspace')}</h2>
           <p class="text-muted">${esc(project.description || 'Declarative Agent Factory — 4-Pillar Architecture.')}</p>
         </div>
         <div class="dash-hero-stats">

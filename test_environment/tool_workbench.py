@@ -191,8 +191,8 @@ def _read_output(output_file) -> str:
     return text
 
 
-HARNESS_START = "# --- Novous2 test call (edit the values; removed when adding to the library) ---"
-HARNESS_END = "# --- end Novous2 test call ---"
+HARNESS_START = "# --- Novous test call (edit the values; removed when adding to the library) ---"
+HARNESS_END = "# --- end Novous test call ---"
 _HARNESS_BLOCK = re.compile(
     r"\n*" + re.escape(HARNESS_START) + r".*?" + re.escape(HARNESS_END) + r"[ \t]*\n?",
     re.DOTALL,

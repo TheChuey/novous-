@@ -135,8 +135,8 @@ def scaffold_agent(agent_id: str, name: str, description: str = "",
     agent_template = AGENT_MD_TEMPLATE
     if environment == "codebuilder":
         agent_template = AGENT_MD_TEMPLATE.replace(
-            "Novous2 workspace agent",
-            "Novous2 CodeBuilder agent",
+            "Novous workspace agent",
+            "Novous CodeBuilder agent",
         )
         if mode == "agent":
             agent_template += """

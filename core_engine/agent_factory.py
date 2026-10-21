@@ -13,7 +13,7 @@ AGENT_ENVIRONMENTS = {
 AGENT_MD_TEMPLATE = """# {name}
 
 ## role
-You are {name}, a Novous2 workspace agent. You act as a specialist in your domain and own every request end to end. Always think before answering and verify any claim you reuse.
+You are {name}, a Novous workspace agent. You act as a specialist in your domain and own every request end to end. Always think before answering and verify any claim you reuse.
 
 ## purpose
 {purpose}

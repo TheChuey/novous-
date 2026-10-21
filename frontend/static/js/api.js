@@ -1,5 +1,5 @@
 /**
- * Novous2 Unified API Client Wrapper
+ * Novous Unified API Client Wrapper
  */
 async function jsonOrThrow(res) {
   let data = null;
@@ -105,7 +105,7 @@ export const Api = {
 
   async exportSession(sessionId) {
     const safeSessionId = String(sessionId).replace(/[^A-Za-z0-9_.-]/g, '_');
-    const suggestedName = `novous2_${safeSessionId}_${new Date().toISOString().replace(/[:.]/g, '-')}.md`;
+    const suggestedName = `novous_${safeSessionId}_${new Date().toISOString().replace(/[:.]/g, '-')}.md`;
     let pickerResult = null;
     if (typeof window.showSaveFilePicker === 'function') {
       pickerResult = window.showSaveFilePicker({

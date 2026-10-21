@@ -1,14 +1,14 @@
 Date: 2026-10-21
-Name: Novous2 Application Snapshot
-Filename: NOVOUS2_APP_SNAPSHOT_20261021_new.md
-Commit: a125bd9
-Description: Self-contained reference for an AI agent. Captures Novous2 app purpose, architecture, file structure, and complete source code. Designed for grounding/understanding without repo access.
+Name: Novous Application Snapshot
+Filename: NOVOUS_APP_SNAPSHOT_20261021_new.md
+Commit: cd08d81
+Description: Self-contained reference for an AI agent. Captures Novous app purpose, architecture, file structure, and complete source code. Designed for grounding/understanding without repo access.
 
-# NOVOUS2 APPLICATION SNAPSHOT
+# NOVOUS APPLICATION SNAPSHOT
 
 ## 1) Overview
 
-Novous2 is an agent orchestration/workspace system with FastAPI backend, static frontend, core engine for agents/tools, editor integration, a repository-root agent library, and test environment.
+Novous is an agent orchestration/workspace system with FastAPI backend, static frontend, core engine for agents/tools, editor integration, a repository-root agent library, and test environment.
 
 Key components:
 - server.py: FastAPI app entrypoint serving static UI and API routes
@@ -1055,7 +1055,7 @@ def api_run_command(req: RunCommandRequest):
 
 ## Overview
 
-CodeBuilder provides isolated Python code execution, interactive Monaco editor integration, and human-in-the-loop questionnaire workflows for Novous2 agents.
+CodeBuilder provides isolated Python code execution, interactive Monaco editor integration, and human-in-the-loop questionnaire workflows for Novous agents.
 
 ---
 
@@ -2193,7 +2193,7 @@ AGENT_ENVIRONMENTS = {
 AGENT_MD_TEMPLATE = """# {name}
 
 ## role
-You are {name}, a Novous2 workspace agent. You act as a specialist in your domain and own every request end to end. Always think before answering and verify any claim you reuse.
+You are {name}, a Novous workspace agent. You act as a specialist in your domain and own every request end to end. Always think before answering and verify any claim you reuse.
 
 ## purpose
 {purpose}
@@ -2982,12 +2982,12 @@ def api_export_chat_session(req: ExportSessionRequest):
     safe_session_id = re.sub(r"[^A-Za-z0-9_.-]", "_", req.session_id).strip("._")
     if not safe_session_id:
         safe_session_id = "session"
-    filename = f"novous2_{safe_session_id}_{timestamp}.md"
+    filename = f"novous_{safe_session_id}_{timestamp}.md"
     exported_at = now.strftime("%Y-%m-%d %H:%M:%S")
     agent_name = agent.profile.name or req.session_id
 
     lines = [
-        f"# Novous2 Chat Session Log — {agent_name}",
+        f"# Novous Chat Session Log — {agent_name}",
         f"**Agent ID:** `{agent.profile.id}` | **Model:** `{agent.model}` | "
         f"**Session Key:** `{req.session_id}`",
         f"**Exported At:** `{exported_at}`",
@@ -3051,7 +3051,7 @@ def api_models():
 ### core_engine/langgraph_tools.py
 
 `python
-"""LangGraph & Docling Tool Suite for Novous2 Agent Factory.
+"""LangGraph & Docling Tool Suite for Novous Agent Factory.
 
 Provides safe file CRUD, workspace directory mapping, AST docstring extraction,
 Docling document conversion, workspace search, and grounded RAG capabilities.
@@ -3063,7 +3063,7 @@ from pathlib import Path
 from typing import Optional
 from langchain_core.tools import tool
 
-# Internal Novous2 Editor operations for workspace security
+# Internal Novous Editor operations for workspace security
 from editor.editor_operations import (
     read_file_content,
     write_file_content,
@@ -3480,7 +3480,7 @@ class Agent:
 ### core_engine/tool_catalog.py
 
 `python
-"""@tool registry & provider bindings for the Novous2 core engine.
+"""@tool registry & provider bindings for the Novous core engine.
 
 Registry-only catalog: does not define any tools directly. All tool definitions
 are discovered dynamically from the tools/ directory.
@@ -5132,7 +5132,7 @@ test_file_manager.py
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chat Console — Novous2 Agent Factory</title>
+  <title>Chat Console — Novous Agent Factory</title>
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/test_panel.css">
 </head>
@@ -5141,7 +5141,7 @@ test_file_manager.py
     <header class="navbar">
       <div class="logo">
         <span class="logo-icon">⚡</span>
-        <span class="logo-text">NOVOUS2 <strong>AGENT FACTORY</strong></span>
+        <span class="logo-text">NOVOUS <strong>AGENT FACTORY</strong></span>
       </div>
       <nav class="nav-links">
         <a class="nav-btn" href="/">Dashboard</a>
@@ -5174,7 +5174,7 @@ test_file_manager.py
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CodeBuilder — Novous2 Agent Factory</title>
+  <title>CodeBuilder — Novous Agent Factory</title>
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/codebuilder.css?v=4">
   <link rel="stylesheet" href="/static/css/test_panel.css">
@@ -5184,7 +5184,7 @@ test_file_manager.py
     <header class="navbar">
       <div class="logo">
         <span class="logo-icon">⚡</span>
-        <span class="logo-text">NOVOUS2 <strong>AGENT FACTORY</strong></span>
+        <span class="logo-text">NOVOUS <strong>AGENT FACTORY</strong></span>
       </div>
       <nav class="nav-links">
         <a class="nav-btn" href="/">Dashboard</a>
@@ -5217,7 +5217,7 @@ test_file_manager.py
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Editor — Novous2 Agent Factory</title>
+  <title>Editor — Novous Agent Factory</title>
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/codebuilder.css">
   <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.min.js"></script>
@@ -5227,7 +5227,7 @@ test_file_manager.py
     <header class="navbar">
       <div class="logo">
         <span class="logo-icon">⚡</span>
-        <span class="logo-text">NOVOUS2 <strong>AGENT FACTORY</strong></span>
+        <span class="logo-text">NOVOUS <strong>AGENT FACTORY</strong></span>
       </div>
       <nav class="nav-links">
         <a class="nav-btn" href="/">Dashboard</a>
@@ -5264,7 +5264,7 @@ test_file_manager.py
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Novous2 Agent Factory</title>
+  <title>Novous Agent Factory</title>
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/test_panel.css">
   <link rel="stylesheet" href="/static/css/codebuilder.css">
@@ -5275,7 +5275,7 @@ test_file_manager.py
     <header class="navbar">
       <div class="logo">
         <span class="logo-icon">⚡</span>
-        <span class="logo-text">NOVOUS2 <strong>AGENT FACTORY</strong></span>
+        <span class="logo-text">NOVOUS <strong>AGENT FACTORY</strong></span>
       </div>
       <nav class="nav-links">
         <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
@@ -5291,7 +5291,7 @@ test_file_manager.py
     <!-- Dynamic Content View Frame -->
     <main id="view-container" class="main-content">
       <!-- Tabs will inject view content dynamically via app.js -->
-      <div class="loading-spinner">Loading Novous2 Workspace...</div>
+      <div class="loading-spinner">Loading Novous Workspace...</div>
     </main>
   </div>
 
@@ -5311,7 +5311,7 @@ test_file_manager.py
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Terminal — Novous2 Sandbox</title>
+  <title>Terminal — Novous Sandbox</title>
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/codebuilder.css?v=3">
 </head>
@@ -5345,7 +5345,7 @@ test_file_manager.py
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Prompt Testing — Novous2 Agent Factory</title>
+  <title>Prompt Testing — Novous Agent Factory</title>
   <link rel="stylesheet" href="/static/css/style.css?v=8">
 </head>
 <body class="bg-dark text-light">
@@ -5353,7 +5353,7 @@ test_file_manager.py
     <header class="navbar">
       <div class="logo">
         <span class="logo-icon">⚡</span>
-        <span class="logo-text">NOVOUS2 <strong>AGENT FACTORY</strong></span>
+        <span class="logo-text">NOVOUS <strong>AGENT FACTORY</strong></span>
       </div>
       <nav class="nav-links">
         <a class="nav-btn" href="/">Dashboard</a>
@@ -6366,7 +6366,7 @@ body.codebuilder-modal-open {
 ### frontend/static/css/style.css
 
 `css
-/* Novous2 Agent Factory — Unified Dark Mode Theme */
+/* Novous Agent Factory — Unified Dark Mode Theme */
 
 :root {
   --bg-dark: #121316;
@@ -7273,7 +7273,7 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 
 `javascript
 /**
- * Novous2 Unified API Client Wrapper
+ * Novous Unified API Client Wrapper
  */
 async function jsonOrThrow(res) {
   let data = null;
@@ -7379,7 +7379,7 @@ export const Api = {
 
   async exportSession(sessionId) {
     const safeSessionId = String(sessionId).replace(/[^A-Za-z0-9_.-]/g, '_');
-    const suggestedName = `novous2_${safeSessionId}_${new Date().toISOString().replace(/[:.]/g, '-')}.md`;
+    const suggestedName = `novous_${safeSessionId}_${new Date().toISOString().replace(/[:.]/g, '-')}.md`;
     let pickerResult = null;
     if (typeof window.showSaveFilePicker === 'function') {
       pickerResult = window.showSaveFilePicker({
@@ -7657,7 +7657,7 @@ function renderDashboardView(container) {
     <div class="dashboard">
       <section class="dash-hero card">
         <div>
-          <h2>${esc(project.name || 'Novous2 Workspace')}</h2>
+          <h2>${esc(project.name || 'Novous Workspace')}</h2>
           <p class="text-muted">${esc(project.description || 'Declarative Agent Factory — 4-Pillar Architecture.')}</p>
         </div>
         <div class="dash-hero-stats">
@@ -8668,7 +8668,7 @@ import { mountTerminal, TERMINAL_CHANNEL } from '../terminal.js?v=2';
 import { setupFileControls } from './files_ui.js';
 import { Api } from '../api.js';
 
-const DEMO_CODE = `print("Hello from Novous2 CodeBuilder!")
+const DEMO_CODE = `print("Hello from Novous CodeBuilder!")
 for i in range(3):
     print(f"count={i}")
 `;
@@ -10254,7 +10254,7 @@ function createTextareaEditor(element, initialValue) {
 
 export async function attachCodeBuilderEditor(
   element,
-  initialValue = "print('Hello from Novous2 CodeBuilder!')\n",
+  initialValue = "print('Hello from Novous CodeBuilder!')\n",
   language = 'python'
 ) {
   if (!element) {
@@ -10695,7 +10695,7 @@ export function renderEditorView(container, initialPath = null) {
         return `| ${escapeCell(event.type.replace(/_/g, ' '))} | ${escapeCell(event.path)} | ${escapeCell(event.session_id)} | ${escapeCell(details)} |`;
       });
       const markdown = [
-        '# Novous2 Session Events Log',
+        '# Novous Session Events Log',
         '',
         `Exported: ${new Date().toLocaleString()}`,
         '',
@@ -10704,7 +10704,7 @@ export function renderEditorView(container, initialPath = null) {
         ...(rows.length ? rows : ['| No events recorded | | | |']),
         ''
       ].join('\n');
-      const result = await Api.saveMarkdown(markdown, `novous2-session-events-${timestamp}.md`);
+      const result = await Api.saveMarkdown(markdown, `novous-session-events-${timestamp}.md`);
       alert(result.locationChosen
         ? `Events log saved as ${result.filename} in the location you selected.`
         : `Events log download started: ${result.filename}\n\nChoose the save location in your browser's download settings.`);
@@ -13440,7 +13440,7 @@ function renderToolWorkbench(container, toolPayload = null) {
         <p class="text-muted small">Tools listed here are registered from the five file-tool modules and <code>promoted_tools.py</code> in <code>tools/</code>.</p>
         <div id="tw-library" class="text-muted small">Loading tools…</div>
       </div>
-      <p class="text-muted small">Promoted code is trusted application code and will run in the Novous2 backend when an agent invokes it.</p>
+      <p class="text-muted small">Promoted code is trusted application code and will run in the Novous backend when an agent invokes it.</p>
     </section>`);
 
   const codeField = container.querySelector('#tw-code');
@@ -13500,7 +13500,7 @@ function renderToolWorkbench(container, toolPayload = null) {
     return html + escapeHtml(source.slice(last));
   }
 
-  const HARNESS_START = '# --- Novous2 test call';
+  const HARNESS_START = '# --- Novous test call';
   function renderCodeView() {
     const source = codeField.value.replace(/\r\n?/g, '\n');
     codeView.innerHTML = source
@@ -13973,7 +13973,7 @@ function renderToolWorkbench(container, toolPayload = null) {
     try {
       const saved = await Api.saveMarkdown(
         renderTestReport(lastTestReport),
-        `novous2-tool-test-${stamp}.md`
+        `novous-tool-test-${stamp}.md`
       );
       if (saved.locationChosen) {
         alert(`Test results saved as ${saved.filename}.`);
@@ -13988,7 +13988,7 @@ function renderToolWorkbench(container, toolPayload = null) {
   });
   promoteButton.addEventListener('click', async () => {
     if (!lastPassed || !confirm(
-      'Add this tested function to the tool library? Promoted code runs as trusted code in the Novous2 backend.'
+      'Add this tested function to the tool library? Promoted code runs as trusted code in the Novous backend.'
     )) return;
 
     try {
@@ -14892,7 +14892,7 @@ python-multipart>=0.0.9
 ### scripts/gen_app_snapshot.py
 
 `python
-﻿"""Generate a comprehensive, AI-agent-readable snapshot of the Novous2 application."""
+﻿"""Generate a comprehensive, AI-agent-readable snapshot of the Novous application."""
 import os
 from pathlib import Path
 from datetime import datetime
@@ -14919,8 +14919,9 @@ EXCLUDE_DIRS = {
 }
 INCLUDE_EXT = {".py", ".js", ".css", ".html", ".json", ".md", ".txt", ".bat", ".sh", ".yaml", ".yml", ".cfg", ".ini"}
 SKIP_FILES = {"MASTER_COPY.md", "novous2-ai-builder-prompt-v2.md"}
+SNAPSHOT_PREFIXES = ("NOVOUS_APP_SNAPSHOT", "NOVOUS2_APP_SNAPSHOT")
 
-OUT = ROOT / "app_documentation" / f"NOVOUS2_APP_SNAPSHOT_{TODAY}_new.md"
+OUT = ROOT / "app_documentation" / f"NOVOUS_APP_SNAPSHOT_{TODAY}_new.md"
 
 
 def get_lang(ext: str) -> str:
@@ -14949,7 +14950,7 @@ def collect_files():
             continue
         if any(part in EXCLUDE_DIRS for part in path.parts):
             continue
-        if path.name in SKIP_FILES or path.name.startswith(("NOVOUS2_APP_SNAPSHOT", "NOVOUS2_APP_SNAPSHOT")) or path.name.startswith("MASTER_COPY"):
+        if path.name in SKIP_FILES or path.name.startswith(SNAPSHOT_PREFIXES) or path.name.startswith("MASTER_COPY"):
             continue
         if path.suffix.lower() not in INCLUDE_EXT and path.name in {"Dockerfile", "Procfile"}:
             pass
@@ -14965,7 +14966,7 @@ def write_tree(f):
         if any(part in EXCLUDE_DIRS for part in path.parts):
             continue
         rel = path.relative_to(ROOT).as_posix()
-        if path.name in SKIP_FILES or path.name.startswith(("NOVOUS2_APP_SNAPSHOT", "NOVOUS2_APP_SNAPSHOT")) or path.name.startswith("MASTER_COPY"):
+        if path.name in SKIP_FILES or path.name.startswith(SNAPSHOT_PREFIXES) or path.name.startswith("MASTER_COPY"):
             continue
         f.write(f"- {rel}{'/' if path.is_dir() else ''}\n")
     f.write("\n")
@@ -14975,13 +14976,13 @@ def main():
     files = collect_files()
     with OUT.open("w", encoding="utf-8") as f:
         f.write(f"Date: {datetime.now().strftime('%Y-%m-%d')}\n")
-        f.write(f"Name: Novous2 Application Snapshot\n")
+        f.write(f"Name: Novous Application Snapshot\n")
         f.write(f"Filename: {OUT.name}\n")
         f.write(f"Commit: {COMMIT}\n")
-        f.write(f"Description: Self-contained reference for an AI agent. Captures Novous2 app purpose, architecture, file structure, and complete source code. Designed for grounding/understanding without repo access.\n\n")
-        f.write("# NOVOUS2 APPLICATION SNAPSHOT\n\n")
+        f.write(f"Description: Self-contained reference for an AI agent. Captures Novous app purpose, architecture, file structure, and complete source code. Designed for grounding/understanding without repo access.\n\n")
+        f.write("# NOVOUS APPLICATION SNAPSHOT\n\n")
         f.write("## 1) Overview\n\n")
-        f.write("Novous2 is an agent orchestration/workspace system with FastAPI backend, static frontend, core engine for agents/tools, editor integration, a repository-root agent library, and test environment.\n\n")
+        f.write("Novous is an agent orchestration/workspace system with FastAPI backend, static frontend, core engine for agents/tools, editor integration, a repository-root agent library, and test environment.\n\n")
         f.write("Key components:\n- server.py: FastAPI app entrypoint serving static UI and API routes\n- core_engine/: agent factory, runtime, tool catalog, langgraph tools\n- editor/: editor session/operations/schemas/interface\n- frontend/: static assets and HTML pages (chat, editor, index, testing)\n- library/: centralized single-file agent definitions\n- workspace/: project configuration and workflow utilities\n- test_environment/: prompt builder, test runner, test agents\n\n")
         f.write("## 2) Table of Contents\n\n")
         f.write("1. Overview\n")
@@ -15010,7 +15011,7 @@ if __name__ == "__main__":
 ### scripts/gen_master_copy.py
 
 `python
-"""Generate a single markdown master copy of the entire Novous2 source tree."""
+"""Generate a single markdown master copy of the entire Novous source tree."""
 
 from datetime import datetime
 from pathlib import Path
@@ -15051,7 +15052,7 @@ def collect() -> list[Path]:
 
 def main() -> None:
     files = collect()
-    chunks = ["# Novous2 Agent Factory — Master Copy", "",
+    chunks = ["# Novous Agent Factory — Master Copy", "",
               f"Generated from `{ROOT}` — {len(files)} files.", ""]
     for path in files:
         rel = path.relative_to(ROOT).as_posix()
@@ -15165,7 +15166,7 @@ print(f"Migrated legacy agent definitions into {LIBRARY_ROOT}.")
 
 `batch
 @echo off
-REM Virtualenv bootstrap for Novous2 Agent Factory (Windows)
+REM Virtualenv bootstrap for Novous Agent Factory (Windows)
 if not exist "venv" (
     python -m venv venv
 )
@@ -15181,7 +15182,7 @@ echo Virtualenv ready. Run: python server.py
 
 `bash
 #!/usr/bin/env sh
-# Virtualenv bootstrap for Novous2 Agent Factory (macOS/Linux)
+# Virtualenv bootstrap for Novous Agent Factory (macOS/Linux)
 set -e
 if [ ! -d "venv" ]; then
   python3 -m venv venv
@@ -15211,7 +15212,7 @@ from codebuilder.interface import router as codebuilder_router
 from file_manager.interface import router as file_manager_router
 from tools.interface import router as tools_router
 
-app = FastAPI(title="Novous2 AGENT FACTORY", version="4.0.0")
+app = FastAPI(title="Novous AGENT FACTORY", version="4.0.0")
 
 
 @app.on_event("startup")
@@ -18432,8 +18433,8 @@ def _read_output(output_file) -> str:
     return text
 
 
-HARNESS_START = "# --- Novous2 test call (edit the values; removed when adding to the library) ---"
-HARNESS_END = "# --- end Novous2 test call ---"
+HARNESS_START = "# --- Novous test call (edit the values; removed when adding to the library) ---"
+HARNESS_END = "# --- end Novous test call ---"
 _HARNESS_BLOCK = re.compile(
     r"\n*" + re.escape(HARNESS_START) + r".*?" + re.escape(HARNESS_END) + r"[ \t]*\n?",
     re.DOTALL,
@@ -18625,7 +18626,7 @@ def delete_custom_tool(name: str) -> dict:
     "E:\\Novous2_Note\\test",
     "C:\\Users\\43319\\OneDrive\\D\\Documents"
   ],
-  "file_manager_root": "C:\\Users\\43319\\OneDrive\\D\\Documents",
+  "file_manager_root": "E:\\Novous2\\workspace",
   "file_manager_roots": [
     {
       "name": "Workspace",
@@ -18644,7 +18645,7 @@ def delete_custom_tool(name: str) -> dict:
       "path": "E:\\Novous2_Note\\test"
     }
   ],
-  "active_file_manager_root": "C:\\Users\\43319\\OneDrive\\D\\Documents",
+  "active_file_manager_root": "E:\\Novous2\\workspace",
   "sandbox_root": "E:\\Novous2_Note",
   "sandbox_roots": [
     "E:\\Novous2_Note\\scripts",
@@ -19418,7 +19419,7 @@ START_TIME = time.time()
 
 def _default_project() -> dict:
     return {
-        "name": "Novous2 Workspace",
+        "name": "Novous Workspace",
         "version": "1.0.0",
         "description": "",
         "default_model": "qwen2.5-coder:latest",
@@ -19610,9 +19611,9 @@ First add
 
 `json
 {
-  "name": "Novous2 Workspace",
+  "name": "Novous Workspace",
   "version": "1.0.0",
-  "description": "Canonical project state for the Novous2 Agent Factory.",
+  "description": "Canonical project state for the Novous Agent Factory.",
   "default_model": "qwen2.5-coder:latest",
   "squad_root": "",
   "active_agent": "assistant",
@@ -19877,8 +19878,8 @@ def scaffold_agent(agent_id: str, name: str, description: str = "",
     agent_template = AGENT_MD_TEMPLATE
     if environment == "codebuilder":
         agent_template = AGENT_MD_TEMPLATE.replace(
-            "Novous2 workspace agent",
-            "Novous2 CodeBuilder agent",
+            "Novous workspace agent",
+            "Novous CodeBuilder agent",
         )
         if mode == "agent":
             agent_template += """
