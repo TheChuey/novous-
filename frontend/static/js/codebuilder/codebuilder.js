@@ -1,6 +1,11 @@
 import { attachCodeBuilderEditor, loadMonaco } from './codebuilder_editor.js';
+import { offerInstallForRun, confirmReset, dialog as pickerDialog } from '../sandbox_ui.js';
+import { renderTree } from '../tree.js';
+import { mountTerminal, TERMINAL_CHANNEL } from '../terminal.js?v=2';
+import { setupFileControls } from './files_ui.js';
+import { Api } from '../api.js';
 
-const DEMO_CODE = `print("Hello from Novous CodeBuilder!")
+const DEMO_CODE = `print("Hello from Novous2 CodeBuilder!")
 for i in range(3):
     print(f"count={i}")
 `;
@@ -37,7 +42,7 @@ async function copyTextToClipboard(text) {
   return ok;
 }
 
-const PREFS_KEY = 'novous.codebuilder.';
+const PREFS_KEY = 'novous2.codebuilder.';
 const PANEL_CONF = {
   chat:    { var: '--chat-w',    min: 240, maxFactor: 0.45, rail: 44, default: 320 },
   console: { var: '--console-w', min: 220, maxFactor: 0.45, rail: 44, default: 300 },
@@ -190,8 +195,61 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     chatCodeEditors.clear();
   };
 
+  // The harness diagnostic can be a shortened form; prefer the exception line the console actually printed.
+  const EXCEPTION_LINE = /^(?:[A-Za-z_][\w.]*\.)?[A-Z]\w*(?:Error|Exception|Exit|Interrupt)\b.*$/;
+  const consoleErrorLine = () => {
+    const lines = output.textContent.split('\n').map(line => line.trimEnd()).filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      if (EXCEPTION_LINE.test(lines[i].trim())) return lines[i].trim();
+    }
+    return '';
+  };
+  const consoleErrorLineNumber = () => {
+    let line = null;
+    for (const match of output.textContent.matchAll(/File "[^"]*tool_test[^"]*", line (\d+)|File "<[^>]*>", line (\d+)|File "[^"]*", line (\d+)/g)) {
+      line = Number(match[1] || match[2] || match[3]);
+    }
+    return line;
+  };
+
+  let lastRunCode = '';
+  let lastFailure = null;
+  const fixButton = document.getElementById('codebuilder-fix-with-agent');
+
+  const buildFixPrompt = () => {
+    const failure = lastFailure;
+    const consoleText = output.textContent.trim();
+    const trimmed = consoleText.length > 6000 ? `[earlier output omitted]\n${consoleText.slice(-6000)}` : consoleText;
+    const location = failure.line ? ` (line ${failure.line})` : '';
+    return [
+      'My Python code failed when I ran it. Please fix it.',
+      '',
+      `Error${location}:`,
+      failure.message,
+      '',
+      'Full console output:',
+      '```',
+      trimmed || '(no console output)',
+      '```',
+      '',
+      'Code that was run:',
+      '```python',
+      lastRunCode.replace(/\s+$/, ''),
+      '```',
+      '',
+      'Instructions:',
+      '1. Find the root cause of the error above using the traceback; do not guess at unrelated problems.',
+      '2. Change only what is needed to fix it. Keep the existing function names, signatures and behavior.',
+      '3. Reply with the complete corrected code in a single ```python block.',
+      '4. Add one or two sentences on what was wrong and what you changed.',
+      '5. If you can, put the corrected code in the editor and run it to confirm the error is gone.'
+    ].join('\n');
+  };
+
   const renderDiagnostics = (items = []) => {
     diagnostics.replaceChildren();
+    lastFailure = null;
+    if (fixButton) fixButton.disabled = true;
     if (!items.length) {
       const empty = document.createElement('p');
       empty.className = 'text-muted';
@@ -200,18 +258,126 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
       return;
     }
 
-    items.forEach(item => {
+    const exceptionLine = consoleErrorLine();
+    const tracebackLine = consoleErrorLineNumber();
+    items.forEach((item, index) => {
+      const isError = (item.severity || 'error') === 'error';
+      const message = isError && index === 0 && exceptionLine && !/^SyntaxError/.test(item.message || '')
+        ? exceptionLine
+        : item.message;
+      const line = item.line || (isError && index === 0 ? tracebackLine : null);
       const entry = document.createElement('button');
       entry.type = 'button';
       entry.className = 'diagnostic-item';
       entry.dataset.severity = item.severity || 'error';
-      entry.textContent = `${item.severity || 'error'}${item.line ? ` · line ${item.line}` : ''} · ${item.message}`;
-      if (item.line) {
-        entry.addEventListener('click', () => editor.revealLine(item.line));
+      entry.textContent = `${item.severity || 'error'}${line ? ` · line ${line}` : ''} · ${message}`;
+      entry.title = message;
+      if (line) {
+        entry.addEventListener('click', () => editor.revealLine(line));
       }
       diagnostics.appendChild(entry);
+      if (!lastFailure && isError) lastFailure = { message, line };
     });
+    if (fixButton) fixButton.disabled = !lastFailure;
   };
+
+  const copyConsoleButton = document.getElementById('codebuilder-copy-console');
+  let openTerminalWith = () => {};
+  // ---- Terminal tab (docked) with pop-out ----
+  const consolePanel = root.closest('.codebuilder-shell')?.querySelector('.codebuilder-console-panel');
+  const terminalSection = consolePanel?.querySelector('.codebuilder-terminal-section');
+  const terminalMount = document.getElementById('codebuilder-terminal-mount');
+  const terminalPopped = document.getElementById('codebuilder-terminal-popped');
+  const terminalBringBack = document.getElementById('codebuilder-terminal-bring-back');
+  if (consolePanel && terminalSection && terminalMount) {
+    const channel = 'BroadcastChannel' in window ? new BroadcastChannel(TERMINAL_CHANNEL) : null;
+    let popupWindow = null;
+    let isPoppedOut = false;
+    let terminal = null;
+
+    const showTab = (tab) => {
+      const showTerminal = tab === 'terminal';
+      consolePanel.classList.toggle('show-terminal', showTerminal);
+      terminalSection.hidden = !showTerminal;
+      consolePanel.querySelectorAll('[data-console-tab]').forEach(button => {
+        button.classList.toggle('active', button.dataset.consoleTab === tab);
+      });
+      if (showTerminal && !terminal && !isPoppedOut) {
+        terminal = mountTerminal(terminalMount, { popOut: openPopOut, compact: true });
+      }
+      if (showTerminal) terminal?.focus();
+    };
+
+    const setPoppedOut = (value) => {
+      isPoppedOut = value;
+      terminalPopped.hidden = !value;
+      terminalMount.hidden = value;
+      if (value && terminal) {
+        terminal.destroy();
+        terminal = null;
+      } else if (!value && !terminalSection.hidden && !terminal) {
+        terminal = mountTerminal(terminalMount, { popOut: openPopOut, compact: true });
+      }
+    };
+
+    function openPopOut() {
+      popupWindow = window.open('/terminal', 'novous2-terminal', 'width=900,height=600');
+      if (!popupWindow) {
+        status.textContent = 'The browser blocked the pop-up window. Allow pop-ups for this site.';
+        return;
+      }
+      setPoppedOut(true);
+      popupWindow.focus();
+    }
+
+    consolePanel.querySelectorAll('[data-console-tab]').forEach(button => {
+      button.addEventListener('click', () => showTab(button.dataset.consoleTab));
+    });
+    openTerminalWith = (command) => {
+      if (isPoppedOut) {
+        status.textContent = `Terminal is in its own window. Run: ${command}`;
+        return;
+      }
+      showTab('terminal');
+      terminal?.setInput(command);
+    };
+    terminalBringBack?.addEventListener('click', () => {
+      channel?.postMessage({ type: 'close-popout' });
+      try { popupWindow?.close(); } catch { /* already closed */ }
+      setPoppedOut(false);
+    });
+    if (channel) {
+      channel.onmessage = (event) => {
+        if (event.data?.type === 'popout-open') setPoppedOut(true);
+        if (event.data?.type === 'popout-closed') setPoppedOut(false);
+      };
+      channel.postMessage({ type: 'ping' });
+    }
+  }
+  copyConsoleButton?.addEventListener('click', async () => {
+    const text = output.textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const area = document.createElement('textarea');
+      area.value = text;
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand('copy');
+      area.remove();
+    }
+    copyConsoleButton.textContent = 'Copied';
+    setTimeout(() => { copyConsoleButton.textContent = 'Copy'; }, 1500);
+  });
+
+  fixButton?.addEventListener('click', () => {
+    if (!lastFailure) return;
+    chatInput.value = buildFixPrompt();
+    chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+    chatInput.focus();
+    chatInput.scrollTop = 0;
+    status.textContent = 'Error and code copied to the agent message box';
+  });
 
   const streamRiskyRun = async () => {
     const timeoutSeconds = 10;
@@ -306,8 +472,9 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     };
   };
 
-  const runCode = async () => {
+  const runCodeOnce = async () => {
     const mode = currentRunMode();
+    lastRunCode = editor.getValue();
     runButton.disabled = true;
     runButton.textContent = mode === 'risky' ? 'Running… (stream)' : 'Running…';
     output.textContent = '';
@@ -355,6 +522,15 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     }
   };
 
+  const runCode = async () => {
+    const result = await runCodeOnce();
+    if (result && result.status !== 'SUCCESS' &&
+        await offerInstallForRun(editor.getValue(), output.textContent)) {
+      return runCodeOnce();
+    }
+    return result;
+  };
+
   const sendCodeToEditor = (code, source = 'chat') => {
     if (typeof code !== 'string' || !code.trim()) return false;
     editor.setValue(code);
@@ -367,9 +543,21 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     return true;
   };
 
+  // Code handed over from the Tool Function Testing Workbench.
+  try {
+    const incoming = localStorage.getItem('novous2.codebuilder.incoming');
+    if (incoming) {
+      localStorage.removeItem('novous2.codebuilder.incoming');
+      if (sendCodeToEditor(incoming)) status.textContent = 'Code received from Tool Workbench';
+    }
+  } catch { /* storage unavailable */ }
+
   const handleCodeBuilderToolEvents = async (events = []) => {
     for (const event of events) {
       if (event.status !== 'success') continue;
+      if (['write_file', 'create_file', 'delete_file'].includes(event.tool)) {
+        window.dispatchEvent(new CustomEvent('novous:fs-changed'));
+      }
       if (event.tool === 'send_code_to_editor') {
         const code = event.args?.code;
         if (sendCodeToEditor(code, 'agent')) {
@@ -621,6 +809,118 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     { id: 'diagnostics', label: 'Diagnostics', icon: 'activity' },
   ];
 
+  // Memory mode: the chat transcript is saved to a file the user picks.
+  let memoryPath = null;
+  let transcript = [];
+
+  const notifyFilesChanged = () => window.dispatchEvent(new CustomEvent('novous:fs-changed'));
+
+  const writeMemory = async () => {
+    if (!memoryPath) return;
+    const body = transcript
+      .map(entry => `[${entry.role}]\n${entry.text}`)
+      .join('\n\n');
+    try {
+      await Api.writeManagedFile(memoryPath, `${body}\n`);
+      notifyFilesChanged();
+    } catch (error) {
+      appendChatMessage('system', `Memory mode stopped: could not write ${memoryPath} (${error.message}).`);
+      memoryPath = null;
+      renderAgents();
+    }
+  };
+
+  // Opens the file manager: click a folder (or an existing file) and name the memory file.
+  const pickMemoryLocation = () => new Promise(resolve => {
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+    let folder = '';
+    let settled = false;
+    const finish = (value, close) => {
+      if (settled) return;
+      settled = true;
+      close();
+      resolve(value);
+    };
+
+    pickerDialog('Memory mode — choose where to save', (modal, close) => {
+      modal.classList.add('is-resizable');
+      const hint = document.createElement('p');
+      hint.className = 'text-muted small';
+      hint.textContent = 'Pick a folder in the file manager and name the file. The chat is saved after every reply.';
+
+      const treeHost = document.createElement('div');
+      treeHost.className = 'codebuilder-open-tree';
+
+      const target = document.createElement('p');
+      target.className = 'small codebuilder-memory-target';
+      const nameInput = document.createElement('input');
+      nameInput.className = 'form-input';
+      nameInput.type = 'text';
+      nameInput.value = `chat_memory_${stamp}.txt`;
+      nameInput.setAttribute('aria-label', 'Memory file name');
+      const error = document.createElement('p');
+      error.className = 'text-danger small';
+
+      const refreshTarget = () => {
+        target.textContent = `Save to: ${folder || '(workspace root)'}/${nameInput.value.trim()}`;
+      };
+      nameInput.addEventListener('input', refreshTarget);
+      refreshTarget();
+
+      const actions = document.createElement('div');
+      actions.className = 'question-dialog-actions';
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'btn';
+      cancel.textContent = 'Cancel';
+      const start = document.createElement('button');
+      start.type = 'button';
+      start.className = 'btn btn-primary';
+      start.textContent = 'Start';
+      actions.append(cancel, start);
+      modal.append(hint, treeHost, target, nameInput, error, actions);
+
+      renderTree(treeHost, {
+        manageRoots: true,
+        onSelectDirectory: path => { folder = path; refreshTarget(); },
+        onSelect: path => {
+          const slash = path.lastIndexOf('/');
+          folder = slash >= 0 ? path.slice(0, slash) : '';
+          nameInput.value = path.slice(slash + 1);
+          refreshTarget();
+        }
+      });
+
+      cancel.addEventListener('click', () => finish(null, close));
+      const submit = () => {
+        const name = nameInput.value.trim();
+        if (!name || name === '.' || name === '..' || /[\\/]/.test(name)) {
+          error.textContent = 'Enter a file name without folder separators.';
+          return;
+        }
+        finish([folder, name].filter(Boolean).join('/'), close);
+      };
+      start.addEventListener('click', submit);
+      nameInput.addEventListener('keydown', event => { if (event.key === 'Enter') submit(); });
+    });
+  });
+
+  const toggleMemory = async () => {
+    if (memoryPath) {
+      memoryPath = null;
+      appendChatMessage('system', 'Memory mode off.');
+      renderAgents();
+      return;
+    }
+    const path = await pickMemoryLocation();
+    if (!path) return;
+    memoryPath = path;
+    transcript = [];
+    appendChatMessage('system', `Memory mode on. Saving this chat to ${path}.`);
+    renderAgents();
+    await writeMemory();
+  };
+
   const hasAgentFunctions = agent => Array.isArray(agent.tools) && agent.tools.length > 0;
 
   const AGENT_TILE_ICONS = {
@@ -646,6 +946,11 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     ],
     activity: [
       'M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2',
+    ],
+    memory: [
+      'M4 6c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2Z',
+      'M4 6v6c0 1.1 3.6 2 8 2s8-.9 8-2V6',
+      'M4 12v6c0 1.1 3.6 2 8 2s8-.9 8-2v-6',
     ],
   };
 
@@ -694,6 +999,25 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
   const renderAgents = () => {
     agentList.replaceChildren();
 
+    const picker = document.createElement('select');
+    picker.className = 'form-select codebuilder-agent-select';
+    picker.id = 'codebuilder-agent-select';
+    picker.setAttribute('aria-label', 'Choose agent');
+    picker.disabled = chatPending || !agents.length;
+    agents.forEach(agent => {
+      const toolCount = (agent.tools || []).length;
+      const option = new Option(`${agent.name} (${toolCount} tool${toolCount === 1 ? '' : 's'})`, agent.id);
+      option.disabled = !hasAgentFunctions(agent);
+      option.title = (agent.tools || []).join(', ') || 'No tools';
+      picker.add(option);
+    });
+    if (selectedAgent) picker.value = selectedAgent.id;
+    picker.addEventListener('change', () => {
+      const chosen = agents.find(agent => agent.id === picker.value);
+      if (chosen && chosen.id !== selectedAgent?.id) selectAgent(chosen);
+    });
+    agentList.appendChild(picker);
+
     agents.forEach(agent => {
       const isSelected = selectedAgent?.id === agent.id;
       const hasFunctions = hasAgentFunctions(agent);
@@ -713,6 +1037,18 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
       }
       agentList.appendChild(tile);
     });
+
+    const memoryTile = buildAgentTile(
+      'Memory',
+      'memory',
+      memoryPath
+        ? `Memory mode on — saving to ${memoryPath}. Click to turn off.`
+        : 'Save this chat to a text file you choose',
+      toggleMemory,
+      Boolean(memoryPath)
+    );
+    memoryTile.setAttribute('aria-label', 'Memory mode');
+    agentList.appendChild(memoryTile);
 
     FUTURE_AGENT_OPTIONS.forEach(option => {
       const tile = buildAgentTile(
@@ -828,6 +1164,14 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     status.textContent = 'Ready';
   });
   runButton.addEventListener('click', runCode);
+  document.getElementById('reset-sandbox')?.addEventListener('click', async () => {
+    try {
+      const result = await confirmReset();
+      if (result) status.textContent = result.output;
+    } catch (err) {
+      status.textContent = `Reset failed: ${err.message}`;
+    }
+  });
   editor.setRunHandler(runCode);
 
   const persistedRunMode = readPref(RUN_MODE_KEY);
@@ -839,7 +1183,20 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     manualRunMode = runMode.value;
     writePref(RUN_MODE_KEY, runMode.value);
   });
+  const fileControls = setupFileControls({
+    editor,
+    status,
+    label: document.getElementById('codebuilder-filename'),
+    buttons: {
+      save: document.getElementById('save-file'),
+      saveAs: document.getElementById('save-file-as'),
+      open: document.getElementById('open-file'),
+      runTerminal: document.getElementById('run-in-terminal')
+    },
+    openTerminalWith: (command) => openTerminalWith(command)
+  });
   editor.onChange(() => {
+    fileControls.refreshLabel();
     if (manualRunMode) return;
     if (runMode.value !== detectRunMode()) runMode.value = detectRunMode();
   });
@@ -887,12 +1244,13 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     }
 
     appendChatMessage('user', message);
+    if (memoryPath) transcript.push({ role: 'user', text: message });
     chatInput.value = '';
     chatPending = true;
     chatStatus.textContent = `Waiting for ${selectedAgent.name}…`;
     updateChatControls();
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -903,11 +1261,85 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
           environment: 'codebuilder',
         })
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail || 'The agent request failed.');
-      await handleCodeBuilderToolEvents(payload.tool_events || []);
-      appendChatMessage('assistant', payload.reply || 'The agent returned an empty response.');
-      chatStatus.textContent = `${selectedAgent.name} · ${payload.model || modelSelect.value}`;
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail || 'The agent request failed.');
+      }
+
+      const bubble = document.createElement('div');
+      bubble.className = 'codebuilder-chat-message assistant';
+      chatMessages.appendChild(bubble);
+
+      let text = '';
+      let liveCode = null;
+      let paintQueued = false;
+      let donePayload = null;
+      let failure = null;
+
+      // Newest ```python fence in the streamed text; an unclosed fence counts as in progress.
+      const latestCode = () => {
+        let found = null;
+        for (const match of text.matchAll(/```([\w+-]*)[^\n]*\n([\s\S]*?)(```|$)/g)) {
+          if (['', 'python', 'py'].includes(match[1].toLowerCase())) found = match[2];
+        }
+        return found;
+      };
+      const paint = () => {
+        paintQueued = false;
+        bubble.textContent = text;
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        const code = latestCode();
+        if (code !== null && code !== liveCode) {
+          liveCode = code;
+          editor.setValue(code);
+          status.textContent = 'Agent is writing code…';
+        }
+      };
+      const schedulePaint = () => {
+        if (!paintQueued) { paintQueued = true; requestAnimationFrame(paint); }
+      };
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      const handleEvent = async item => {
+        if (item.type === 'token') {
+          text += item.text;
+          schedulePaint();
+        } else if (item.type === 'tool_event') {
+          await handleCodeBuilderToolEvents([item.event]);
+        } else if (item.type === 'done') {
+          donePayload = item;
+        } else if (item.type === 'error') {
+          failure = item.detail || 'The agent request failed.';
+        }
+      };
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split('\n\n');
+        buffer = frames.pop();
+        for (const frame of frames) {
+          const line = frame.split('\n').find(l => l.startsWith('data: '));
+          if (line) await handleEvent(JSON.parse(line.slice(6)));
+        }
+      }
+
+      paint();
+      if (failure) {
+        bubble.remove();
+        throw new Error(failure);
+      }
+      const reply = donePayload?.reply || text || 'The agent returned an empty response.';
+      bubble.textContent = '';
+      appendAssistantMessage(bubble, reply);
+      if (liveCode !== null) sendCodeToEditor(liveCode, 'agent');
+      if (memoryPath) {
+        transcript.push({ role: 'assistant', text: reply });
+        await writeMemory();
+      }
+      chatStatus.textContent = `${selectedAgent.name} · ${donePayload?.model || modelSelect.value}`;
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error);
       appendChatMessage('system', `Request failed: ${messageText}`);
@@ -964,7 +1396,12 @@ export function renderCodeBuilderView(container) {
             </select>
           </label>
           <button id="load-demo" class="btn btn-sm" type="button" title="Load the sample Python program">Sample</button>
+          <button id="open-file" class="btn btn-sm" type="button" title="Open a file from the file manager">Open…</button>
+          <button id="save-file" class="btn btn-sm" type="button" title="Save (Ctrl+S)">Save</button>
+          <button id="save-file-as" class="btn btn-sm" type="button" title="Save as a new file">Save As…</button>
+          <button id="run-in-terminal" class="btn btn-sm" type="button" title="Save, then prepare the command in the Terminal tab">Run in Terminal</button>
           <button id="clear-console" class="btn btn-sm" type="button" title="Clear console and diagnostics">Clear Output</button>
+          <button id="reset-sandbox" class="btn btn-sm" type="button" title="Remove all packages installed for testing">Reset Environment</button>
           <button id="run-code" class="btn btn-sm btn-primary" type="button" title="Run Python (Ctrl+Enter)">▶ Run Python</button>
         </div>
       </div>
@@ -1006,6 +1443,7 @@ export function renderCodeBuilderView(container) {
           <div id="codebuilder-editor" class="editor-surface"></div>
           <div class="codebuilder-statusbar">
             <span id="codebuilder-status">Loading editor…</span>
+            <span id="codebuilder-filename" class="codebuilder-filename">Untitled</span>
             <span>Python</span>
             <span>UTF-8</span>
             <span>Spaces: 4</span>
@@ -1023,13 +1461,28 @@ export function renderCodeBuilderView(container) {
                     type="button" aria-label="Collapse console panel" aria-expanded="true"
                     title="Collapse console panel">»</button>
           </div>
+          <div class="codebuilder-console-tabs" role="tablist">
+            <button type="button" class="btn btn-sm active" data-console-tab="console" role="tab">Console</button>
+            <button type="button" class="btn btn-sm" data-console-tab="terminal" role="tab">Terminal</button>
+          </div>
           <section class="codebuilder-output-section">
             <h3>Console</h3>
+            <button id="codebuilder-copy-console" class="btn btn-sm" type="button"
+                    title="Copy the console output">Copy</button>
             <pre id="codebuilder-output" class="console-output">Ready. Run your Python code to see output here.</pre>
           </section>
           <section class="codebuilder-problems-section">
             <h3>Problems</h3>
+            <button id="codebuilder-fix-with-agent" class="btn btn-sm btn-primary" type="button" disabled
+                    title="Copy the error, console output and code into the agent message box">Fix with Agent</button>
             <div id="diagnostics" class="diagnostics-list"></div>
+          </section>
+          <section class="codebuilder-terminal-section" hidden>
+            <div id="codebuilder-terminal-mount" class="codebuilder-terminal-mount"></div>
+            <div id="codebuilder-terminal-popped" class="codebuilder-terminal-popped" hidden>
+              <p>The terminal is open in a separate window.</p>
+              <button id="codebuilder-terminal-bring-back" class="btn btn-sm btn-primary" type="button">Bring back</button>
+            </div>
           </section>
         </aside>
 

@@ -1,0 +1,215 @@
+{
+  "model": "qwen2.5-coder:latest",
+  "runs": 14,
+  "passes": 7,
+  "probe_failures": {
+    "fact_correct": 1,
+    "description_match": 5,
+    "role_identity": 1
+  },
+  "entries": [
+    {
+      "at": "2026-10-15T05:35:56+00:00",
+      "title": "Chat Bot Prompt Generator",
+      "passed": true,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [],
+      "improvements": []
+    },
+    {
+      "at": "2026-10-15T05:40:04+00:00",
+      "title": "Chat Bot Prompt Generator",
+      "passed": false,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [
+        "Model test: Known fact: expected 'paris' in the reply"
+      ],
+      "improvements": [
+        "The model failed a basic fact. If the role is intentionally narrow, change the fact question in the test; otherwise add 'Answer general factual questions accurately' to the prompt, or try a larger model."
+      ]
+    },
+    {
+      "at": "2026-10-15T05:56:50+00:00",
+      "title": "Chat Bot Prompt Generator",
+      "passed": true,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [],
+      "improvements": []
+    },
+    {
+      "at": "2026-10-15T16:52:02+00:00",
+      "title": "Tool Testing Agent Prompt",
+      "passed": true,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [],
+      "improvements": []
+    },
+    {
+      "at": "2026-10-16T05:55:51+00:00",
+      "title": "File Manager Tools Tester Agent",
+      "passed": true,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [],
+      "improvements": []
+    },
+    {
+      "at": "2026-10-16T06:11:28+00:00",
+      "title": "AI Agent Prompt for Tool Testing",
+      "passed": false,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [
+        "Model test: Description matches behavior: 1/9 description keywords echoed; missing: file, manager, performing, reporting, results, series"
+      ],
+      "improvements": [
+        "Make the description state the main task in plain words and repeat those words in the Role and Purpose sections."
+      ]
+    },
+    {
+      "at": "2026-10-16T06:13:28+00:00",
+      "title": "AI Agent Prompt for Tool Testing",
+      "passed": false,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [
+        "Model test: Description matches behavior: 1/9 description keywords echoed; missing: file, manager, performing, reporting, results, series"
+      ],
+      "improvements": [
+        "Make the description state the main task in plain words and repeat those words in the Role and Purpose sections."
+      ]
+    },
+    {
+      "at": "2026-10-16T06:14:40+00:00",
+      "title": "AI Agent Prompt for Tool Testing",
+      "passed": false,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [
+        "Model test: Description matches behavior: 1/9 description keywords echoed; missing: file, manager, performing, reporting, results, series"
+      ],
+      "improvements": [
+        "Make the description state the main task in plain words and repeat those words in the Role and Purpose sections."
+      ]
+    },
+    {
+      "at": "2026-10-16T06:24:32+00:00",
+      "title": "AI Agent Prompt for Tool Testing",
+      "passed": false,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [
+        "Model test: Description matches behavior: 1/9 description keywords echoed; missing: file, manager, performing, reporting, results, series"
+      ],
+      "improvements": [
+        "Make the description state the main task in plain words and repeat those words in the Role and Purpose sections."
+      ]
+    },
+    {
+      "at": "2026-10-16T06:26:30+00:00",
+      "title": "AI Agent Prompt for Tool Testing",
+      "passed": false,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [
+        "Model test: Description matches behavior: 1/9 description keywords echoed; missing: file, manager, performing, reporting, results, series"
+      ],
+      "improvements": [
+        "Make the description state the main task in plain words and repeat those words in the Role and Purpose sections."
+      ]
+    },
+    {
+      "at": "2026-10-18T21:04:06+00:00",
+      "title": "Code Inspector and Troubleshoot Prompt",
+      "passed": true,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [],
+      "improvements": []
+    },
+    {
+      "at": "2026-10-18T21:06:01+00:00",
+      "title": "Code Inspector and Troubleshoot Prompt",
+      "passed": true,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [],
+      "improvements": []
+    },
+    {
+      "at": "2026-10-18T21:17:14+00:00",
+      "title": "CodePlanner",
+      "passed": false,
+      "strengths": [
+        "The model's summary matches the description.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [
+        "Model test: Role understanding: reply mentions title words: none; missing: codeplanner"
+      ],
+      "improvements": [
+        "Start the Role section with an explicit identity sentence such as 'You are a CodePlanner that ...'."
+      ]
+    },
+    {
+      "at": "2026-10-21T08:35:57+00:00",
+      "title": "Test Agent Prompt",
+      "passed": true,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [],
+      "improvements": []
+    }
+  ]
+}

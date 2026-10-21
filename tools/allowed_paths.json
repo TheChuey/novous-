@@ -1,0 +1,32 @@
+{
+  "map_roots": [
+    "E:\\Novous2\\workspace",
+    "E:\\Novous2_Note\\test",
+    "C:\\Users\\43319\\OneDrive\\D\\Documents"
+  ],
+  "file_manager_root": "C:\\Users\\43319\\OneDrive\\D\\Documents",
+  "file_manager_roots": [
+    {
+      "name": "Workspace",
+      "path": "E:\\Novous2\\workspace"
+    },
+    {
+      "name": "Documents",
+      "path": "C:\\Users\\43319\\OneDrive\\D\\Documents"
+    },
+    {
+      "name": "Scripts",
+      "path": "E:\\Novous2_Note\\scripts"
+    },
+    {
+      "name": "Test",
+      "path": "E:\\Novous2_Note\\test"
+    }
+  ],
+  "active_file_manager_root": "C:\\Users\\43319\\OneDrive\\D\\Documents",
+  "sandbox_root": "E:\\Novous2_Note",
+  "sandbox_roots": [
+    "E:\\Novous2_Note\\scripts",
+    "C:\\Users\\43319\\OneDrive\\D\\Documents"
+  ]
+}

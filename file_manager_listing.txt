@@ -1,0 +1,14 @@
+﻿__init__.py
+__pycache__
+__pycache__\__init__.cpython-314.pyc
+__pycache__\backend.cpython-314.pyc
+__pycache__\interface.cpython-314.pyc
+__pycache__\schemas.cpython-314.pyc
+__pycache__\service.cpython-314.pyc
+__pycache__\test_file_manager.cpython-314.pyc
+__pycache__\test_file_manager.cpython-314-pytest-9.1.1.pyc
+backend.py
+interface.py
+schemas.py
+service.py
+test_file_manager.py

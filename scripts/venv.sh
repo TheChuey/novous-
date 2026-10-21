@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Virtualenv bootstrap for Novous Agent Factory (macOS/Linux)
+# Virtualenv bootstrap for Novous2 Agent Factory (macOS/Linux)
 set -e
 if [ ! -d "venv" ]; then
   python3 -m venv venv

@@ -15,16 +15,13 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
+from test_environment import sandbox_env
 
-WORKSPACE_TOOLS_DIR = Path(__file__).resolve().parent.parent / "workspace" / "tools"
-TOOL_LIBRARY_TEMPLATE = '"""Custom tools promoted from the Function Testing Workbench."""\n\n'
+
 LOCAL_RUN_TIMEOUT_SECONDS = 5
+MAX_RUN_TIMEOUT_SECONDS = 600
 MAX_OUTPUT_BYTES = 64 * 1024
 _FUNCTION_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-
-def _tool_library_path() -> Path:
-    return WORKSPACE_TOOLS_DIR / "tool_library.py"
 
 
 def get_function_definition(source: str) -> ast.FunctionDef:
@@ -117,6 +114,60 @@ def get_tool_schema(function: ast.FunctionDef) -> dict:
     }
 
 
+def validate_arguments(function: ast.FunctionDef, arguments: dict) -> str | None:
+    """Return an error message when arguments don't match the function signature."""
+    schema = get_tool_schema(function)["function"]["parameters"]
+    missing = [name for name in schema["required"] if name not in arguments]
+    unknown = [name for name in arguments if name not in schema["properties"]]
+    if missing:
+        return f"Missing required argument(s): {', '.join(missing)}"
+    if unknown:
+        return f"Unknown argument(s): {', '.join(unknown)}"
+    return None
+
+
+_CODE_BLOCK = re.compile(r"```(?:python|py)?\s*\n(.*?)```", re.DOTALL | re.IGNORECASE)
+
+GENERATE_SYSTEM_PROMPT = (
+    "You write standalone Python tool functions. Reply with exactly one fenced "
+    "```python code block containing one public top-level synchronous function with "
+    "type-hinted parameters (str, int, float, bool, list, dict), a docstring "
+    "describing it, and a JSON-serializable return value. Put any imports at the top "
+    "of the block. Do not include example calls, tests, or explanations."
+)
+
+
+def extract_code(text: str) -> str:
+    match = _CODE_BLOCK.search(text or "")
+    return (match.group(1) if match else (text or "")).strip()
+
+
+def generate_python_function(description: str, model: str, chat=None) -> dict:
+    """Ask the LLM for a tool function and validate it; retry once on invalid output."""
+    if chat is None:
+        import ollama
+        chat = ollama.chat
+    messages = [
+        {"role": "system", "content": GENERATE_SYSTEM_PROMPT},
+        {"role": "user", "content": description},
+    ]
+    last_error = "No code returned."
+    for _ in range(2):
+        response = chat(model=model, messages=messages)
+        text = (response.get("message") or {}).get("content", "")
+        code = extract_code(text)
+        try:
+            function = get_function_definition(code)
+            return {"code": code, "function_name": function.name}
+        except ValueError as exc:
+            last_error = str(exc)
+            messages += [
+                {"role": "assistant", "content": text},
+                {"role": "user", "content": f"That code was invalid: {last_error} Fix it and reply with one python code block."},
+            ]
+    raise ValueError(last_error)
+
+
 def _local_environment(temp_dir: str) -> dict[str, str]:
     env = {"PATH": os.environ.get("PATH", ""), "TEMP": temp_dir, "TMP": temp_dir}
     for key in ("SYSTEMROOT", "WINDIR"):
@@ -140,24 +191,65 @@ def _read_output(output_file) -> str:
     return text
 
 
-def _run_locally(source: str, arguments: dict, function_name: str) -> dict:
-    marker = f"__NOVOUS_RESULT_{secrets.token_hex(16)}__"
-    wrapper = (
+HARNESS_START = "# --- Novous2 test call (edit the values; removed when adding to the library) ---"
+HARNESS_END = "# --- end Novous2 test call ---"
+_HARNESS_BLOCK = re.compile(
+    r"\n*" + re.escape(HARNESS_START) + r".*?" + re.escape(HARNESS_END) + r"[ \t]*\n?",
+    re.DOTALL,
+)
+_PLACEHOLDERS = {
+    "string": '"test"', "integer": "1", "number": "1.0",
+    "boolean": "True", "array": "[]", "object": "{}",
+}
+
+
+def has_test_harness(source: str) -> bool:
+    return HARNESS_START in source
+
+
+def strip_test_harness(source: str) -> str:
+    return _HARNESS_BLOCK.sub("\n", source).rstrip() + "\n" if has_test_harness(source) else source
+
+
+def build_test_harness(source: str) -> str:
+    """Return a ready-to-edit call block for the first public function in source."""
+    function = get_function_definition(strip_test_harness(source))
+    args = function.args
+    positional = args.args
+    defaults = [None] * (len(positional) - len(args.defaults)) + list(args.defaults)
+    params = list(zip(positional, defaults)) + list(zip(args.kwonlyargs, args.kw_defaults))
+    lines = [HARNESS_START]
+    for argument, default in params:
+        if default is not None:
+            value = ast.unparse(default)
+        else:
+            value = _PLACEHOLDERS[_json_type(argument.annotation)]
+        lines.append(f"{argument.arg} = {value}")
+    call_args = ", ".join(f"{argument.arg}={argument.arg}" for argument, _ in params)
+    lines += [f"result = {function.name}({call_args})", "print(result)", HARNESS_END]
+    return "\n".join(lines) + "\n"
+
+
+def _run_locally(source: str, arguments: dict, function_name: str, script_mode: bool = False,
+                 timeout: float | None = None) -> dict:
+    timeout = min(timeout or LOCAL_RUN_TIMEOUT_SECONDS, MAX_RUN_TIMEOUT_SECONDS)
+    marker = f"__NOVOUS2_RESULT_{secrets.token_hex(16)}__"
+    wrapper = "" if script_mode else (
         "\n\nif __name__ == '__main__':\n"
-        "    import json as __novous_json\n"
-        "    __novous_arguments = __novous_json.loads(input() or '{}')\n"
-        f"    __novous_result = {function_name}(**__novous_arguments)\n"
-        f"    print({marker!r} + __novous_json.dumps("
-        "__novous_result, default=str))\n"
+        "    import json as __novous2_json\n"
+        "    __novous2_arguments = __novous2_json.loads(input() or '{}')\n"
+        f"    __novous2_result = {function_name}(**__novous2_arguments)\n"
+        f"    print({marker!r} + __novous2_json.dumps("
+        "__novous2_result, default=str))\n"
     )
 
     try:
-        with tempfile.TemporaryDirectory(prefix="novous-tool-test-") as temp_dir:
+        with tempfile.TemporaryDirectory(prefix="novous2-tool-test-") as temp_dir:
             script_path = Path(temp_dir) / "tool_test.py"
             script_path.write_text(source + wrapper, encoding="utf-8")
             with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
                 process = subprocess.Popen(
-                    [sys.executable, "-I", str(script_path)],
+                    [sandbox_env.interpreter(), "-I", str(script_path)],
                     cwd=temp_dir,
                     env=_local_environment(temp_dir),
                     stdin=subprocess.PIPE,
@@ -167,7 +259,7 @@ def _run_locally(source: str, arguments: dict, function_name: str) -> dict:
                 try:
                     process.communicate(
                         input=json.dumps(arguments).encode("utf-8"),
-                        timeout=LOCAL_RUN_TIMEOUT_SECONDS,
+                        timeout=timeout,
                     )
                 except subprocess.TimeoutExpired:
                     process.kill()
@@ -180,7 +272,7 @@ def _run_locally(source: str, arguments: dict, function_name: str) -> dict:
                         "function_name": function_name,
                         "message": (
                             f"Local function test exceeded "
-                            f"{LOCAL_RUN_TIMEOUT_SECONDS} seconds."
+                            f"{timeout:g} seconds. Raise the time limit for GUI or long-running code."
                         ),
                         "stdout": _read_output(stdout_file),
                         "stderr": _read_output(stderr_file),
@@ -196,9 +288,9 @@ def _run_locally(source: str, arguments: dict, function_name: str) -> dict:
                     ),
                     None,
                 )
-                passed = process.returncode == 0 and marker_line is not None
+                passed = process.returncode == 0 and (script_mode or marker_line is not None)
                 try:
-                    output = json.loads(marker_line[len(marker):]) if passed else None
+                    output = json.loads(marker_line[len(marker):]) if passed and not script_mode else None
                 except json.JSONDecodeError:
                     passed = False
                     output = None
@@ -227,7 +319,15 @@ def _run_locally(source: str, arguments: dict, function_name: str) -> dict:
         }
 
 
-def run_python_tool(source: str, arguments: dict) -> dict:
+def run_python_tool(source: str, arguments: dict, timeout: float | None = None) -> dict:
+    if has_test_harness(source):
+        # The edit-mode test call is the input: run the code exactly as written.
+        try:
+            function = get_function_definition(strip_test_harness(source))
+        except ValueError as exc:
+            return {"status": "ERROR", "status_code": 400,
+                    "error_code": "ERR_INVALID_TOOL", "message": str(exc)}
+        return _run_locally(source, arguments, function.name, script_mode=True, timeout=timeout)
     try:
         function = get_function_definition(source)
     except ValueError as exc:
@@ -238,7 +338,7 @@ def run_python_tool(source: str, arguments: dict) -> dict:
             "message": str(exc),
         }
 
-    return _run_locally(source, arguments, function.name)
+    return _run_locally(source, arguments, function.name, timeout=timeout)
 
 
 def promote_python_tool(source: str, expected_name: str) -> dict:
@@ -248,131 +348,20 @@ def promote_python_tool(source: str, expected_name: str) -> dict:
             status_code=400,
             detail="The primary function changed; run the test again before adding it.",
         )
-
-    from core_engine import tool_catalog
-
-    tool_catalog.load_custom_tools()
-    if function.name in tool_catalog.REGISTRY:
-        raise HTTPException(
-            status_code=409, detail=f"Tool '{function.name}' is already registered."
-        )
-
-    WORKSPACE_TOOLS_DIR.mkdir(parents=True, exist_ok=True)
-    destination = _tool_library_path()
-    previous_source = (
-        destination.read_text(encoding="utf-8")
-        if destination.is_file()
-        else TOOL_LIBRARY_TEMPLATE
-    )
-    addition = source.strip() + "\n"
-    separator = "" if previous_source.endswith("\n\n") else (
-        "\n" if previous_source.endswith("\n") else "\n\n"
-    )
-    destination.write_text(
-        previous_source + separator + addition, encoding="utf-8", newline="\n"
-    )
-    try:
-        tool_catalog.load_custom_tools(reload=True)
-    except Exception:
-        destination.write_text(previous_source, encoding="utf-8", newline="\n")
-        tool_catalog.load_custom_tools(reload=True)
-        raise
-
-    return {
-        "name": function.name,
-        "path": f"workspace/tools/{destination.name}",
-        "description": ast.get_docstring(function) or "",
-        "signature": str(inspect.signature(tool_catalog.REGISTRY[function.name]["function"])),
-    }
-
-
-def _tool_library_function_span(source: str, name: str) -> tuple[int, int, ast.FunctionDef]:
-    tree = ast.parse(source)
-    for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name == name:
-            start_line = min(
-                (decorator.lineno for decorator in node.decorator_list),
-                default=node.lineno,
-            )
-            return start_line - 1, node.end_lineno, node
-    raise FileNotFoundError(f"Custom tool '{name}' was not found in the tool library.")
-
-
-def _function_source(source: str, name: str) -> str:
-    start, end, _ = _tool_library_function_span(source, name)
-    return "\n".join(source.splitlines()[start:end]).strip() + "\n"
-
-
-def _remove_library_function(source: str, name: str) -> str:
-    start, end, _ = _tool_library_function_span(source, name)
-    lines = source.splitlines(keepends=True)
-    del lines[start:end]
-    return "".join(lines).rstrip() + "\n"
+    from tools import interface as tools_interface
+    return tools_interface.register_tool(source, expected_name)
 
 
 def get_custom_tool_source(name: str) -> dict:
     if not _FUNCTION_NAME.fullmatch(name):
         raise ValueError("The tool name is not valid.")
-
-    from core_engine import tool_catalog
-
-    tool_catalog.load_custom_tools()
-    meta = tool_catalog.REGISTRY.get(name)
-    if not meta or not meta["function"].__module__.startswith(
-        "novous_workspace_tool_"
-    ):
-        raise FileNotFoundError(f"Custom tool '{name}' was not found.")
-
-    path = Path(inspect.getsourcefile(meta["function"]) or "").resolve()
-    if path.parent != WORKSPACE_TOOLS_DIR.resolve() or not path.is_file():
-        raise FileNotFoundError(f"Custom tool '{name}' was not found.")
-    full_source = path.read_text(encoding="utf-8")
-    source = (
-        _function_source(full_source, name)
-        if path.name == "tool_library.py"
-        else full_source
-    )
-    return {
-        "name": name,
-        "path": f"workspace/tools/{path.name}",
-        "source": source,
-    }
+    from tools import interface as tools_interface
+    return tools_interface.get_tool_source(name)
 
 
 def delete_custom_tool(name: str) -> dict:
     if not _FUNCTION_NAME.fullmatch(name):
         raise ValueError("The tool name is not valid.")
+    from tools import interface as tools_interface
+    return tools_interface.remove_tool(name)
 
-    from core_engine import tool_catalog
-
-    tool_catalog.load_custom_tools()
-    meta = tool_catalog.REGISTRY.get(name)
-    if not meta or not meta["function"].__module__.startswith(
-        "novous_workspace_tool_"
-    ):
-        raise FileNotFoundError(f"Custom tool '{name}' was not found.")
-
-    path = Path(inspect.getsourcefile(meta["function"]) or "").resolve()
-    if path.parent != WORKSPACE_TOOLS_DIR.resolve() or not path.is_file():
-        raise FileNotFoundError(f"Custom tool '{name}' was not found.")
-    previous_source = path.read_text(encoding="utf-8")
-    if path.name == "tool_library.py":
-        updated_source = _remove_library_function(previous_source, name)
-        path.write_text(updated_source, encoding="utf-8", newline="\n")
-    else:
-        path.unlink()
-
-    try:
-        tool_catalog.load_custom_tools(reload=True)
-    except Exception:
-        if path.name == "tool_library.py":
-            path.write_text(previous_source, encoding="utf-8", newline="\n")
-        else:
-            path.write_text(previous_source, encoding="utf-8", newline="\n")
-        tool_catalog.load_custom_tools(reload=True)
-        raise
-    return {
-        "name": name,
-        "path": f"workspace/tools/{path.name}",
-        "deleted": True,
-    }

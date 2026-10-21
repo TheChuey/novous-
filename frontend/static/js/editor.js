@@ -1,5 +1,8 @@
 import { Api } from './api.js';
+import { attachCodeBuilderEditor } from './codebuilder/codebuilder_editor.js';
 import { renderTree } from './tree.js';
+
+const fileSelectionListeners = new WeakMap();
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -10,15 +13,27 @@ function esc(value) {
 const state = {
   path: null,
   dirty: false,
-  ws: null
+  ws: null,
+  editor: null,
+  managedPath: false
 };
 
 /**
- * File & Agent Editor Component (textarea editor + live session event bus).
+ * File & Agent Editor Component (Monaco editor + live session event bus).
  * @param {HTMLElement} container
  * @param {string|null} initialPath
  */
 export function renderEditorView(container, initialPath = null) {
+  const initialFile = typeof initialPath === 'string'
+    ? { path: initialPath, managedFile: false }
+    : initialPath;
+  const oldSelectionListener = fileSelectionListeners.get(container);
+  if (oldSelectionListener) window.removeEventListener('novous:file-selected', oldSelectionListener);
+  state.editor?.dispose();
+  state.path = null;
+  state.dirty = false;
+  state.managedPath = false;
+
   container.innerHTML = `
     <div class="editor-layout">
       <aside class="editor-sidebar">
@@ -35,8 +50,7 @@ export function renderEditorView(container, initialPath = null) {
           <button class="btn btn-sm" id="editor-reload">Reload</button>
           <button class="btn btn-sm btn-primary" id="editor-save">Save (Ctrl+S)</button>
         </div>
-        <textarea id="editor-textarea" class="editor-textarea" spellcheck="false"
-                  placeholder="Select a file from the tree to edit…"></textarea>
+        <div id="editor-monaco" class="editor-monaco"></div>
         <div class="editor-status">
           <span id="editor-pos">Ln 1, Col 1</span>
           <span class="spacer"></span>
@@ -72,7 +86,7 @@ export function renderEditorView(container, initialPath = null) {
       </form>
     </dialog>`);
 
-  const textarea = container.querySelector('#editor-textarea');
+  const editorMount = container.querySelector('#editor-monaco');
   const pathLabel = container.querySelector('#editor-path');
   const dirtyBadge = container.querySelector('#editor-dirty');
   const bytesLabel = container.querySelector('#editor-bytes');
@@ -87,6 +101,25 @@ export function renderEditorView(container, initialPath = null) {
   const saveConfirm = container.querySelector('#editor-save-confirm');
   const sessionEvents = [];
   let saveDialogFiles = new Set();
+  let suppressEditorChanges = false;
+  let workspaceTree;
+  const editorReady = attachCodeBuilderEditor(editorMount, '', 'plaintext').then(instance => {
+    state.editor = instance;
+    instance.onChange(() => {
+      if (suppressEditorChanges) return;
+      if (!state.dirty) { state.dirty = true; dirtyBadge.classList.remove('hidden'); }
+      updateBytes();
+    });
+    if (state.path) {
+      suppressEditorChanges = true;
+      instance.setValue(state.content || '');
+      instance.setLanguage(languageForPath(state.path));
+      suppressEditorChanges = false;
+    }
+    instance.focus();
+    updateBytes();
+    return instance;
+  });
 
   saveLogButton.addEventListener('click', async () => {
     saveLogButton.disabled = true;
@@ -100,7 +133,7 @@ export function renderEditorView(container, initialPath = null) {
         return `| ${escapeCell(event.type.replace(/_/g, ' '))} | ${escapeCell(event.path)} | ${escapeCell(event.session_id)} | ${escapeCell(details)} |`;
       });
       const markdown = [
-        '# Novous Session Events Log',
+        '# Novous2 Session Events Log',
         '',
         `Exported: ${new Date().toLocaleString()}`,
         '',
@@ -109,7 +142,7 @@ export function renderEditorView(container, initialPath = null) {
         ...(rows.length ? rows : ['| No events recorded | | | |']),
         ''
       ].join('\n');
-      const result = await Api.saveMarkdown(markdown, `novous-session-events-${timestamp}.md`);
+      const result = await Api.saveMarkdown(markdown, `novous2-session-events-${timestamp}.md`);
       alert(result.locationChosen
         ? `Events log saved as ${result.filename} in the location you selected.`
         : `Events log download started: ${result.filename}\n\nChoose the save location in your browser's download settings.`);
@@ -120,32 +153,77 @@ export function renderEditorView(container, initialPath = null) {
     }
   });
 
-  const workspaceTree = renderTree(container.querySelector('#editor-tree'), {
-    onSelect: (path) => openFile(path)
-  });
-
-  async function openFile(path) {
+  async function openFile(path, managedFile = false) {
     if (state.dirty && !confirm('Discard unsaved changes?')) return;
     try {
-      const data = await Api.readFile(path);
+      const data = managedFile ? await Api.readManagedFile(path) : await Api.readFile(path);
       state.path = data.path;
+      state.content = data.content;
+      state.managedPath = managedFile;
       state.dirty = false;
-      textarea.value = data.content;
       pathLabel.textContent = data.path;
       dirtyBadge.classList.add('hidden');
+      await editorReady;
+      suppressEditorChanges = true;
+      state.editor.setLanguage(languageForPath(data.path));
+      state.editor.setValue(data.content);
+      suppressEditorChanges = false;
       updateBytes();
       updatePos();
       sendWs({ type: 'file_opened', path: data.path });
       appendEvent({ type: 'file_opened', path: data.path, session_id: 'you' });
-      textarea.focus();
+      state.editor.focus();
     } catch (err) {
+      suppressEditorChanges = false;
       alert(err.message);
     }
   }
 
+  function languageForPath(path) {
+    const extension = path.split('.').pop().toLowerCase();
+    return ({
+      c: 'c', cc: 'cpp', cpp: 'cpp', cs: 'csharp', css: 'css', go: 'go',
+      h: 'cpp', htm: 'html', html: 'html', java: 'java', js: 'javascript',
+      json: 'json', jsx: 'javascript', md: 'markdown', mjs: 'javascript',
+      py: 'python', rb: 'ruby', rs: 'rust', sh: 'shell', sql: 'sql',
+      ts: 'typescript', tsx: 'typescript', txt: 'plaintext', xml: 'xml',
+      yaml: 'yaml', yml: 'yaml'
+    })[extension] || 'plaintext';
+  }
+
+  workspaceTree = renderTree(container.querySelector('#editor-tree'), {
+    onBeforeDelete: path => {
+      const deletesOpenFile = state.path === path || state.path?.startsWith(`${path}/`);
+      return !deletesOpenFile || !state.dirty ||
+        confirm('This item contains the open file with unsaved changes. Delete anyway?');
+    },
+    onDelete: path => {
+      if (state.path === path || state.path?.startsWith(`${path}/`)) {
+        state.path = null;
+        state.content = '';
+        state.managedPath = false;
+        state.editor?.setValue('');
+        pathLabel.textContent = 'No file open';
+        dirtyBadge.classList.add('hidden');
+        state.dirty = false;
+        updateBytes();
+      }
+    }
+  });
+  const onFileSelected = event => {
+    const path = event.detail && event.detail.path;
+    if (typeof path === 'string' && path) openFile(path, true);
+  };
+  fileSelectionListeners.set(container, onFileSelected);
+  window.addEventListener('novous:file-selected', onFileSelected);
+  editorReady.then(instance => instance.onPosition(updatePos));
+
   async function openSaveDialog() {
     try {
-      const tree = await Api.getFileTree();
+      const managedSave = state.managedPath || !state.path;
+      const tree = managedSave
+        ? await Api.getManagedFileTree()
+        : await Api.getFileTree();
       const folders = [];
       const files = new Set();
       function collect(node) {
@@ -209,8 +287,15 @@ export function renderEditorView(container, initialPath = null) {
 
     saveConfirm.disabled = true;
     try {
-      await Api.writeFile(targetPath, textarea.value);
+      await editorReady;
+      const content = state.editor.getValue();
+      const managedSave = state.managedPath || !state.path;
+      if (managedSave) await Api.writeManagedFile(targetPath, content);
+      else await Api.writeFile(targetPath, content);
       state.path = targetPath;
+      state.content = content;
+      state.managedPath = managedSave;
+      state.editor.setLanguage(languageForPath(targetPath));
       state.dirty = false;
       dirtyBadge.classList.add('hidden');
       pathLabel.textContent = targetPath;
@@ -227,24 +312,13 @@ export function renderEditorView(container, initialPath = null) {
   }
 
   function updateBytes() {
-    bytesLabel.textContent = `${new Blob([textarea.value]).size} bytes`;
+    bytesLabel.textContent = `${new Blob([state.editor?.getValue() || '']).size} bytes`;
   }
 
   function updatePos() {
-    const upto = textarea.value.slice(0, textarea.selectionStart);
-    const lines = upto.split('\n');
-    posLabel.textContent = `Ln ${lines.length}, Col ${lines[lines.length - 1].length + 1}`;
+    const position = state.editor?.getPosition();
+    if (position) posLabel.textContent = `Ln ${position.lineNumber}, Col ${position.column}`;
   }
-
-  textarea.addEventListener('input', () => {
-    if (!state.dirty) { state.dirty = true; dirtyBadge.classList.remove('hidden'); }
-    updateBytes();
-  });
-  textarea.addEventListener('keyup', updatePos);
-  textarea.addEventListener('click', updatePos);
-  textarea.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(); }
-  });
 
   container.querySelector('#editor-save').addEventListener('click', openSaveDialog);
   container.querySelector('#editor-save-form').addEventListener('submit', (event) => {
@@ -255,6 +329,7 @@ export function renderEditorView(container, initialPath = null) {
   container.querySelector('#editor-reload').addEventListener('click', () => {
     if (state.path) openFile(state.path);
   });
+  editorReady.then(instance => instance.setSaveHandler(saveFile));
 
   // --- WebSocket session event bus ----------------------------------------
   function connectWs() {
@@ -345,5 +420,5 @@ export function renderEditorView(container, initialPath = null) {
 
   connectWs();
 
-  if (initialPath) openFile(initialPath);
+  if (initialFile?.path) openFile(initialFile.path, initialFile.managedFile === true);
 }

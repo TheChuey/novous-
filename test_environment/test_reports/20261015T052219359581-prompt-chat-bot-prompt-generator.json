@@ -1,0 +1,520 @@
+{
+  "id": "20261015T052219359581-prompt-chat-bot-prompt-generator",
+  "kind": "prompt",
+  "title": "Chat Bot Prompt Generator",
+  "model": "llama3.1:8b",
+  "created_at": "2026-10-15T05:22:19.359581+00:00",
+  "passed": false,
+  "verdict": "FAIL",
+  "notes": "",
+  "subject": "# Chat Bot Prompt Generator\n\n## Constraints\n\n- Use polite and friendly language.\n- Ensure the answer is easy to understand.\n- Do not assume any prior knowledge of the user's issue.\n- End the interaction with a friendly goodbye.\n\n## Description\n\nGenerate a prompt that guides a chat bot to create effective prompts for agents by providing clear, specific instructions and ensuring the interaction is user-friendly.\n\n## Instructions\n\n1. Greet the user warmly.\n2. Identify the user's problem or question related to creating agent system prompts.\n3. Ask relevant follow-up questions to understand the issue, such as:\n   - What type of agent are you creating a prompt for (e.g., problem identification agent)?\n   - What platform will the agent interact with?\n   - What are the desired features of the agent?\n4. Provide a clear, concise solution or next steps on how to create the prompt, including any necessary instructions or templates.\n5. Offer additional assistance if needed, such as examples or further guidance.\n\n## Review and Confirm\n\nDouble-check that the prompt is clear, complete, and aligns with the user's needs.\n\n## Role\n\nYou are a chat bot that helps create prompts for agents.\n\n## User\n\nCustomers\n\nReturn the complete revised prompt as a Markdown document with the same structure.",
+  "result": {
+    "components": [
+      {
+        "name": "Prompt title",
+        "passed": true,
+        "checks": [
+          {
+            "id": "present",
+            "passed": true,
+            "evidence": "content provided",
+            "rule": "The field must not be empty.",
+            "observed": "25 characters",
+            "fix": ""
+          },
+          {
+            "id": "detail",
+            "passed": true,
+            "evidence": "25 characters; requires at least 4",
+            "rule": "The text must be at least 4 characters.",
+            "observed": "25 characters",
+            "fix": ""
+          }
+        ],
+        "tested_text": "Chat Bot Prompt Generator"
+      },
+      {
+        "name": "Prompt description",
+        "passed": false,
+        "checks": [
+          {
+            "id": "present",
+            "passed": false,
+            "evidence": "content is missing",
+            "rule": "The field must not be empty.",
+            "observed": "empty",
+            "fix": "Write content for this field."
+          },
+          {
+            "id": "detail",
+            "passed": false,
+            "evidence": "0 characters; requires at least 40",
+            "rule": "The text must be at least 40 characters.",
+            "observed": "0 characters",
+            "fix": "Expand the text by at least 40 characters with specific, concrete detail."
+          },
+          {
+            "id": "intent",
+            "passed": false,
+            "evidence": "state the outcome or action this prompt should guide",
+            "rule": "The text must contain at least one action word such as: analyze, answer, build, create, decide, design, develop, explain, generate, help, identify, inspect, plan, provide, review, solve, write.",
+            "observed": "no action words found",
+            "fix": "Rewrite so it states the outcome the agent should achieve using an action verb (for example 'help', 'analyze', 'write')."
+          }
+        ],
+        "tested_text": ""
+      },
+      {
+        "name": "Prompt sections",
+        "passed": true,
+        "checks": [
+          {
+            "id": "present",
+            "passed": true,
+            "evidence": "6 section(s) included"
+          }
+        ]
+      },
+      {
+        "name": "Section title: Constraints",
+        "passed": true,
+        "checks": [
+          {
+            "id": "present",
+            "passed": true,
+            "evidence": "content provided",
+            "rule": "The field must not be empty.",
+            "observed": "11 characters",
+            "fix": ""
+          },
+          {
+            "id": "detail",
+            "passed": true,
+            "evidence": "11 characters; requires at least 4",
+            "rule": "The text must be at least 4 characters.",
+            "observed": "11 characters",
+            "fix": ""
+          }
+        ],
+        "tested_text": "Constraints"
+      },
+      {
+        "name": "Section: Constraints",
+        "passed": true,
+        "checks": [
+          {
+            "id": "present",
+            "passed": true,
+            "evidence": "content provided",
+            "rule": "The field must not be empty.",
+            "observed": "182 characters",
+            "fix": ""
+          },
+          {
+            "id": "detail",
+            "passed": true,
+            "evidence": "182 characters; requires at least 20",
+            "rule": "The text must be at least 20 characters.",
+            "observed": "182 characters",
+            "fix": ""
+          },
+          {
+            "id": "actionability",
+            "passed": true,
+            "evidence": "instruction language found: answer, do, end, use",
+            "rule": "The section must contain directive wording such as: must, should, always, never, keep, use, avoid, start, end, list, provide, include, ...",
+            "observed": "found: answer, do, end, use",
+            "fix": ""
+          }
+        ],
+        "tested_text": "- Use polite and friendly language.\n- Ensure the answer is easy to understand.\n- Do not assume any prior knowledge of the user's issue.\n- End the interaction with a friendly goodbye.",
+        "category": "chat-bot-prompt-generator"
+      },
+      {
+        "name": "Section title: Description",
+        "passed": true,
+        "checks": [
+          {
+            "id": "present",
+            "passed": true,
+            "evidence": "content provided",
+            "rule": "The field must not be empty.",
+            "observed": "11 characters",
+            "fix": ""
+          },
+          {
+            "id": "detail",
+            "passed": true,
+            "evidence": "11 characters; requires at least 4",
+            "rule": "The text must be at least 4 characters.",
+            "observed": "11 characters",
+            "fix": ""
+          }
+        ],
+        "tested_text": "Description"
+      },
+      {
+        "name": "Section: Description",
+        "passed": false,
+        "checks": [
+          {
+            "id": "present",
+            "passed": true,
+            "evidence": "content provided",
+            "rule": "The field must not be empty.",
+            "observed": "168 characters",
+            "fix": ""
+          },
+          {
+            "id": "detail",
+            "passed": true,
+            "evidence": "168 characters; requires at least 20",
+            "rule": "The text must be at least 20 characters.",
+            "observed": "168 characters",
+            "fix": ""
+          },
+          {
+            "id": "actionability",
+            "passed": false,
+            "evidence": "include an explicit instruction describing what the agent should do",
+            "rule": "The section must contain directive wording such as: must, should, always, never, keep, use, avoid, start, end, list, provide, include, ...",
+            "observed": "no directive wording found",
+            "fix": "Rewrite the section as explicit instructions using words like 'must', 'always', 'never', 'use', or 'return'."
+          }
+        ],
+        "tested_text": "Generate a prompt that guides a chat bot to create effective prompts for agents by providing clear, specific instructions and ensuring the interaction is user-friendly.",
+        "category": "chat-bot-prompt-generator"
+      },
+      {
+        "name": "Section title: Instructions",
+        "passed": true,
+        "checks": [
+          {
+            "id": "present",
+            "passed": true,
+            "evidence": "content provided",
+            "rule": "The field must not be empty.",
+            "observed": "12 characters",
+            "fix": ""
+          },
+          {
+            "id": "detail",
+            "passed": true,
+            "evidence": "12 characters; requires at least 4",
+            "rule": "The text must be at least 4 characters.",
+            "observed": "12 characters",
+            "fix": ""
+          }
+        ],
+        "tested_text": "Instructions"
+      },
+      {
+        "name": "Section: Instructions",
+        "passed": true,
+        "checks": [
+          {
+            "id": "present",
+            "passed": true,
+            "evidence": "content provided",
+            "rule": "The field must not be empty.",
+            "observed": "581 characters",
+            "fix": ""
+          },
+          {
+            "id": "detail",
+            "passed": true,
+            "evidence": "581 characters; requires at least 20",
+            "rule": "The text must be at least 20 characters.",
+            "observed": "581 characters",
+            "fix": ""
+          },
+          {
+            "id": "actionability",
+            "passed": true,
+            "evidence": "instruction language found: follow, provide",
+            "rule": "The section must contain directive wording such as: must, should, always, never, keep, use, avoid, start, end, list, provide, include, ...",
+            "observed": "found: follow, provide",
+            "fix": ""
+          }
+        ],
+        "tested_text": "1. Greet the user warmly.\n2. Identify the user's problem or question related to creating agent system prompts.\n3. Ask relevant follow-up questions to understand the issue, such as:\n   - What type of agent are you creating a prompt for (e.g., problem identification agent)?\n   - What platform will the agent interact with?\n   - What are the desired features of the agent?\n4. Provide a clear, concise solution or next steps on how to create the prompt, including any necessary instructions or templates.\n5. Offer additional assistance if needed, such as examples or further guidance.",
+        "category": "chat-bot-prompt-generator"
+      },
+      {
+        "name": "Section title: Review and Confirm",
+        "passed": true,
+        "checks": [
+          {
+            "id": "present",
+            "passed": true,
+            "evidence": "content provided",
+            "rule": "The field must not be empty.",
+            "observed": "18 characters",
+            "fix": ""
+          },
+          {
+            "id": "detail",
+            "passed": true,
+            "evidence": "18 characters; requires at least 4",
+            "rule": "The text must be at least 4 characters.",
+            "observed": "18 characters",
+            "fix": ""
+          }
+        ],
+        "tested_text": "Review and Confirm"
+      },
+      {
+        "name": "Section: Review and Confirm",
+        "passed": false,
+        "checks": [
+          {
+            "id": "present",
+            "passed": true,
+            "evidence": "content provided",
+            "rule": "The field must not be empty.",
+            "observed": "82 characters",
+            "fix": ""
+          },
+          {
+            "id": "detail",
+            "passed": true,
+            "evidence": "82 characters; requires at least 20",
+            "rule": "The text must be at least 20 characters.",
+            "observed": "82 characters",
+            "fix": ""
+          },
+          {
+            "id": "actionability",
+            "passed": false,
+            "evidence": "include an explicit instruction describing what the agent should do",
+            "rule": "The section must contain directive wording such as: must, should, always, never, keep, use, avoid, start, end, list, provide, include, ...",
+            "observed": "no directive wording found",
+            "fix": "Rewrite the section as explicit instructions using words like 'must', 'always', 'never', 'use', or 'return'."
+          }
+        ],
+        "tested_text": "Double-check that the prompt is clear, complete, and aligns with the user's needs.",
+        "category": "chat-bot-prompt-generator"
+      },
+      {
+        "name": "Section title: Role",
+        "passed": true,
+        "checks": [
+          {
+            "id": "present",
+            "passed": true,
+            "evidence": "content provided",
+            "rule": "The field must not be empty.",
+            "observed": "4 characters",
+            "fix": ""
+          },
+          {
+            "id": "detail",
+            "passed": true,
+            "evidence": "4 characters; requires at least 4",
+            "rule": "The text must be at least 4 characters.",
+            "observed": "4 characters",
+            "fix": ""
+          }
+        ],
+        "tested_text": "Role"
+      },
+      {
+        "name": "Section: Role",
+        "passed": true,
+        "checks": [
+          {
+            "id": "present",
+            "passed": true,
+            "evidence": "content provided",
+            "rule": "The field must not be empty.",
+            "observed": "56 characters",
+            "fix": ""
+          },
+          {
+            "id": "detail",
+            "passed": true,
+            "evidence": "56 characters; requires at least 20",
+            "rule": "The text must be at least 20 characters.",
+            "observed": "56 characters",
+            "fix": ""
+          },
+          {
+            "id": "actionability",
+            "passed": true,
+            "evidence": "instruction language found: you are",
+            "rule": "The section must contain directive wording such as: must, should, always, never, keep, use, avoid, start, end, list, provide, include, ...",
+            "observed": "found: you are",
+            "fix": ""
+          }
+        ],
+        "tested_text": "You are a chat bot that helps create prompts for agents.",
+        "category": "chat-bot-prompt-generator"
+      },
+      {
+        "name": "Section title: User",
+        "passed": true,
+        "checks": [
+          {
+            "id": "present",
+            "passed": true,
+            "evidence": "content provided",
+            "rule": "The field must not be empty.",
+            "observed": "4 characters",
+            "fix": ""
+          },
+          {
+            "id": "detail",
+            "passed": true,
+            "evidence": "4 characters; requires at least 4",
+            "rule": "The text must be at least 4 characters.",
+            "observed": "4 characters",
+            "fix": ""
+          }
+        ],
+        "tested_text": "User"
+      },
+      {
+        "name": "Section: User",
+        "passed": true,
+        "checks": [
+          {
+            "id": "present",
+            "passed": true,
+            "evidence": "content provided",
+            "rule": "The field must not be empty.",
+            "observed": "93 characters",
+            "fix": ""
+          },
+          {
+            "id": "detail",
+            "passed": true,
+            "evidence": "93 characters; requires at least 20",
+            "rule": "The text must be at least 20 characters.",
+            "observed": "93 characters",
+            "fix": ""
+          },
+          {
+            "id": "actionability",
+            "passed": true,
+            "evidence": "instruction language found: return",
+            "rule": "The section must contain directive wording such as: must, should, always, never, keep, use, avoid, start, end, list, provide, include, ...",
+            "observed": "found: return",
+            "fix": ""
+          }
+        ],
+        "tested_text": "Customers\n\nReturn the complete revised prompt as a Markdown document with the same structure.",
+        "category": "chat-bot-prompt-generator"
+      },
+      {
+        "name": "AI review: Whole prompt",
+        "passed": false,
+        "tested_text": "",
+        "checks": [
+          {
+            "id": "ai_review",
+            "passed": false,
+            "evidence": "The prompt does not evaluate the entire system, but only specific sections.",
+            "rule": "The sections are consistent with each other, with no contradictions or obvious gaps.",
+            "observed": "The prompt does not evaluate the entire system, but only specific sections.",
+            "fix": ""
+          }
+        ]
+      },
+      {
+        "name": "AI review: Constraints",
+        "passed": false,
+        "tested_text": "- Use polite and friendly language.\n- Ensure the answer is easy to understand.\n- Do not assume any prior knowledge of the user's issue.\n- End the interaction with a friendly goodbye.",
+        "checks": [
+          {
+            "id": "ai_review",
+            "passed": false,
+            "evidence": "Some instructions are not specific enough, e.g. 'Ensure the answer is easy to understand' is too vague.",
+            "rule": "Is clear, specific, actionable and does not contradict other sections.",
+            "observed": "Some instructions are not specific enough, e.g. 'Ensure the answer is easy to understand' is too vague.",
+            "fix": "Replace with more specific instructions, e.g. 'Provide clear and concise answers that address the user's question or issue'."
+          }
+        ]
+      },
+      {
+        "name": "AI review: Description",
+        "passed": false,
+        "tested_text": "Generate a prompt that guides a chat bot to create effective prompts for agents by providing clear, specific instructions and ensuring the interaction is user-friendly.",
+        "checks": [
+          {
+            "id": "ai_review",
+            "passed": false,
+            "evidence": "The description is too vague and does not provide clear instructions for the chatbot.",
+            "rule": "Is clear, specific, actionable and does not contradict other sections.",
+            "observed": "The description is too vague and does not provide clear instructions for the chatbot.",
+            "fix": "Replace with more specific instructions, e.g. 'Generate a prompt that guides a chatbot to create effective prompts for agents by providing clear, specific instructions and ensuring the interaction is user-friendly. The prompt should include a clear problem statement, relevant follow-up questions, and a clear solution or next steps.'"
+          }
+        ]
+      },
+      {
+        "name": "AI review: Instructions",
+        "passed": true,
+        "tested_text": "1. Greet the user warmly.\n2. Identify the user's problem or question related to creating agent system prompts.\n3. Ask relevant follow-up questions to understand the issue, such as:\n   - What type of agent are you creating a prompt for (e.g., problem identification agent)?\n   - What platform will the agent interact with?\n   - What are the desired features of the agent?\n4. Provide a clear, concise solution or next steps on how to create the prompt, including any necessary instructions or templates.\n5. Offer additional assistance if needed, such as examples or further guidance.",
+        "checks": [
+          {
+            "id": "ai_review",
+            "passed": true,
+            "evidence": "This section provides clear and specific instructions for the chatbot.",
+            "rule": "Is clear, specific, actionable and does not contradict other sections.",
+            "observed": "This section provides clear and specific instructions for the chatbot.",
+            "fix": ""
+          }
+        ]
+      },
+      {
+        "name": "AI review: Review and Confirm",
+        "passed": false,
+        "tested_text": "Double-check that the prompt is clear, complete, and aligns with the user's needs.",
+        "checks": [
+          {
+            "id": "ai_review",
+            "passed": false,
+            "evidence": "This section is too vague and does not provide clear instructions for the chatbot.",
+            "rule": "Is clear, specific, actionable and does not contradict other sections.",
+            "observed": "This section is too vague and does not provide clear instructions for the chatbot.",
+            "fix": "Replace with more specific instructions, e.g. 'Double-check that the prompt is clear, complete, and aligns with the user's needs by reviewing each section for consistency and completeness.'"
+          }
+        ]
+      },
+      {
+        "name": "AI review: Role",
+        "passed": false,
+        "tested_text": "You are a chat bot that helps create prompts for agents.",
+        "checks": [
+          {
+            "id": "ai_review",
+            "passed": false,
+            "evidence": "This section does not provide a clear and specific description of the role.",
+            "rule": "States who the agent is and its domain of expertise in concrete terms.",
+            "observed": "This section does not provide a clear and specific description of the role.",
+            "fix": "Replace with more specific instructions, e.g. 'You are a chatbot that helps create prompts for agents in the domain of agent system development.'"
+          }
+        ]
+      },
+      {
+        "name": "AI review: User",
+        "passed": false,
+        "tested_text": "Customers\n\nReturn the complete revised prompt as a Markdown document with the same structure.",
+        "checks": [
+          {
+            "id": "ai_review",
+            "passed": false,
+            "evidence": "This section does not provide clear and specific instructions for the user.",
+            "rule": "Is clear, specific, actionable and does not contradict other sections.",
+            "observed": "This section does not provide clear and specific instructions for the user.",
+            "fix": "Replace with more specific instructions, e.g. 'Customers, please return the complete revised prompt as a Markdown document with the same structure and include a clear and concise summary of the user's needs and requirements.'"
+          }
+        ]
+      }
+    ],
+    "components_passed": 13,
+    "components_total": 22,
+    "passed": false,
+    "verdict": "FAIL",
+    "model": "llama3.1:8b"
+  }
+}

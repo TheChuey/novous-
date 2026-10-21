@@ -1,4 +1,4 @@
-"""LangGraph & Docling Tool Suite for Novous Agent Factory.
+"""LangGraph & Docling Tool Suite for Novous2 Agent Factory.
 
 Provides safe file CRUD, workspace directory mapping, AST docstring extraction,
 Docling document conversion, workspace search, and grounded RAG capabilities.
@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 from langchain_core.tools import tool
 
-# Internal Novous Editor operations for workspace security
+# Internal Novous2 Editor operations for workspace security
 from editor.editor_operations import (
     read_file_content,
     write_file_content,

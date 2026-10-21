@@ -1,0 +1,21 @@
+{
+  "model": "llama3.1:8b",
+  "runs": 1,
+  "passes": 1,
+  "probe_failures": {},
+  "entries": [
+    {
+      "at": "2026-10-15T06:00:32+00:00",
+      "title": "Problem Solving Agent",
+      "passed": true,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [],
+      "improvements": []
+    }
+  ]
+}

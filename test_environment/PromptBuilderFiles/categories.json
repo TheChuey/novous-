@@ -1,46 +1,8 @@
 {
   "categories": [
     {
-      "id": "problem-identifier",
-      "name": "Role",
-      "description": "Role will be used to idenfiy and focus the job of the AI agent",
-      "required_header": "Role"
-    },
-    {
-      "id": "thinking-process",
-      "name": "Investigation Process",
-      "description": "Steps",
-      "required_header": "Process"
-    },
-    {
-      "id": "rules",
-      "name": "Rules",
-      "description": "Evidance and Accuracy",
-      "required_header": "Rules"
-    },
-    {
-      "id": "questions",
-      "name": "Questions",
-      "description": ""
-    },
-    {
-      "id": "reporting-problem-identificaiton-agent",
-      "name": "Reporting",
-      "description": ""
-    },
-    {
-      "id": "investigation-report",
-      "name": "Investigation",
-      "description": ""
-    },
-    {
-      "id": "criteria",
-      "name": "Criteria",
-      "description": ""
-    },
-    {
-      "id": "skill",
-      "name": "Skill for Problem solving agent",
+      "id": "test-agent-prompt",
+      "name": "Test Agent Prompt",
       "description": ""
     }
   ]

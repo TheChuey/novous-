@@ -1,46 +1,51 @@
-"""@tool registry & provider bindings for the Novous core engine.
+"""@tool registry & provider bindings for the Novous2 core engine.
 
-Tools are plain Python functions decorated with @tool. Each tool declares a
-provider (the pillar doorway that owns the capability). Providers are resolved
-lazily so importing this module never creates circular imports. Promoted
-workspace tools are loaded from workspace/tools/ when the registry is queried.
+Registry-only catalog: does not define any tools directly. All tool definitions
+are discovered dynamically from the tools/ directory.
 """
 
-import ast
 import importlib.util
 import inspect
 import json
-import operator
-import sys
 from pathlib import Path
+import sys
 from typing import Callable
 
-from core_engine.agent_factory import load_agent
-from core_engine import langgraph_tools
+from core_engine.agent_factory import LIBRARY_ROOT, parse_yaml_frontmatter
 
 REGISTRY: dict[str, dict] = {}
-CUSTOM_TOOLS_DIR = Path(__file__).resolve().parent.parent / "workspace" / "tools"
-_LOADED_CUSTOM_TOOLS: set[Path] = set()
 LOAD_ERRORS: dict[str, str] = {}
+REPO_ROOT = Path(__file__).resolve().parent.parent
+TOOLS_DIR = REPO_ROOT / "tools"
+_LOADED_FILES: set[Path] = set()
 
-_OPERATORS = {
-    ast.Add: operator.add,
-    ast.Sub: operator.sub,
-    ast.Mult: operator.mul,
-    ast.Div: operator.truediv,
-    ast.FloorDiv: operator.floordiv,
-    ast.Mod: operator.mod,
-    ast.Pow: operator.pow,
-    ast.USub: operator.neg,
-    ast.UAdd: operator.pos,
+PROVIDER_BINDINGS = {
+    "core_engine": "core_engine.interface",
+    "editor": "editor.interface",
+    "file_manager": "file_manager.interface",
+    "workspace": "workspace.interface",
+    "test_environment": "test_environment.interface",
+    "codebuilder": "codebuilder.interface",
+    "tools": "tools.interface",
+    "tools.read_tool": "tools.read_tool",
+    "tools.write_tool": "tools.write_tool",
+    "tools.delete_file_tool": "tools.delete_file_tool",
+    "tools.editor_tool": "tools.editor_tool",
+    "tools.map_files_tool": "tools.map_files_tool",
+    "tools.promoted_tools": "tools.promoted_tools",
+    "core_engine.core_tools": "core_engine.core_tools",
 }
 
 
-def tool(name: str | None = None, provider: str = "core_engine"):
+def tool(name_or_func: str | Callable | None = None, provider: str = "core_engine"):
     """Decorator that registers a function as an invocable agent tool."""
 
     def decorator(func: Callable) -> Callable:
-        tool_name = name or func.__name__
+        tool_name = name_or_func if isinstance(name_or_func, str) else func.__name__
+        if tool_name in REGISTRY and REGISTRY[tool_name]["function"] is not func:
+            raise ValueError(
+                f"Tool '{tool_name}' is already registered by provider '{REGISTRY[tool_name]['provider']}'."
+            )
         doc = inspect.getdoc(func) or ""
         func.name = tool_name
         func.provider = provider
@@ -53,176 +58,89 @@ def tool(name: str | None = None, provider: str = "core_engine"):
         }
         return func
 
+    if callable(name_or_func):
+        func = name_or_func
+        name_or_func = None
+        return decorator(func)
     return decorator
 
 
-def _safe_eval(expr: str):
-    def _eval(node):
-        if isinstance(node, ast.Expression):
-            return _eval(node.body)
-        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
-            return node.value
-        if isinstance(node, ast.BinOp) and type(node.op) in _OPERATORS:
-            return _OPERATORS[type(node.op)](_eval(node.left), _eval(node.right))
-        if isinstance(node, ast.UnaryOp) and type(node.op) in _OPERATORS:
-            return _OPERATORS[type(node.op)](_eval(node.operand))
-        raise ValueError(f"Unsupported expression element: {ast.dump(node)}")
+def load_tools(reload: bool = False) -> None:
+    """Load the five file tools and the non-file builtins module."""
+    if reload:
+        REGISTRY.clear()
+        LOAD_ERRORS.clear()
+        _LOADED_FILES.clear()
 
-    return _eval(ast.parse(expr, mode="eval"))
+    if not TOOLS_DIR.is_dir():
+        return
 
+    for path in sorted(TOOLS_DIR.glob("*.py")):
+        if path.name in ("__init__.py", "interface.py") or path.name.startswith("_"):
+            continue
+        if not reload and path.resolve() in _LOADED_FILES:
+            continue
 
-@tool(provider="codebuilder")
-def run_python_code(code: str) -> str:
-    """Run a Python snippet in CodeBuilder and return its output and diagnostics."""
-    from codebuilder.execution import execute_python_code
-    from codebuilder.schemas import CodeExecutionRequest
+        module_name = f"tools.{path.stem}"
+        snapshot = dict(REGISTRY)
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"Could not load spec for '{path.name}'.")
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+            _LOADED_FILES.add(path.resolve())
+            LOAD_ERRORS.pop(path.name, None)
+        except Exception as exc:
+            LOAD_ERRORS[path.name] = str(exc)
+            # Revert any tools registered by this failed module
+            for k in list(REGISTRY.keys()):
+                if k not in snapshot:
+                    REGISTRY.pop(k, None)
+            sys.modules.pop(module_name, None)
 
-    result = execute_python_code(CodeExecutionRequest(code=code))
-    return json.dumps(result.model_dump(), ensure_ascii=False)
-
-
-
-
-# --- Core System Tools ---
-
-
-@tool(provider="core_engine")
-def calculator(expression: str) -> str:
-    """Evaluate a basic arithmetic expression (numbers, + - * / // % ** and parentheses)."""
-    result = _safe_eval(expression)
-    return f"{expression} = {result}"
-
-
-@tool(provider="editor")
-def read_file(path: str) -> str:
-    """Read a file by workspace-root-relative path; do not prefix paths with 'workspace/'."""
-    return langgraph_tools.read_file_tool.invoke({"relative_path": path})
-
-
-@tool(provider="editor")
-def write_file(path: str, content: str) -> str:
-    """Write and verify non-empty text at a workspace-root-relative path; bare filenames go in the root.
-
-    Do not prefix paths with 'workspace/'.
-    Supports formats such as .txt, .md, .py, .json, .html, .css, and .js.
-    Use create_file only when an intentionally empty file is requested.
-    """
-    return langgraph_tools.write_file_tool.invoke(
-        {"relative_path": path, "content": content}
-    )
-
-
-@tool(provider="editor")
-def create_file(path: str, kind: str = "file") -> str:
-    """Create an empty file or directory by workspace-root-relative path; bare names go in root. Use write_file for content."""
-    return langgraph_tools.create_file_tool.invoke(
-        {"relative_path": path, "kind": kind}
-    )
-
-
-@tool(provider="editor")
-def delete_file(path: str) -> str:
-    """Delete a file or empty directory from the workspace."""
-    return langgraph_tools.delete_file_tool.invoke({"relative_path": path})
-
-
-@tool(provider="editor")
-def list_directory(path: str = "") -> str:
-    """List the workspace directory tree (optionally rooted at a relative path)."""
-    return langgraph_tools.map_directory_tree_tool.invoke({"relative_path": path})
-
-
-@tool(provider="editor")
-def extract_docstrings(path: str) -> str:
-    """Parse Python code AST to extract module, class, and function docstrings."""
-    return langgraph_tools.extract_docstrings_tool.invoke({"relative_path": path})
-
-
-@tool(provider="editor")
-def search_workspace(query: str, extension: str = ".py") -> str:
-    """Search workspace files for matching keyword or snippet."""
-    return langgraph_tools.search_workspace_tool.invoke(
-        {"query": query, "extension": extension}
-    )
-
-
-@tool(provider="core_engine")
-def docling_parse(path: str, output_format: str = "markdown") -> str:
-    """Parse PDF, DOCX, PPTX, or HTML files into structured Markdown/JSON via Docling."""
-    return langgraph_tools.docling_parse_tool.invoke(
-        {"relative_path": path, "output_format": output_format}
-    )
-
-
-@tool(provider="core_engine")
-def rag_agent_tool(query: str, relative_path: str = "", top_k: int = 3) -> str:
-    """Query workspace knowledge base or parse a document via Docling for relevant passages."""
-    return langgraph_tools.rag_agent_tool.invoke(
-        {"query": query, "relative_path": relative_path, "top_k": top_k}
-    )
-
-
-@tool(provider="core_engine")
-def agent_info(agent_id: str) -> str:
-    """Return the metadata and composed system prompt of a workspace agent."""
-    profile = load_agent(agent_id)
-    return json.dumps(
-        {
-            "id": profile.id,
-            "name": profile.name,
-            "mode": profile.mode,
-            "description": profile.description,
-            "role": profile.role,
-            "purpose": profile.purpose,
-            "boundaries": profile.boundaries,
-            "system_prompt": profile.system_prompt,
-        },
-        indent=2,
-    )
-
-
-@tool(provider="workspace")
-def project_status() -> str:
-    """Return the current project state metadata for this workspace."""
-    from workspace.interface import get_project_state
-
-    return json.dumps(get_project_state(), indent=2)
-
-
-PROVIDER_BINDINGS = {
-    "core_engine": "core_engine.interface",
-    "editor": "editor.interface",
-    "workspace": "workspace.interface",
-    "test_environment": "test_environment.interface",
-    "codebuilder": "codebuilder.interface",
-}
+    core_tools_path = REPO_ROOT / "core_engine" / "core_tools.py"
+    module_name = "core_engine.core_tools"
+    if core_tools_path.is_file() and (
+        reload or core_tools_path.resolve() not in _LOADED_FILES
+    ):
+        snapshot = dict(REGISTRY)
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, core_tools_path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"Could not load spec for '{core_tools_path.name}'.")
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+            _LOADED_FILES.add(core_tools_path.resolve())
+            LOAD_ERRORS.pop(core_tools_path.name, None)
+        except Exception as exc:
+            LOAD_ERRORS[core_tools_path.name] = str(exc)
+            for key in list(REGISTRY.keys()):
+                if key not in snapshot:
+                    REGISTRY.pop(key, None)
+            sys.modules.pop(module_name, None)
 
 
 def list_tools() -> list[dict]:
-    load_custom_tools()
+    """Return catalog metadata for all registered tools."""
+    load_tools()
     return [
         {
             "name": meta["name"],
             "provider": meta["provider"],
             "description": meta["description"],
             "signature": meta["signature"],
-            "custom": meta["function"].__module__.startswith(
-                "novous_workspace_tool_"
-            ),
+            "custom": meta.get("custom", False),
         }
         for meta in REGISTRY.values()
     ]
 
 
-def get_load_errors() -> dict[str, str]:
-    """Return per-module errors from the last custom-tools load pass."""
-    load_custom_tools()
-    return dict(LOAD_ERRORS)
-
-
 def get_tools(names: list[str] | None = None) -> list[Callable]:
     """Resolve registered tool callables, filtered by an optional allow-list."""
-    load_custom_tools()
+    load_tools()
     if not names:
         return [meta["function"] for meta in REGISTRY.values()]
     resolved = []
@@ -233,104 +151,82 @@ def get_tools(names: list[str] | None = None) -> list[Callable]:
     return resolved
 
 
-def load_custom_tools(reload: bool = False) -> None:
-    """Load promoted workspace tools into the runtime registry.
-
-    A single broken tool module must not take down the whole catalog: load
-    errors are captured per file in LOAD_ERRORS and loading continues.
-    """
-    if reload:
-        custom_names = [
-            name for name, meta in REGISTRY.items()
-            if meta["function"].__module__.startswith("novous_workspace_tool_")
-        ]
-        for name in custom_names:
-            REGISTRY.pop(name, None)
-        for module_name in list(sys.modules):
-            if module_name.startswith("novous_workspace_tool_"):
-                sys.modules.pop(module_name, None)
-        _LOADED_CUSTOM_TOOLS.clear()
-
-    LOAD_ERRORS.clear()
-
-    if not CUSTOM_TOOLS_DIR.is_dir():
-        return
-
-    for path in sorted(CUSTOM_TOOLS_DIR.glob("*.py")):
-        resolved_path = path.resolve()
-        if resolved_path in _LOADED_CUSTOM_TOOLS:
-            continue
-
-        try:
-            _load_custom_tool_file(path, resolved_path)
-            _LOADED_CUSTOM_TOOLS.add(resolved_path)
-        except Exception as exc:
-            LOAD_ERRORS[str(resolved_path)] = f"{type(exc).__name__}: {exc}"
+def get_load_errors() -> dict[str, str]:
+    """Return dictionary of tool load errors mapping filename to error message."""
+    return dict(LOAD_ERRORS)
 
 
-def _load_custom_tool_file(path: Path, resolved_path: Path) -> None:
-    """Import a single custom-tool module and register its functions."""
-    module_name = f"novous_workspace_tool_{path.stem}"
-    spec = importlib.util.spec_from_file_location(module_name, resolved_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Could not load custom tool module '{path}'.")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    try:
-        spec.loader.exec_module(module)
-    except Exception:
-        sys.modules.pop(module_name, None)
-        raise
+def get_provider_bindings() -> dict[str, str]:
+    """Return dictionary of provider doorway bindings."""
+    return dict(PROVIDER_BINDINGS)
 
-    if path.name == "tool_library.py":
-        functions = []
-        function_names = set()
-        for node in ast.parse(path.read_text(encoding="utf-8")).body:
-            if isinstance(node, ast.AsyncFunctionDef) and not node.name.startswith("_"):
-                raise ValueError(
-                    f"Tool library function '{node.name}' must be synchronous."
-                )
-            if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
-                if node.name in function_names:
-                    raise ValueError(
-                        f"Tool library defines '{node.name}' more than once."
-                    )
-                function_names.add(node.name)
-                function = getattr(module, node.name, None)
-                if not inspect.isfunction(function) or function.__module__ != module_name:
-                    raise ValueError(
-                        f"Could not load tool library function '{node.name}'."
-                    )
-                functions.append((node.name, function))
-    else:
-        function = getattr(module, path.stem, None)
-        if not inspect.isfunction(function) or function.__module__ != module_name:
-            sys.modules.pop(module_name, None)
-            raise ValueError(
-                f"Custom tool module '{path.name}' must define a function named '{path.stem}'."
-            )
-        functions = [(path.stem, function)]
 
-    conflicts = [name for name, _ in functions if name in REGISTRY]
-    if conflicts:
-        sys.modules.pop(module_name, None)
-        raise ValueError(
-            f"Custom tool '{conflicts[0]}' conflicts with a registered tool."
-        )
+def unknown_tool_names(names: list[str]) -> list[str]:
+    """Return list of tool names that are not found in the registry."""
+    load_tools()
+    return [name for name in names if name not in REGISTRY]
 
-    for name, function in functions:
-        doc = inspect.getdoc(function) or ""
-        function.name = name
-        function.provider = "core_engine"
-        REGISTRY[name] = {
-            "name": name,
-            "function": function,
-            "provider": "core_engine",
-            "description": doc.splitlines() if doc else "",
-            "signature": str(inspect.signature(function)),
+
+def get_catalog_report() -> dict:
+    """Generate a comprehensive catalog report without raising exceptions.
+
+    Returns:
+        {
+            tools: list[dict],
+            providers: dict[str, str],
+            load_errors: dict[str, str],
+            missing_agent_tools: dict[str, list[str]],
+            warnings: list[str]
         }
+    """
+    try:
+        load_tools()
+    except Exception:
+        pass
 
+    tools = [
+        {
+            "name": meta["name"],
+            "provider": meta["provider"],
+            "description": meta["description"],
+            "signature": meta["signature"],
+            "custom": meta.get("custom", False),
+        }
+        for meta in REGISTRY.values()
+    ]
+    providers = dict(PROVIDER_BINDINGS)
+    load_errors = dict(LOAD_ERRORS)
+    missing_agent_tools: dict[str, list[str]] = {}
+    warnings: list[str] = []
 
-# Register CodeBuilder's local tool library (imported last so the @tool
-# decorator resolved above is available without a broken import cycle).
-from codebuilder.tools import tool_library  # noqa: E402,F401
+    for filename, err in load_errors.items():
+        warnings.append(f"Failed to load tool module '{filename}': {err}")
+
+    agent_dirs = [LIBRARY_ROOT]
+    for agents_dir in agent_dirs:
+        try:
+            if agents_dir.is_dir():
+                for agent_file in sorted(agents_dir.glob("*.md")):
+                    try:
+                        raw = agent_file.read_text(encoding="utf-8")
+                        meta = parse_yaml_frontmatter(raw)
+                        agent_id = meta.get("id") or agent_file.stem
+                        req_tools = meta.get("tools", [])
+                        missing = [t for t in req_tools if t not in REGISTRY]
+                        if missing:
+                            missing_agent_tools[agent_id] = missing
+                            warnings.append(
+                                f"Agent '{agent_id}' references missing tools: {', '.join(missing)}"
+                            )
+                    except Exception as e:
+                        warnings.append(f"Failed to parse '{agent_file}': {e}")
+        except Exception as e:
+            warnings.append(f"Failed to scan agent directory '{agents_dir}': {e}")
+
+    return {
+        "tools": tools,
+        "providers": providers,
+        "load_errors": load_errors,
+        "missing_agent_tools": missing_agent_tools,
+        "warnings": warnings,
+    }

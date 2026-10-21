@@ -1,4 +1,4 @@
-"""Generate a single markdown master copy of the entire Novous source tree."""
+"""Generate a single markdown master copy of the entire Novous2 source tree."""
 
 from datetime import datetime
 from pathlib import Path
@@ -8,7 +8,7 @@ TODAY = datetime.now().strftime("%Y%m%d")
 OUT = ROOT / "app_documentation" / f"MASTER_COPY_{TODAY}.md"
 
 INCLUDE = {".py", ".js", ".css", ".html", ".json", ".md", ".bat", ".sh"}
-EXCLUDE_DIRS = {"venv", "__pycache__", ".git", "node_modules", "test_agents"}
+EXCLUDE_DIRS = {"venv", "__pycache__", ".git", "node_modules", "test_agents", "app_documentation"}
 MAX_FILE_BYTES = 200_000
 
 
@@ -17,7 +17,7 @@ def collect() -> list[Path]:
     for path in sorted(ROOT.rglob("*")):
         if not path.is_file():
             continue
-        if path.name.startswith("MASTER_COPY") or path.name == "novous-ai-builder-prompt-v2.md":
+        if path.name.startswith("MASTER_COPY") or path.name == "novous2-ai-builder-prompt-v2.md":
             continue
         if path.suffix not in INCLUDE:
             continue
@@ -29,7 +29,7 @@ def collect() -> list[Path]:
 
 def main() -> None:
     files = collect()
-    chunks = ["# Novous Agent Factory — Master Copy", "",
+    chunks = ["# Novous2 Agent Factory — Master Copy", "",
               f"Generated from `{ROOT}` — {len(files)} files.", ""]
     for path in files:
         rel = path.relative_to(ROOT).as_posix()

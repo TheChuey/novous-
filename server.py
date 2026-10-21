@@ -9,15 +9,27 @@ from editor.interface import router as editor_router
 from workspace.interface import router as workspace_router
 from test_environment.interface import router as test_router
 from codebuilder.interface import router as codebuilder_router
+from file_manager.interface import router as file_manager_router
+from tools.interface import router as tools_router
 
-app = FastAPI(title="Novous AGENT FACTORY", version="4.0.0")
+app = FastAPI(title="Novous2 AGENT FACTORY", version="4.0.0")
+
+
+@app.on_event("startup")
+def migrate_sandbox_environment():
+    """Move packages from the old in-repo sandbox venv to the configured sandbox folder."""
+    import threading
+    from test_environment import sandbox_env
+    threading.Thread(target=sandbox_env.migrate_legacy, daemon=True).start()
 
 # Mount Component Backend Routers
+app.include_router(tools_router)
 app.include_router(core_router)
 app.include_router(editor_router)
 app.include_router(workspace_router)
 app.include_router(test_router)
 app.include_router(codebuilder_router)
+app.include_router(file_manager_router)
 
 # Serve Static Assets (CSS, JS)
 app.mount("/static", StaticFiles(directory=Path("frontend") / "static"), name="static")
@@ -38,6 +50,10 @@ def codebuilder_page():
 @app.get("/chat")
 def chat_page():
     return FileResponse("frontend/pages/chat.html")
+
+@app.get("/terminal")
+def terminal_page():
+    return FileResponse("frontend/pages/terminal.html")
 
 @app.api_route("/test", methods=["GET", "POST"])
 def test_page():

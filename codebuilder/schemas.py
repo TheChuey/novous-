@@ -1,16 +1,29 @@
-"""Data models and request schemas for the CodeBuilder pillar."""
+"""CodeBuilder contracts: the data shapes shared by every layer.
+
+This module is dependency-free (pydantic only). The HTTP adapter, the service,
+the engine and the agent tools all speak these models and nothing else.
+
+Compatibility: every field that existed before keeps its name, type and default.
+New fields are additive and optional, so the existing frontend keeps working.
+"""
 
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
+# Why a run was stopped by the supervisor (values of StuckInfo.reason).
+STUCK_TIMEOUT = "timeout"          # still running at the deadline (loop, sleep, blocking call)
+STUCK_OUTPUT_LIMIT = "output_limit"  # unbounded output (e.g. `while True: print(...)`)
+STUCK_CANCELLED = "cancelled"      # stopped on request (cancel endpoint / client disconnect)
+
 
 class CodeExecutionRequest(BaseModel):
     code: str = Field(..., description="Python source code to execute")
-    timeout_seconds: float = Field(default=10.0, description="Execution timeout in seconds")
+    timeout_seconds: float = Field(default=10.0, description="Hard wall-clock limit in seconds")
     mode: str = Field(
         default="safe",
-        description="Execution mode: 'safe' runs in-process; 'risky' runs in an isolated subprocess",
+        description="'safe': buffered result, stdout/stderr kept apart. "
+        "'risky': merged output, streamable over SSE. Both run isolated.",
     )
 
 
@@ -23,12 +36,27 @@ class DiagnosticItem(BaseModel):
     run_id: Optional[str] = Field(default=None, description="Execution run identifier")
 
 
+class StuckInfo(BaseModel):
+    """Explains why a run had to be stopped, and what to try next."""
+
+    reason: str = Field(..., description="timeout | output_limit | cancelled")
+    message: str
+    line: Optional[int] = Field(default=None, description="Line of user code that was executing")
+    source: Optional[str] = Field(default=None, description="Text of that line")
+    hint: str = ""
+
+
 class CodeExecutionResult(BaseModel):
     run_id: str
     status: str
     stdout: str = ""
     stderr: str = ""
     diagnostics: List[DiagnosticItem] = Field(default_factory=list)
+    # Additive fields (ignored by older clients):
+    return_code: Optional[int] = None
+    timed_out: bool = False
+    duration_seconds: Optional[float] = None
+    stuck: Optional[StuckInfo] = None
 
 
 class StructuredEditRequest(BaseModel):

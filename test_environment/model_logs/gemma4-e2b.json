@@ -1,0 +1,159 @@
+{
+  "model": "gemma4:e2b",
+  "runs": 9,
+  "passes": 1,
+  "probe_failures": {
+    "fact_correct": 7,
+    "no_invention": 1,
+    "role_identity": 2,
+    "description_match": 3
+  },
+  "entries": [
+    {
+      "at": "2026-10-15T05:42:42+00:00",
+      "title": "Chat Bot Prompt Generator",
+      "passed": false,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description."
+      ],
+      "weaknesses": [
+        "Model test: Known fact: expected 'paris' in the reply",
+        "Model test: Hallucination resistance: answered a question about something that does not exist"
+      ],
+      "improvements": [
+        "The model failed a basic fact. If the role is intentionally narrow, change the fact question in the test; otherwise add 'Answer general factual questions accurately' to the prompt, or try a larger model.",
+        "Add to Boundaries: 'If you do not know or cannot verify something, say so. Never invent facts, quotes or sources.'"
+      ]
+    },
+    {
+      "at": "2026-10-15T05:46:54+00:00",
+      "title": "Chat Bot Prompt Generator",
+      "passed": false,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [
+        "Model test: Known fact: expected 'paris' in the reply"
+      ],
+      "improvements": [
+        "The model failed a basic fact. If the role is intentionally narrow, change the fact question in the test; otherwise add 'Answer general factual questions accurately' to the prompt, or try a larger model."
+      ]
+    },
+    {
+      "at": "2026-10-15T05:50:03+00:00",
+      "title": "Chat Bot Prompt Generator",
+      "passed": false,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [
+        "Model test: Known fact: expected 'paris' in the reply"
+      ],
+      "improvements": [
+        "The model failed a basic fact. If the role is intentionally narrow, change the fact question in the test; otherwise add 'Answer general factual questions accurately' to the prompt, or try a larger model."
+      ]
+    },
+    {
+      "at": "2026-10-15T05:51:06+00:00",
+      "title": "Chat Bot Prompt Generator",
+      "passed": false,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [
+        "Model test: Known fact: expected 'paris' in the reply"
+      ],
+      "improvements": [
+        "The model failed a basic fact. If the role is intentionally narrow, change the fact question in the test; otherwise add 'Answer general factual questions accurately' to the prompt, or try a larger model."
+      ]
+    },
+    {
+      "at": "2026-10-15T05:52:30+00:00",
+      "title": "Chat Bot Prompt Generator",
+      "passed": false,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [
+        "Model test: Known fact: expected 'paris' in the reply"
+      ],
+      "improvements": [
+        "The model failed a basic fact. If the role is intentionally narrow, change the fact question in the test; otherwise add 'Answer general factual questions accurately' to the prompt, or try a larger model."
+      ]
+    },
+    {
+      "at": "2026-10-15T06:02:14+00:00",
+      "title": "Problem Solving Agent",
+      "passed": true,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [],
+      "improvements": []
+    },
+    {
+      "at": "2026-10-15T06:03:05+00:00",
+      "title": "Problem Solving Agent",
+      "passed": false,
+      "strengths": [
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [
+        "Model test: Role understanding: reply mentions title words: none; missing: agent, problem, solving",
+        "Model test: Description matches behavior: 4/21 description keywords echoed; missing: accurate, agent, artificial, capable, clear, decisions"
+      ],
+      "improvements": [
+        "Start the Role section with an explicit identity sentence such as 'You are a Problem Solving Agent that ...'.",
+        "Make the description state the main task in plain words and repeat those words in the Role and Purpose sections."
+      ]
+    },
+    {
+      "at": "2026-10-15T06:04:50+00:00",
+      "title": "Problem Solving Agent",
+      "passed": false,
+      "strengths": [
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [
+        "Model test: Role understanding: reply mentions title words: none; missing: agent, problem, solving",
+        "Model test: Description matches behavior: 5/21 description keywords echoed; missing: agent, artificial, capable, clear, complex, decisions",
+        "Model test: Known fact: expected 'paris' in the reply"
+      ],
+      "improvements": [
+        "Start the Role section with an explicit identity sentence such as 'You are a Problem Solving Agent that ...'.",
+        "Make the description state the main task in plain words and repeat those words in the Role and Purpose sections.",
+        "The model failed a basic fact. If the role is intentionally narrow, change the fact question in the test; otherwise add 'Answer general factual questions accurately' to the prompt, or try a larger model."
+      ]
+    },
+    {
+      "at": "2026-10-15T06:05:58+00:00",
+      "title": "Problem Solving Agent",
+      "passed": false,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [
+        "Model test: Description matches behavior: 4/21 description keywords echoed; missing: accurate, artificial, capable, clear, decisions, development",
+        "Model test: Known fact: expected 'paris' in the reply"
+      ],
+      "improvements": [
+        "Make the description state the main task in plain words and repeat those words in the Role and Purpose sections.",
+        "The model failed a basic fact. If the role is intentionally narrow, change the fact question in the test; otherwise add 'Answer general factual questions accurately' to the prompt, or try a larger model."
+      ]
+    }
+  ]
+}

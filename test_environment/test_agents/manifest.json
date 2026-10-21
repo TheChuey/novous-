@@ -88,5 +88,131 @@
     "label": "snapshot",
     "snapshot": "agent-02__snapshot__20261011-044552",
     "published_at": "2026-10-11T04:45:52.166454+00:00"
+  },
+  {
+    "agent_id": "agent-03",
+    "environment": "workspace",
+    "label": "snapshot",
+    "snapshot": "agent-03__snapshot__20261012-165035",
+    "published_at": "2026-10-12T16:50:35.715653+00:00"
+  },
+  {
+    "agent_id": "agent-03",
+    "environment": "workspace",
+    "label": "snapshot",
+    "snapshot": "agent-03__snapshot__20261013-163650",
+    "published_at": "2026-10-13T16:36:50.826141+00:00"
+  },
+  {
+    "agent_id": "create-a-coding-agent-prompt-basic",
+    "environment": "workspace",
+    "label": "prompt-creation",
+    "snapshot": "create-a-coding-agent-prompt-basic__prompt-creation__20261015-042016",
+    "published_at": "2026-10-15T04:20:16.637360+00:00"
+  },
+  {
+    "agent_id": "create-a-coding-agent-prompt-basic",
+    "environment": "prompt-creation",
+    "label": "prompt-creation",
+    "snapshot": "prompt-creation__create-a-coding-agent-prompt-basic__prompt-creation__20261015-042349",
+    "published_at": "2026-10-15T04:23:49.084788+00:00"
+  },
+  {
+    "agent_id": "prompt-helper",
+    "environment": "prompt-creation",
+    "label": "prompt-creation",
+    "snapshot": "prompt-creation__prompt-helper__prompt-creation__20261015-055749",
+    "published_at": "2026-10-15T05:57:49.559384+00:00"
+  },
+  {
+    "agent_id": "problem-solving-agent",
+    "environment": "workspace",
+    "label": "prompt-creation",
+    "snapshot": "problem-solving-agent__prompt-creation__20261015-060636",
+    "published_at": "2026-10-15T06:06:36.869197+00:00"
+  },
+  {
+    "agent_id": "tool-testing-agent",
+    "environment": "workspace",
+    "label": "prompt-creation",
+    "snapshot": "tool-testing-agent__prompt-creation__20261015-165245",
+    "published_at": "2026-10-15T16:52:46.005708+00:00"
+  },
+  {
+    "agent_id": "file-manager-tools-tester-agent",
+    "environment": "prompt-creation",
+    "label": "prompt-creation",
+    "snapshot": "prompt-creation__file-manager-tools-tester-agent__prompt-creation__20261016-055631",
+    "published_at": "2026-10-16T05:56:31.104236+00:00"
+  },
+  {
+    "agent_id": "ai-agent-prompt-for-tool-testing",
+    "environment": "prompt-creation",
+    "label": "prompt-creation",
+    "snapshot": "prompt-creation__ai-agent-prompt-for-tool-testing__prompt-creation__20261016-061208",
+    "published_at": "2026-10-16T06:12:08.792034+00:00"
+  },
+  {
+    "agent_id": "ai-agent-prompt-for-tool-testing",
+    "environment": "prompt-creation",
+    "label": "prompt-creation",
+    "snapshot": "prompt-creation__ai-agent-prompt-for-tool-testing__prompt-creation__20261016-061454",
+    "published_at": "2026-10-16T06:14:54.405855+00:00"
+  },
+  {
+    "agent_id": "ai-agent-prompt-for-tool-testing",
+    "environment": "workspace",
+    "label": "prompt-creation",
+    "snapshot": "ai-agent-prompt-for-tool-testing__prompt-creation__20261016-062701",
+    "published_at": "2026-10-16T06:27:01.669448+00:00"
+  },
+  {
+    "agent_id": "trobleshoot",
+    "environment": "prompt-creation",
+    "label": "prompt-creation",
+    "snapshot": "prompt-creation__trobleshoot__prompt-creation__20261018-210509",
+    "published_at": "2026-10-18T21:05:09.102543+00:00"
+  },
+  {
+    "agent_id": "code",
+    "environment": "prompt-creation",
+    "label": "prompt-creation",
+    "snapshot": "prompt-creation__code__prompt-creation__20261018-210657",
+    "published_at": "2026-10-18T21:06:57.237556+00:00"
+  },
+  {
+    "agent_id": "code-planer",
+    "environment": "codebuilder",
+    "label": "snapshot",
+    "snapshot": "codebuilder__code-planer__snapshot__20261018-211735",
+    "published_at": "2026-10-18T21:17:35.155602+00:00"
+  },
+  {
+    "agent_id": "code-planer",
+    "environment": "codebuilder",
+    "label": "snapshot",
+    "snapshot": "codebuilder__code-planer__snapshot__20261018-211840",
+    "published_at": "2026-10-18T21:18:40.794742+00:00"
+  },
+  {
+    "agent_id": "code-planer",
+    "environment": "codebuilder",
+    "label": "snapshot",
+    "snapshot": "codebuilder__code-planer__snapshot__20261018-214158",
+    "published_at": "2026-10-18T21:41:58.340807+00:00"
+  },
+  {
+    "agent_id": "code-planer",
+    "environment": "codebuilder",
+    "label": "snapshot",
+    "snapshot": "codebuilder__code-planer__snapshot__20261018-214207",
+    "published_at": "2026-10-18T21:42:07.893421+00:00"
+  },
+  {
+    "agent_id": "agent-01",
+    "environment": "workspace",
+    "label": "snapshot",
+    "snapshot": "agent-01__snapshot__20261021-083555",
+    "published_at": "2026-10-21T08:35:55.671895+00:00"
   }
 ]

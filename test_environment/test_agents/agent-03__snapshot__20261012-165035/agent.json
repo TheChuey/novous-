@@ -1,0 +1,17 @@
+{
+  "id": "agent-03",
+  "name": "tester agent",
+  "description": "Will test different tools",
+  "mode": "agent",
+  "model": "qwen2.5-coder:latest",
+  "squad": "",
+  "tools": [
+    "calculator",
+    "read_file",
+    "write_file",
+    "create_file",
+    "list_directory",
+    "project_status"
+  ],
+  "environment": "workspace"
+}

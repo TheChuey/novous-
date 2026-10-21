@@ -75,7 +75,10 @@ class Agent:
             result = tool_func(**args) if isinstance(args, dict) else tool_func(args)
             stats["successes"] += 1
             stats["success_rate"] = stats["successes"] / stats["calls"]
-            self.tool_events.append({"tool": name, "args": args, "status": "success", "origin": origin})
+            event = {"tool": name, "args": args, "status": "success", "origin": origin}
+            if getattr(tool_func, "display_output", False) and isinstance(result, str):
+                event["display"] = result
+            self.tool_events.append(event)
             return result
         except Exception as exc:
             stats["errors"] += 1
@@ -124,6 +127,53 @@ class Agent:
                 self.observe(tool_name, result)
 
         return "(Executed maximum tool rounds without final text summary.)"
+
+    def think_stream(self, user_input: str):
+        """Like think(), but yields token / tool_event dicts as they happen."""
+        if not self.messages or self.messages[0].get("role") != "system":
+            self.messages.insert(0, {"role": "system", "content": self.profile.system_prompt})
+        self.messages.append({"role": "user", "content": user_input})
+
+        use_tools = self.profile.mode != "chat" and bool(self.tools)
+        extra = {"tools": [self._ollama_schema(t) for t in self.tools.values()]} if use_tools else {}
+        final_text = ""
+
+        for _ in range(self.MAX_TOOL_ROUNDS if use_tools else 1):
+            content = ""
+            native_calls: List[dict] = []
+            for chunk in ollama.chat(model=self.model, messages=self.messages, stream=True,
+                                     options={"num_ctx": MAX_NUM_CTX}, **extra):
+                msg = chunk["message"]
+                piece = msg.get("content") or ""
+                if piece:
+                    content += piece
+                    yield {"type": "token", "text": piece}
+                for call in msg.get("tool_calls") or []:
+                    native_calls.append(call)
+
+            assistant = {"role": "assistant", "content": content}
+            if native_calls:
+                assistant["tool_calls"] = native_calls
+            self.messages.append(assistant)
+            final_text = content
+
+            text_calls = [] if native_calls or not use_tools else self._extract_text_tool_calls(content)
+            tool_calls = native_calls or text_calls
+            if not tool_calls:
+                break
+
+            origin = "native" if native_calls else "text_json"
+            for call in tool_calls:
+                name = call["function"]["name"]
+                before = len(self.tool_events)
+                result = self.act(call, origin)
+                self.observe(name, result)
+                for event in self.tool_events[before:]:
+                    yield {"type": "tool_event", "event": event}
+        else:
+            final_text = "(Executed maximum tool rounds without final text summary.)"
+
+        yield {"type": "done", "reply": final_text}
 
     def _ollama_schema(self, func: Callable) -> dict:
         sig = inspect.signature(func)

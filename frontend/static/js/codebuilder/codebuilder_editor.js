@@ -30,21 +30,37 @@ function createTextareaEditor(element, initialValue) {
   textarea.setAttribute('aria-label', 'Python source code');
   element.replaceChildren(textarea);
   let runHandler = null;
+  let saveHandler = null;
   let changeHandler = null;
+  let positionHandler = null;
   textarea.addEventListener('input', () => changeHandler?.());
+  textarea.addEventListener('keyup', () => positionHandler?.());
+  textarea.addEventListener('click', () => positionHandler?.());
   textarea.addEventListener('keydown', event => {
-    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-      event.preventDefault();
-      runHandler?.();
+    if (event.ctrlKey || event.metaKey) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        runHandler?.();
+      } else if (event.key.toLowerCase() === 's' && saveHandler) {
+        event.preventDefault();
+        saveHandler?.();
+      }
     }
   });
 
   return {
     getValue: () => textarea.value,
     setValue: (value) => { textarea.value = value; changeHandler?.(); },
+    setLanguage: () => {},
+    getPosition: () => {
+      const lines = textarea.value.slice(0, textarea.selectionStart).split('\n');
+      return { lineNumber: lines.length, column: lines[lines.length - 1].length + 1 };
+    },
     setDiagnostics: () => {},
     setRunHandler: (handler) => { runHandler = handler; },
+    setSaveHandler: (handler) => { saveHandler = handler; },
     onChange: (handler) => { changeHandler = handler; },
+    onPosition: (handler) => { positionHandler = handler; },
     revealLine: (line) => {
       const lineStart = textarea.value.split('\n').slice(0, Math.max(0, line - 1)).join('\n').length;
       textarea.focus();
@@ -55,7 +71,11 @@ function createTextareaEditor(element, initialValue) {
   };
 }
 
-export async function attachCodeBuilderEditor(element, initialValue = "print('Hello from Novous CodeBuilder!')\n") {
+export async function attachCodeBuilderEditor(
+  element,
+  initialValue = "print('Hello from Novous2 CodeBuilder!')\n",
+  language = 'python'
+) {
   if (!element) {
     throw new Error('The CodeBuilder editor container was not found.');
   }
@@ -64,7 +84,7 @@ export async function attachCodeBuilderEditor(element, initialValue = "print('He
     const monaco = await loadMonaco();
     const editor = monaco.editor.create(element, {
       value: initialValue,
-      language: 'python',
+      language,
       theme: 'vs-dark',
       automaticLayout: true,
       ariaLabel: 'Python code editor',
@@ -90,21 +110,43 @@ export async function attachCodeBuilderEditor(element, initialValue = "print('He
       wordWrap: 'off',
     });
     let runHandler = null;
+    let saveHandler = null;
     let changeHandler = null;
+    let positionHandler = null;
     editor.onDidChangeModelContent(() => changeHandler?.());
+    editor.onDidChangeCursorPosition(() => positionHandler?.());
     editor.addAction({
       id: 'codebuilder.runPython',
       label: 'Run Python',
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
       run: () => runHandler?.(),
     });
+    let saveAction = null;
 
     return {
       getValue: () => editor.getValue(),
       setValue: (value) => { editor.setValue(value); },
+      setLanguage: (nextLanguage) => {
+        const model = editor.getModel();
+        if (model) monaco.editor.setModelLanguage(model, nextLanguage);
+      },
+      getPosition: () => editor.getPosition(),
       focus: () => editor.focus(),
       setRunHandler: (handler) => { runHandler = handler; },
+      setSaveHandler: (handler) => {
+        saveAction?.dispose();
+        saveHandler = handler;
+        if (handler) {
+          saveAction = editor.addAction({
+            id: 'codebuilder.save',
+            label: 'Save',
+            keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
+            run: () => saveHandler?.(),
+          });
+        }
+      },
       onChange: (handler) => { changeHandler = handler; },
+      onPosition: (handler) => { positionHandler = handler; },
       revealLine: (line) => {
         editor.revealLineInCenter(line);
         editor.setPosition({ lineNumber: line, column: 1 });

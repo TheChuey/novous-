@@ -1,6 +1,8 @@
-Look inside the Documentation folder
-Read a file that is in Documentation 
-Summarize what you have read
-Write a text file to the Documentation folder; call it summary.txt
+
+What is 4 + 5?
+Read the contents of the about.txt file in E:\Novous2\workspace\documentation 
+Write a summary of what you read and name it helloJesus.md, and save it inside E:\Novous2\workspace\documentation 
+Write a text file to the E:\Novous2\workspace\documentation folder; call it summary.txt
+Delete a file called summary.txt that is in E:\Novous2\workspace\documentation
 
 Check if those steps are met and tell me if you were successful, and list the tools that worked and the tools that did not

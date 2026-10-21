@@ -1,3 +1,5 @@
+import { createIcon } from './icons.js';
+
 const TEST_FUNCTIONS = [
   { id: 'runTestSuite', label: 'Run Test Suite', icon: 'play-circle', action: null },
   { id: 'debugAgent', label: 'Debug Agent', icon: 'bug', action: null },
@@ -24,15 +26,13 @@ export function buildTestPanel(containerId, actions = {}) {
   TEST_FUNCTIONS.forEach((test) => {
     const action = actions[test.id] || test.action;
     const button = document.createElement('button');
-    const icon = document.createElement('i');
     const label = document.createElement('span');
 
     button.className = 'test-function';
     button.type = 'button';
     button.dataset.testFunction = test.id;
-    icon.setAttribute('data-lucide', test.icon);
     label.textContent = test.label;
-    button.append(icon, label);
+    button.append(createIcon(test.icon), label);
 
     if (typeof action !== 'function') {
       button.classList.add('disabled');
@@ -63,7 +63,7 @@ export function buildTestPanel(containerId, actions = {}) {
   refreshTodoFiles.id = 'todo-file-refresh';
   refreshTodoFiles.className = 'btn btn-sm';
   refreshTodoFiles.type = 'button';
-  refreshTodoFiles.textContent = 'Refresh lists';
+  refreshTodoFiles.append(createIcon('refresh'), document.createTextNode('Refresh lists'));
   refreshTodoFiles.title = 'Refresh Markdown to-do lists';
 
   const loadingOption = document.createElement('option');
@@ -73,8 +73,4 @@ export function buildTestPanel(containerId, actions = {}) {
 
   todoSection.append(todoLabel, todoSelect, refreshTodoFiles);
   container.appendChild(todoSection);
-
-  if (typeof globalThis.lucide?.createIcons === 'function') {
-    globalThis.lucide.createIcons();
-  }
 }

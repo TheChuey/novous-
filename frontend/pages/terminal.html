@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terminal — Novous2 Sandbox</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/codebuilder.css?v=3">
+</head>
+<body class="bg-dark text-light tw-terminal-page">
+  <div id="terminal-root"></div>
+  <script type="module">
+    import { mountTerminal, TERMINAL_CHANNEL } from '/static/js/terminal.js?v=2';
+    const terminal = mountTerminal(document.getElementById('terminal-root'));
+    terminal.focus();
+
+    const channel = 'BroadcastChannel' in window ? new BroadcastChannel(TERMINAL_CHANNEL) : null;
+    if (channel) {
+      channel.postMessage({ type: 'popout-open' });
+      channel.onmessage = (event) => {
+        if (event.data?.type === 'close-popout') window.close();
+        if (event.data?.type === 'ping') channel.postMessage({ type: 'popout-open' });
+      };
+      window.addEventListener('beforeunload', () => channel.postMessage({ type: 'popout-closed' }));
+    }
+  </script>
+</body>
+</html>

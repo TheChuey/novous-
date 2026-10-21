@@ -1,5 +1,5 @@
 /**
- * Novous Unified API Client Wrapper
+ * Novous2 Unified API Client Wrapper
  */
 async function jsonOrThrow(res) {
   let data = null;
@@ -61,13 +61,13 @@ export const Api = {
   },
 
   // --- Agents & Chat (Core Engine) ---
-  async getAgents() {
-    return get('/api/agents');
+  async getAgents(environment = 'workspace') {
+    return get(`/api/agents?environment=${encodeURIComponent(environment)}`);
   },
 
-  async createAgent(agentId, name, description, mode = 'chat', squad = '', environment = 'workspace') {
+  async createAgent(agentId, name, description, mode = 'chat', squad = '', environment = 'workspace', environmentName = '') {
     return send('POST', '/api/agents/create', {
-      agent_id: agentId, name, description, mode, squad, environment
+      agent_id: agentId, name, description, mode, squad, environment, environment_name: environmentName
     });
   },
 
@@ -85,6 +85,12 @@ export const Api = {
     });
   },
 
+  async mapFolderPage(path, maxDepth, includeFiles, offset) {
+    return send('POST', '/api/tools/map-page', {
+      path, max_depth: maxDepth, include_files: includeFiles, offset
+    });
+  },
+
   async resetChat(sessionId) {
     return send('POST', `/api/chat/reset?session_id=${encodeURIComponent(sessionId)}`);
   },
@@ -99,7 +105,7 @@ export const Api = {
 
   async exportSession(sessionId) {
     const safeSessionId = String(sessionId).replace(/[^A-Za-z0-9_.-]/g, '_');
-    const suggestedName = `novous_${safeSessionId}_${new Date().toISOString().replace(/[:.]/g, '-')}.md`;
+    const suggestedName = `novous2_${safeSessionId}_${new Date().toISOString().replace(/[:.]/g, '-')}.md`;
     let pickerResult = null;
     if (typeof window.showSaveFilePicker === 'function') {
       pickerResult = window.showSaveFilePicker({
@@ -144,6 +150,10 @@ export const Api = {
     return get('/api/tools');
   },
 
+  async getToolLibrary() {
+    return get('/api/tools/library');
+  },
+
   async getWorkbenchTool(toolName) {
     return get(`/api/testing/tool-workbench/tools/${encodeURIComponent(toolName)}`);
   },
@@ -163,6 +173,34 @@ export const Api = {
 
   async readFile(path) {
     return get(`/api/file/read?path=${encodeURIComponent(path)}`);
+  },
+
+  async readManagedFile(path) {
+    return get(`/api/file-manager/read?path=${encodeURIComponent(path)}`);
+  },
+
+  async getManagedFileTree(path = '') {
+    return get(`/api/file-manager/tree?path=${encodeURIComponent(path)}`);
+  },
+
+  async getFileManagerRoots() {
+    return get('/api/file-manager/roots');
+  },
+
+  async selectFileManagerRoot(path) {
+    return send('POST', '/api/file-manager/roots/select', { path });
+  },
+
+  async writeManagedFile(path, content) {
+    return send('POST', '/api/file-manager/write', { path, content });
+  },
+
+  async createManagedPath(path, kind = 'file') {
+    return send('POST', '/api/file-manager/create', { path, kind });
+  },
+
+  async deleteManagedPath(path) {
+    return send('POST', '/api/file-manager/delete', { path });
   },
 
   async writeFile(path, content) {
@@ -226,25 +264,61 @@ export const Api = {
     });
   },
 
+  async evaluatePromptComponents(title, description, sections, tools) {
+    return send('POST', '/api/prompt-builder/evaluate', {
+      title, description, sections, tools
+    });
+  },
+
+  async judgePrompt(model, title, description, sections, tools) {
+    return send('POST', '/api/prompt-builder/judge', { model, title, description, sections, tools });
+  },
+
+  async probePrompt(model, title, description, prompt, factQuestion = '', factAnswer = '') {
+    return send('POST', '/api/prompt-builder/probe', {
+      model, title, description, prompt, fact_question: factQuestion, fact_answer: factAnswer
+    });
+  },
+
+  async saveTestReport(report) {
+    return send('POST', '/api/testing/reports', report);
+  },
+
+  async listTestReports() {
+    return get('/api/testing/reports');
+  },
+
+  async getTestReport(id) {
+    return get(`/api/testing/reports/${encodeURIComponent(id)}`);
+  },
+
   async runHeaderTests(agentId, environment = 'workspace') {
     return send('POST', '/api/testing/run_header_tests', { agent_id: agentId, environment });
   },
 
-  async executeToolTest(toolCode, functionInput = {}) {
+  async executeToolTest(toolCode, functionInput = {}, timeoutSeconds = 5) {
     return send('POST', '/api/testing/tool-workbench/execute', {
-      tool_code: toolCode, function_input: functionInput
+      tool_code: toolCode, function_input: functionInput, timeout_seconds: timeoutSeconds
     });
   },
 
-  async testToolWithLlm(model, toolCode, userPrompt) {
+  async generateToolFunction(model, description) {
+    return send('POST', '/api/testing/tool-workbench/generate-function', { model, description });
+  },
+
+  async getToolTestHarness(toolCode) {
+    return send('POST', '/api/testing/tool-workbench/test-harness', { tool_code: toolCode });
+  },
+
+  async testToolWithLlm(model, toolCode, userPrompt, timeoutSeconds = 5) {
     return send('POST', '/api/testing/tool-workbench/test-with-llm', {
-      model, tool_code: toolCode, user_prompt: userPrompt
+      model, tool_code: toolCode, user_prompt: userPrompt, timeout_seconds: timeoutSeconds
     });
   },
 
-  async promoteTestedTool(toolCode, functionInput = {}) {
+  async promoteTestedTool(toolCode, functionInput = {}, timeoutSeconds = 5) {
     return send('POST', '/api/testing/tool-workbench/promote', {
-      tool_code: toolCode, function_input: functionInput
+      tool_code: toolCode, function_input: functionInput, timeout_seconds: timeoutSeconds
     });
   },
 
@@ -252,9 +326,9 @@ export const Api = {
     return send('POST', '/api/testing/evaluate_markdown', { markdown, agent_id: agentId });
   },
 
-  async publishAgent(agentId, label = '', markdown, environment = 'workspace') {
+  async publishAgent(agentId, label = '', markdown, environment = 'workspace', tools = []) {
     return send('POST', '/api/testing/publish', {
-      agent_id: agentId, label, markdown, environment
+      agent_id: agentId, label, markdown, environment, tools
     });
   },
 

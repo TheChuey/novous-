@@ -1,11 +1,13 @@
 """Core Engine Doorway: Python API & FastAPI Router (/api/chat, /api/agents, /api/tools)."""
 
+import json
 import re
 import uuid
 from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -26,7 +28,8 @@ class CreateAgentRequest(BaseModel):
     description: str = ""
     mode: str = "chat"
     squad: str = ""
-    environment: Literal["workspace", "codebuilder"] = "workspace"
+    environment: Literal["workspace", "codebuilder", "prompt-creation"] = "workspace"
+    environment_name: str = Field("", max_length=64)
 
 
 class ChatRequest(BaseModel):
@@ -34,17 +37,15 @@ class ChatRequest(BaseModel):
     agent_id: str
     model: str = "qwen2.5-coder:latest"
     session_id: str | None = None
-    environment: Literal["workspace", "codebuilder"] = "workspace"
+    environment: Literal["workspace", "codebuilder", "prompt-creation"] = "workspace"
 
 
 class ExportSessionRequest(BaseModel):
     session_id: str = Field(..., min_length=1)
 
 
-def run_single_agent(agent_id: str, message: str, model: str | None = None,
-                     session_id: str | None = None,
-                     environment: str = "workspace") -> dict:
-    """Doorway function: run one agent turn through the Think-Act-Observe loop."""
+def _get_agent(agent_id: str, model: str | None, session_id: str | None, environment: str):
+    """Load (or reuse) the session's Agent; returns (agent, session_key, profile)."""
     try:
         profile = agent_factory.load_agent(agent_id, environment)
     except FileNotFoundError as exc:
@@ -52,11 +53,41 @@ def run_single_agent(agent_id: str, message: str, model: str | None = None,
 
     session_key = session_id or agent_id
     agent = SESSIONS.get(session_key)
+    if agent is not None and (
+        agent.profile.system_prompt != profile.system_prompt
+        or agent.profile.mode != profile.mode
+        or agent.profile.tools != profile.tools
+    ):
+        # The agent definition changed since this session started; a stale
+        # system prompt and history would keep the old behavior.
+        SESSIONS.pop(session_key, None)
+        agent = None
     if agent is None:
         tools = tool_catalog.get_tools(profile.tools) if profile.mode == "agent" else []
         agent = Agent(model=model or profile.model or None, tools=tools, profile=profile,
                       session=session_key)
         SESSIONS[session_key] = agent
+    return agent, session_key, profile
+
+
+def run_single_agent(agent_id: str, message: str, model: str | None = None,
+                     session_id: str | None = None,
+                     environment: str = "workspace") -> dict:
+    """Doorway function: run one agent turn through the Think-Act-Observe loop."""
+    try:
+        agent, session_key, profile = _get_agent(agent_id, model, session_id, environment)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        return {
+            "reply": f"[engine] Failed to initialize agent '{agent_id}': {exc}",
+            "agent_id": agent_id,
+            "session_id": session_id or agent_id,
+            "model": model or "unknown",
+            "tool_events": [],
+            "tool_stats": {},
+        }
+
 
     agent.tool_events = []
     try:
@@ -79,7 +110,7 @@ def run_single_agent(agent_id: str, message: str, model: str | None = None,
 
 
 def list_agents() -> list[dict]:
-    """Doorway function: list all canonical agents from workspace/agents/."""
+    """Doorway function: list all canonical agents from the central library."""
     return agent_factory.list_agents("workspace")
 
 
@@ -88,8 +119,10 @@ def reset_session(session_id: str) -> bool:
 
 
 @router.get("/api/agents")
-def api_list_agents():
-    return {"agents": list_agents()}
+def api_list_agents(environment: Literal["workspace", "codebuilder", "prompt-creation"] = "workspace"):
+    if environment == "workspace":
+        return {"agents": list_agents()}
+    return {"agents": agent_factory.list_agents(environment)}
 
 
 @router.post("/api/agents/create")
@@ -103,6 +136,7 @@ def api_create_agent(req: CreateAgentRequest):
             mode=req.mode if req.mode in ("chat", "agent") else "chat",
             squad=req.squad.strip(),
             environment=getattr(req, "environment", "workspace"),
+            environment_name=req.environment_name,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -146,6 +180,51 @@ async def api_chat(req: ChatRequest):
     return result
 
 
+def _publish_tool_event(event: dict, session_id: str) -> None:
+    event_data = {
+        "tool": event["tool"],
+        "args": event.get("args", {}),
+        "status": event["status"],
+        "origin": event["origin"],
+    }
+    if event.get("error") is not None:
+        event_data["error"] = event["error"]
+    editor_session_manager.publish(
+        EditorEventType.TOOL_EXECUTED, event["tool"], session_id, **event_data,
+    )
+
+
+@router.post("/api/chat/stream")
+def api_chat_stream(req: ChatRequest):
+    """Server-sent events: token / tool_event / done / error."""
+    message = req.message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message must not be empty.")
+    agent, session_key, profile = _get_agent(req.agent_id, req.model, req.session_id, req.environment)
+
+    def sse(payload: dict) -> str:
+        return f"data: {json.dumps(payload)}\n\n"
+
+    def events():
+        agent.tool_events = []
+        try:
+            for item in agent.think_stream(message):
+                if item["type"] == "tool_event":
+                    _publish_tool_event(item["event"], session_key)
+                elif item["type"] == "done":
+                    item.update(agent_id=req.agent_id, session_id=session_key, model=agent.model)
+                yield sse(item)
+        except Exception as exc:
+            if agent.messages and agent.messages[-1].get("role") == "user":
+                agent.messages.pop()
+            yield sse({"type": "error", "detail": (
+                f"[engine] Could not reach the model runtime: {exc}\n"
+                f"Start Ollama (e.g. `ollama serve`) and pull the model `{agent.model}`, then retry.")})
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @router.post("/api/chat/reset")
 def api_chat_reset(session_id: str):
     return {"reset": reset_session(session_id)}
@@ -181,12 +260,12 @@ def api_export_chat_session(req: ExportSessionRequest):
     safe_session_id = re.sub(r"[^A-Za-z0-9_.-]", "_", req.session_id).strip("._")
     if not safe_session_id:
         safe_session_id = "session"
-    filename = f"novous_{safe_session_id}_{timestamp}.md"
+    filename = f"novous2_{safe_session_id}_{timestamp}.md"
     exported_at = now.strftime("%Y-%m-%d %H:%M:%S")
     agent_name = agent.profile.name or req.session_id
 
     lines = [
-        f"# Novous Chat Session Log — {agent_name}",
+        f"# Novous2 Chat Session Log — {agent_name}",
         f"**Agent ID:** `{agent.profile.id}` | **Model:** `{agent.model}` | "
         f"**Session Key:** `{req.session_id}`",
         f"**Exported At:** `{exported_at}`",
@@ -224,13 +303,6 @@ def api_export_chat_session(req: ExportSessionRequest):
         media_type="text/markdown",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
-
-
-@router.get("/api/tools")
-def api_tools():
-    return {"tools": tool_catalog.list_tools(),
-            "providers": tool_catalog.PROVIDER_BINDINGS,
-            "load_errors": tool_catalog.get_load_errors()}
 
 
 def list_models() -> dict:

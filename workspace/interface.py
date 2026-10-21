@@ -17,7 +17,7 @@ START_TIME = time.time()
 
 def _default_project() -> dict:
     return {
-        "name": "Novous Workspace",
+        "name": "Novous2 Workspace",
         "version": "1.0.0",
         "description": "",
         "default_model": "qwen2.5-coder:latest",

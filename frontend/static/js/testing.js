@@ -1,4 +1,5 @@
 import { Api } from './api.js';
+import { offerInstallForRun, offerInstallBeforeRun, confirmReset } from './sandbox_ui.js';
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({
@@ -6,7 +7,7 @@ function esc(value) {
   }[c]));
 }
 
-export function renderTestingView(container) {
+export function renderTestingView(container, payload = null) {
   container.innerHTML = `
     <div class="card testing-runner">
       <div class="card-head">
@@ -26,13 +27,15 @@ export function renderTestingView(container) {
   const agentSel = container.querySelector('#ht-agent');
   const results = container.querySelector('#ht-results');
 
-  Promise.all([Api.getAgents(), Api.getCodeBuilderAgents()]).then(([workspaceData, codeBuilderData]) => {
+  Promise.all([Api.getAgents(), Api.getCodeBuilderAgents(), Api.getAgents('prompt-creation')]).then(([workspaceData, codeBuilderData, promptData]) => {
+    const label = environment => ({ codebuilder: 'CodeBuilder', 'prompt-creation': 'Prompt Creation' })[environment] || 'Workspace';
     const agents = [
       ...(workspaceData.agents || []).map(agent => ({ ...agent, environment: 'workspace' })),
-      ...(codeBuilderData.agents || []).map(agent => ({ ...agent, environment: 'codebuilder' }))
+      ...(codeBuilderData.agents || []).map(agent => ({ ...agent, environment: 'codebuilder' })),
+      ...(promptData.agents || []).map(agent => ({ ...agent, environment: 'prompt-creation' }))
     ];
     agentSel.innerHTML = agents.length
-      ? agents.map(agent => `<option value="${esc(agent.id)}" data-environment="${agent.environment}">${esc(agent.name)} (${esc(agent.id)}) · ${agent.environment === 'codebuilder' ? 'CodeBuilder' : 'Workspace'}</option>`).join('')
+      ? agents.map(agent => `<option value="${esc(agent.id)}" data-environment="${agent.environment}">${esc(agent.name)} (${esc(agent.id)}) · ${label(agent.environment)}</option>`).join('')
       : '<option value="">No agents found</option>';
   }).catch(err => {
     agentSel.innerHTML = `<option value="">Error: ${esc(err.message)}</option>`;
@@ -80,10 +83,19 @@ export function renderTestingView(container) {
     }
   });
 
-  renderToolWorkbench(container);
+  renderToolWorkbench(container, payload?.type === 'tool' ? payload : null);
+
+  if (payload?.type === 'category') {
+    results.innerHTML = `<p class="text-muted">Evaluating prompt category “${esc(payload.name)}” (${esc(payload.partCount)} parts)…</p>`;
+    Api.evaluateMarkdown(payload.markdown, payload.id).then(report => {
+      results.innerHTML = `<p class="text-muted small">Prompt category: <strong>${esc(payload.name)}</strong></p>${renderReport(report)}`;
+    }).catch(err => {
+      results.innerHTML = `<p class="text-danger">Error: ${esc(err.message)}</p>`;
+    });
+  }
 }
 
-function renderToolWorkbench(container) {
+function renderToolWorkbench(container, toolPayload = null) {
   container.insertAdjacentHTML('beforeend', `
     <section class="card tool-workbench mt-3" aria-labelledby="tool-workbench-title">
       <div class="card-head">
@@ -91,11 +103,11 @@ function renderToolWorkbench(container) {
           <h3 id="tool-workbench-title">Tool Function Testing Workbench</h3>
           <p class="text-muted small">Tests run on this computer using the local Python interpreter. Only run code you trust: tested code can access files, network, and resources available to your user account. Each run has a 5-second timeout.</p>
         </div>
-        <button type="button" class="btn btn-sm" id="tw-reset">Reset</button>
       </div>
+      <h4 class="tool-workbench-stage">Stage 1: Generate Python Function</h4>
       <div class="tool-workbench-grid">
         <label class="tool-workbench-field">
-          <span>LLM model</span>
+          <span>LLM Model</span>
           <span class="tool-workbench-model">
             <select id="tw-model" class="form-select" aria-label="LLM model">
               <option value="">Loading models…</option>
@@ -103,45 +115,82 @@ function renderToolWorkbench(container) {
             <button type="button" class="btn btn-sm" id="tw-refresh-models">Refresh</button>
           </span>
         </label>
-        <label class="tool-workbench-field tool-workbench-wide">
-          <span>Function code</span>
-          <textarea id="tw-code" class="tool-workbench-editor" rows="12" spellcheck="false"></textarea>
-        </label>
         <label class="tool-workbench-field">
-          <span>Function input (JSON)</span>
-          <textarea id="tw-input" class="tool-workbench-editor" rows="5" spellcheck="false"></textarea>
-          <span class="text-muted small">When the model calls the function, this shows the arguments it sent. If it makes no valid call, the current JSON is left unchanged.</span>
+          <span>Tool Description &amp; Rules</span>
+          <textarea id="tw-description" class="form-input" rows="5"></textarea>
         </label>
+        <div class="tool-workbench-actions tool-workbench-wide">
+          <button type="button" class="btn btn-primary" id="tw-generate-fn">Generate Python Function</button>
+        </div>
+        <div class="tool-workbench-field tool-workbench-wide">
+          <span>Python Function Code</span>
+          <div class="code-editor">
+            <div class="code-editor-bar">
+              <span class="code-editor-file">tool_function.py</span>
+              <span class="code-editor-actions">
+                <button type="button" class="btn btn-sm" id="tw-send-builder" title="Open this code in the Code Builder editor">Send to Code Builder</button>
+                <button type="button" class="btn btn-sm" id="tw-edit-code">Edit</button>
+                <button type="button" class="btn btn-sm" id="tw-copy-code">Copy</button>
+              </span>
+            </div>
+            <div class="code-view" id="tw-code-view" tabindex="0" aria-label="Python function code (read-only view)"></div>
+            <textarea id="tw-code" class="code-input" spellcheck="false" wrap="off" hidden
+                      aria-label="Python function code" placeholder="# Generate a function in Stage 1, or paste your own code here"></textarea>
+          </div>
+        </div>
+      </div>
+      <h4 class="tool-workbench-stage mt-3">Stage 2: Ask LLM to Use Function</h4>
+      <div class="tool-workbench-grid">
         <label class="tool-workbench-field">
-          <span>Prompt for LLM tool calling</span>
+          <span>Natural Language Request</span>
           <textarea id="tw-prompt" class="form-input" rows="5"></textarea>
+        </label>
+        <label class="tool-workbench-field">
+          <span>Extracted JSON Arguments</span>
+          <textarea id="tw-input" class="tool-workbench-editor" rows="5" spellcheck="false"></textarea>
+          <span class="text-muted small">Filled with the arguments the model sends. Edit it to run a Direct Python Test. Cleared if the model makes no tool call.</span>
         </label>
       </div>
       <div class="tool-workbench-actions">
-        <button type="button" class="btn btn-primary" id="tw-run">Run Code Test</button>
-        <button type="button" class="btn" id="tw-run-llm">Test Tool with LLM</button>
+        <button type="button" class="btn btn-primary" id="tw-run-llm">Ask LLM to Use Tool</button>
+      </div>
+      <h4 class="tool-workbench-stage mt-3">Stage 3 &amp; 4: Execution &amp; Test Results</h4>
+      <div class="tool-workbench-actions">
+        <button type="button" class="btn" id="tw-run">Direct Python Test</button>
+        <label class="text-muted small" for="tw-timeout">Time limit</label>
+        <select id="tw-timeout" class="form-select" style="width:auto" title="Raise this for GUI windows or slow code">
+          <option value="5">5 seconds</option>
+          <option value="30">30 seconds</option>
+          <option value="60">1 minute</option>
+          <option value="300">5 minutes</option>
+          <option value="600">10 minutes</option>
+        </select>
         <button type="button" class="btn" id="tw-save" disabled>Save Test Report (.md)</button>
+        <button type="button" class="btn" id="tw-reset">Clear Fields</button>
+        <button type="button" class="btn" id="tw-reset-env" title="Remove all packages installed for testing">Reset Environment</button>
         <button type="button" class="btn" id="tw-promote" disabled
                 title="Run a successful test before adding a tool">Add Passed Tool to Library</button>
         <span id="tw-status" class="text-muted small" role="status">Ready</span>
       </div>
       <label id="tw-llm-response-section" class="tool-workbench-field" hidden>
-        <span>LLM response / tool call</span>
+        <span>Raw LLM Response</span>
         <pre id="tw-llm-response" class="tool-workbench-output" aria-live="polite"></pre>
       </label>
       <label class="tool-workbench-field">
-        <span>Test output</span>
+        <span>Execution Output &amp; Result</span>
         <pre id="tw-output" class="tool-workbench-output" aria-live="polite">Run a test to see its result.</pre>
       </label>
       <div class="tool-workbench-library">
         <h4>Registered Tool Library</h4>
-        <p class="text-muted small">Promoted functions are appended to <code>workspace/tools/tool_library.py</code> so the library can be committed as one module.</p>
+        <p class="text-muted small">Tools listed here are registered from the five file-tool modules and <code>promoted_tools.py</code> in <code>tools/</code>.</p>
         <div id="tw-library" class="text-muted small">Loading tools…</div>
       </div>
-      <p class="text-muted small">Promoted code is trusted application code and will run in the Novous backend when an agent invokes it.</p>
+      <p class="text-muted small">Promoted code is trusted application code and will run in the Novous2 backend when an agent invokes it.</p>
     </section>`);
 
   const codeField = container.querySelector('#tw-code');
+  const descriptionField = container.querySelector('#tw-description');
+  const generateButton = container.querySelector('#tw-generate-fn');
   const inputField = container.querySelector('#tw-input');
   const promptField = container.querySelector('#tw-prompt');
   const modelSelect = container.querySelector('#tw-model');
@@ -153,30 +202,113 @@ function renderToolWorkbench(container) {
   const llmResponseSection = container.querySelector('#tw-llm-response-section');
   const llmResponse = container.querySelector('#tw-llm-response');
   const status = container.querySelector('#tw-status');
+  const timeoutSelect = container.querySelector('#tw-timeout');
+  const timeoutSeconds = () => Number(timeoutSelect.value) || 5;
   const library = container.querySelector('#tw-library');
 
-  const defaultCode = `def calculate_shipping(weight_kg: float, distance_km: float) -> dict:
-    """Calculate shipping fee from package weight and distance."""
-    base_rate = 5.0
-    cost = base_rate + (weight_kg * 1.5) + (distance_km * 0.05)
-    return {
-        "weight_kg": weight_kg,
-        "distance_km": distance_km,
-        "shipping_cost": round(cost, 2)
-    }`;
-  const defaultInput = `{
-  "weight_kg": 4.5,
-  "distance_km": 120.0
-}`;
-  const defaultPrompt = 'Calculate shipping for a 4.5kg package traveling 120km using the shipping tool.';
   let lastPassed = null;
   let lastTestReport = null;
   let busy = false;
+  const codeView = container.querySelector('#tw-code-view');
+  const editButton = container.querySelector('#tw-edit-code');
 
-  codeField.value = defaultCode;
-  inputField.value = defaultInput;
-  promptField.value = defaultPrompt;
+  const PY_KEYWORDS = new Set(['and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield', 'None', 'True', 'False']);
+  const PY_BUILTINS = new Set(['str', 'int', 'float', 'bool', 'list', 'dict', 'set', 'tuple', 'bytes', 'len', 'range', 'print', 'round', 'sum', 'min', 'max', 'abs', 'sorted', 'enumerate', 'zip', 'map', 'filter', 'isinstance', 'any', 'all', 'self', 'Any', 'Optional', 'List', 'Dict']);
+  const PY_TOKEN = /("""[\s\S]*?(?:"""|$)|'''[\s\S]*?(?:'''|$))|(#[^\n]*)|((?:[rbfRBF]{1,2})?(?:"(?:\\.|[^"\\\n])*"?|'(?:\\.|[^'\\\n])*'?))|(@[A-Za-z_][\w.]*)|(\b\d[\d_]*\.?\d*(?:[eE][+-]?\d+)?\b)|([A-Za-z_]\w*)/g;
 
+  function escapeHtml(text) {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function highlightPython(source) {
+    let html = '';
+    let last = 0;
+    let previousWord = '';
+    for (const match of source.matchAll(PY_TOKEN)) {
+      html += escapeHtml(source.slice(last, match.index));
+      const [text, triple, comment, string, decorator, number, word] = match;
+      // Close and reopen the span at each newline so every line is self-contained.
+      const wrap = (cls) => text.split('\n')
+        .map(part => part ? `<span class="${cls}">${escapeHtml(part)}</span>` : '')
+        .join('\n');
+      if (triple || string) html += wrap('tok-str');
+      else if (comment) html += wrap('tok-com');
+      else if (decorator) html += wrap('tok-dec');
+      else if (number) html += wrap('tok-num');
+      else if (word && PY_KEYWORDS.has(word)) html += wrap('tok-kw');
+      else if (word && (previousWord === 'def' || previousWord === 'class')) html += wrap('tok-fn');
+      else if (word && PY_BUILTINS.has(word)) html += wrap('tok-bi');
+      else html += escapeHtml(text);
+      if (word) previousWord = word;
+      else if (!/^\s+$/.test(text)) previousWord = '';
+      last = match.index + text.length;
+    }
+    return html + escapeHtml(source.slice(last));
+  }
+
+  const HARNESS_START = '# --- Novous2 test call';
+  function renderCodeView() {
+    const source = codeField.value.replace(/\r\n?/g, '\n');
+    codeView.innerHTML = source
+      ? highlightPython(source).split('\n').map((line, index) =>
+        `<div class="code-line"><span class="code-ln">${index + 1}</span><span class="code-text">${line || ' '}</span></div>`
+      ).join('')
+      : '<div class="code-empty">No code yet. Generate a function in Stage 1, or click Edit to paste your own.</div>';
+  }
+  async function setEditing(editing) {
+    if (editing && codeField.value.trim() && !codeField.value.includes(HARNESS_START)) {
+      try {
+        const { harness } = await Api.getToolTestHarness(codeField.value);
+        codeField.value = `${codeField.value.replace(/\s+$/, '')}\n\n\n${harness}`;
+      } catch (_) { /* invalid code: edit it without a test call */ }
+    }
+    codeField.hidden = !editing;
+    codeView.hidden = editing;
+    editButton.textContent = editing ? 'Done' : 'Edit';
+    if (editing) {
+      codeField.focus();
+    } else {
+      renderCodeView();
+    }
+  }
+  function setCode(value) {
+    codeField.value = value;
+    setEditing(false);
+  }
+  editButton.addEventListener('click', () => setEditing(codeField.hidden));
+  codeView.addEventListener('dblclick', () => setEditing(true));
+  setEditing(false);
+
+  container.querySelector('#tw-send-builder').addEventListener('click', () => {
+    if (!codeField.value.trim()) {
+      status.textContent = 'There is no code to send yet.';
+      status.className = 'text-danger small';
+      return;
+    }
+    try {
+      localStorage.setItem('novous2.codebuilder.incoming', codeField.value);
+    } catch (err) {
+      status.textContent = `Could not hand off code: ${err.message}`;
+      status.className = 'text-danger small';
+      return;
+    }
+    window.open('/codebuilder', '_blank');
+  });
+
+  container.querySelector('#tw-copy-code').addEventListener('click', async event => {
+    const button = event.currentTarget;
+    try {
+      await navigator.clipboard.writeText(codeField.value);
+      button.textContent = 'Copied!';
+    } catch (_) {
+      const wasHidden = codeField.hidden;
+      codeField.hidden = false;
+      codeField.select();
+      const ok = document.execCommand('copy');
+      codeField.hidden = wasHidden;
+      button.textContent = ok ? 'Copied!' : 'Copy failed';
+    }
+    setTimeout(() => { button.textContent = 'Copy'; }, 1500);
+  });
   function enableTabIndent(field) {
     field.addEventListener('keydown', event => {
       if (event.key !== 'Tab') return;
@@ -185,6 +317,7 @@ function renderToolWorkbench(container) {
       const end = field.selectionEnd;
       field.value = field.value.slice(0, start) + '    ' + field.value.slice(end);
       field.selectionStart = field.selectionEnd = start + 4;
+      field.dispatchEvent(new Event('input'));
     });
   }
 
@@ -302,8 +435,34 @@ function renderToolWorkbench(container) {
     promoteButton.disabled = busy || !unchangedSincePass || !hasValidInput;
   }
 
+  function renderOutput(result) {
+    const execution = result.tool_execution_result || result;
+    const lines = [];
+    const add = (text, cls = '') => {
+      const span = document.createElement('span');
+      if (cls) span.className = cls;
+      span.textContent = text.endsWith('\n') ? text : `${text}\n`;
+      lines.push(span);
+    };
+    if (execution.stdout) add(execution.stdout);
+    if (execution.stderr) add(execution.stderr, 'tw-out-error');
+    if (result.message && !execution.stderr) add(`Error: ${result.message}`, 'tw-out-error');
+    if (result.status === 'SUCCESS' && execution.output !== undefined) {
+      add(`Result: ${JSON.stringify(execution.output, null, 2)}`, 'tw-out-result');
+    }
+    if (result.status !== 'SUCCESS') {
+      const code = result.error_code || execution.error_code;
+      if (code) add(`[${code}]`, 'tw-out-error');
+    }
+    if (execution.exit_code !== undefined && execution.exit_code !== null) {
+      add(`Process exited with code ${execution.exit_code}.`, 'tw-out-meta');
+    }
+    if (!lines.length) add('Execution completed with no output.', 'tw-out-meta');
+    output.replaceChildren(...lines);
+  }
+
   function showResult(result, reportContext) {
-    output.textContent = JSON.stringify(result, null, 2);
+    renderOutput(result);
     lastTestReport = createTestReport(result, reportContext);
     saveButton.disabled = false;
     const passed = result.status === 'SUCCESS';
@@ -349,7 +508,7 @@ function renderToolWorkbench(container) {
 
   async function loadToolLibrary() {
     try {
-      const data = await Api.getTools();
+      const data = await Api.getToolLibrary();
       const tools = data.tools || [];
       library.innerHTML = tools.length
         ? tools.map(tool => `
@@ -374,11 +533,11 @@ function renderToolWorkbench(container) {
         functionInput = parseFunctionInput();
       } catch (err) {
         lastPassed = null;
-        output.textContent = JSON.stringify({
+        renderOutput({
           status: 'ERROR',
           error_code: 'ERR_INVALID_JSON_INPUT',
           message: err.message
-        }, null, 2);
+        });
         lastTestReport = createTestReport({
           status: 'ERROR',
           error_code: 'ERR_INVALID_JSON_INPUT',
@@ -391,11 +550,18 @@ function renderToolWorkbench(container) {
         return;
       }
     }
+    if (useLlm && !codeField.value.trim()) {
+      status.textContent = 'Complete Stage 1 first: generate or enter a Python function.';
+      status.className = 'text-danger small';
+      return;
+    }
     if (useLlm && !modelSelect.value) {
       status.textContent = 'Select an installed model first.';
       status.className = 'text-danger small';
       return;
     }
+
+    await offerInstallBeforeRun(codeField.value);
 
     let reportInput;
     try {
@@ -420,18 +586,31 @@ function renderToolWorkbench(container) {
     output.textContent = 'Test in progress…';
     llmResponseSection.hidden = true;
     llmResponse.textContent = '';
+    let needsInstallCheck = '';
     try {
       const result = useLlm
-        ? await Api.testToolWithLlm(modelSelect.value, codeField.value, promptField.value)
-        : await Api.executeToolTest(codeField.value, functionInput);
+        ? await Api.testToolWithLlm(modelSelect.value, codeField.value, promptField.value, timeoutSeconds())
+        : await Api.executeToolTest(codeField.value, functionInput, timeoutSeconds());
       if (useLlm) {
         showLlmResponse(result);
-        if (result.function_input !== undefined) {
-          inputField.value = JSON.stringify(result.function_input, null, 2);
-          reportContext.function_input = result.function_input;
+        let extracted = result.function_input;
+        if (extracted == null) {
+          const rawArgs = result.tool_calls_detected?.[0]?.function?.arguments;
+          if (rawArgs && typeof rawArgs === 'object') extracted = rawArgs;
+        }
+        if (extracted != null) {
+          inputField.value = JSON.stringify(extracted, null, 2);
+          reportContext.function_input = extracted;
+        } else {
+          inputField.value = '';
+          status.textContent = result.message || 'The model did not return tool arguments.';
         }
       }
       showResult(result, reportContext);
+      const execution = result.tool_execution_result || result;
+      needsInstallCheck = result.status !== 'SUCCESS'
+        ? `${execution.stderr || ''}\n${execution.stdout || ''}\n${result.message || ''}`
+        : '';
     } catch (err) {
       const result = {
         status: 'ERROR',
@@ -439,7 +618,7 @@ function renderToolWorkbench(container) {
         message: err.message
       };
       if (useLlm) showLlmResponse(result);
-      output.textContent = JSON.stringify(result, null, 2);
+      renderOutput(result);
       lastTestReport = createTestReport(result, reportContext);
       saveButton.disabled = false;
       status.textContent = 'Test failed';
@@ -450,10 +629,48 @@ function renderToolWorkbench(container) {
       llmButton.disabled = false;
       updatePromotion();
     }
+    if (needsInstallCheck && await offerInstallForRun(codeField.value, needsInstallCheck)) {
+      await runTest(useLlm);
+    }
   }
 
   runButton.addEventListener('click', () => runTest(false));
   llmButton.addEventListener('click', () => runTest(true));
+  generateButton.addEventListener('click', async () => {
+    if (!descriptionField.value.trim()) {
+      status.textContent = 'Enter a tool description first.';
+      status.className = 'text-danger small';
+      return;
+    }
+    if (!modelSelect.value) {
+      status.textContent = 'Select an installed model first.';
+      status.className = 'text-danger small';
+      return;
+    }
+    busy = true;
+    generateButton.disabled = runButton.disabled = llmButton.disabled = true;
+    status.textContent = 'Generating Python function…';
+    status.className = 'text-muted small';
+    try {
+      const result = await Api.generateToolFunction(modelSelect.value, descriptionField.value);
+      if (result.status === 'SUCCESS') {
+        setCode(result.code);
+        lastPassed = null;
+        status.textContent = `Generated ${result.function_name}. Next: ask the LLM to use it.`;
+        status.className = 'text-success small';
+      } else {
+        status.textContent = `${result.error_code}: ${result.message}`;
+        status.className = 'text-danger small';
+      }
+    } catch (err) {
+      status.textContent = `Could not generate function: ${err.message}`;
+      status.className = 'text-danger small';
+    } finally {
+      busy = false;
+      generateButton.disabled = runButton.disabled = llmButton.disabled = false;
+      updatePromotion();
+    }
+  });
   container.querySelector('#tw-refresh-models').addEventListener('click', loadModels);
   library.addEventListener('click', async event => {
     const loadButton = event.target.closest('[data-tool-load]');
@@ -461,7 +678,7 @@ function renderToolWorkbench(container) {
     if (loadButton) {
       try {
         const tool = await Api.getWorkbenchTool(loadButton.dataset.toolLoad);
-        codeField.value = tool.source;
+        setCode(tool.source);
         lastPassed = null;
         updatePromotion();
         status.textContent = `Loaded ${tool.name} from ${tool.path} for testing`;
@@ -501,7 +718,7 @@ function renderToolWorkbench(container) {
     try {
       const saved = await Api.saveMarkdown(
         renderTestReport(lastTestReport),
-        `novous-tool-test-${stamp}.md`
+        `novous2-tool-test-${stamp}.md`
       );
       if (saved.locationChosen) {
         alert(`Test results saved as ${saved.filename}.`);
@@ -516,7 +733,7 @@ function renderToolWorkbench(container) {
   });
   promoteButton.addEventListener('click', async () => {
     if (!lastPassed || !confirm(
-      'Add this tested function to the tool library? Promoted code runs as trusted code in the Novous backend.'
+      'Add this tested function to the tool library? Promoted code runs as trusted code in the Novous2 backend.'
     )) return;
 
     try {
@@ -525,9 +742,12 @@ function renderToolWorkbench(container) {
       llmButton.disabled = true;
       updatePromotion();
       status.textContent = 'Verifying test and adding tool…';
-      const result = await Api.promoteTestedTool(codeField.value, parseFunctionInput());
+      const result = await Api.promoteTestedTool(codeField.value, parseFunctionInput(), timeoutSeconds());
       output.textContent = JSON.stringify(result, null, 2);
       status.textContent = `Added ${result.promoted.name} to the tool library`;
+      if (result.requirements_added?.length) {
+        status.textContent += `. Added to requirements.txt: ${result.requirements_added.join(', ')} (run pip install -r requirements.txt in the app environment)`;
+      }
       status.className = 'text-success small';
       lastPassed = null;
       await loadToolLibrary();
@@ -547,10 +767,23 @@ function renderToolWorkbench(container) {
     }
   });
 
+  container.querySelector('#tw-reset-env').addEventListener('click', async () => {
+    try {
+      const result = await confirmReset();
+      if (!result) return;
+      status.textContent = result.output;
+      status.className = result.ok ? 'text-success small' : 'text-danger small';
+    } catch (err) {
+      status.textContent = `Reset failed: ${err.message}`;
+      status.className = 'text-danger small';
+    }
+  });
+
   container.querySelector('#tw-reset').addEventListener('click', () => {
-    codeField.value = defaultCode;
-    inputField.value = defaultInput;
-    promptField.value = defaultPrompt;
+    setCode('');
+    descriptionField.value = '';
+    inputField.value = '';
+    promptField.value = '';
     output.textContent = 'Run a test to see its result.';
     llmResponse.textContent = '';
     llmResponseSection.hidden = true;
@@ -564,4 +797,12 @@ function renderToolWorkbench(container) {
 
   loadModels();
   loadToolLibrary();
+
+  if (toolPayload) {
+    setCode(toolPayload.source);
+    inputField.value = toolPayload.input;
+    promptField.value = toolPayload.prompt;
+    status.textContent = `Loaded ${toolPayload.name} from ${toolPayload.path} for testing`;
+    container.querySelector('.tool-workbench').scrollIntoView({ block: 'start' });
+  }
 }

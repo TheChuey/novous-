@@ -9,6 +9,7 @@
 .codebuilder-toolbar {
   min-height: 42px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
@@ -16,6 +17,27 @@
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
+}
+
+.codebuilder-toolbar-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.question-dialog.is-resizable {
+  resize: both;
+  overflow: auto;
+  width: min(560px, 92vw);
+  min-width: 320px;
+  min-height: 240px;
+  max-width: 96vw;
+  max-height: 92vh;
+}
+
+.question-dialog.is-resizable .codebuilder-open-tree {
+  max-height: none;
+  min-width: 0;
 }
 
 .codebuilder-file-label,
@@ -220,6 +242,11 @@ body.is-resizing {
   padding: 0.35rem;
 }
 
+.codebuilder-agent-select {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
 .codebuilder-agent-tile.selected {
   border-color: var(--primary);
   box-shadow: 0 0 0 1px var(--primary);
@@ -236,6 +263,28 @@ body.is-resizing {
   display: flex;
   flex-direction: column;
 }
+
+.codebuilder-open-tree {
+  min-width: min(480px, 80vw);
+  max-height: 55vh;
+  overflow: auto;
+}
+
+.codebuilder-memory-dialog {
+  border: 1px solid var(--border, #444);
+  border-radius: 8px;
+  background: var(--bg-elev, #1f2430);
+  color: inherit;
+  padding: 1rem 1.1rem;
+  width: min(420px, 92vw);
+}
+
+.codebuilder-memory-dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
+.codebuilder-memory-dialog h3 { margin: 0 0 0.4rem; }
+.codebuilder-memory-dialog label { display: block; margin-top: 0.7rem; }
+.codebuilder-memory-dialog .form-select,
+.codebuilder-memory-dialog .form-input { width: 100%; margin-top: 0.25rem; }
+.codebuilder-memory-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
 
 .editor-surface {
   flex: 1;
@@ -295,6 +344,18 @@ body.is-resizing {
 .codebuilder-console-heading h2,
 .codebuilder-output-section h3,
 .codebuilder-problems-section h3 {
+  display: inline-block;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+#codebuilder-fix-with-agent,
+#codebuilder-copy-console {
+  float: right;
+}
+
+.codebuilder-output-section h3 {
+  display: inline-block;
   margin: 0;
   font-size: 0.85rem;
 }
@@ -780,4 +841,139 @@ body.codebuilder-modal-open {
     gap: 0.55rem;
     font-size: 0.65rem;
   }
+}
+/* ---------- Terminal (docked tab + pop-out page) ---------- */
+.codebuilder-console-tabs {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.4rem 0.85rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.codebuilder-console-tabs .btn.active {
+  background: var(--bg-elev);
+  border-bottom-color: var(--primary);
+  color: var(--text-main);
+}
+
+.codebuilder-console-panel.show-terminal .codebuilder-output-section,
+.codebuilder-console-panel.show-terminal .codebuilder-problems-section {
+  display: none;
+}
+
+.codebuilder-terminal-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0.6rem;
+}
+
+.codebuilder-terminal-section[hidden],
+.codebuilder-terminal-popped[hidden],
+.codebuilder-terminal-mount[hidden] {
+  display: none;
+}
+
+.codebuilder-terminal-mount {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.codebuilder-terminal-popped {
+  text-align: center;
+  padding: 1.5rem 0.5rem;
+  color: var(--text-muted);
+}
+
+.tw-terminal {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  background: #1e1e1e;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.5rem;
+}
+
+.tw-terminal-page,
+.tw-terminal-page #terminal-root {
+  height: 100vh;
+  margin: 0;
+}
+
+.tw-terminal-page .tw-terminal {
+  height: 100%;
+  box-sizing: border-box;
+  border-radius: 0;
+  border: 0;
+}
+
+.tw-terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.tw-terminal-spacer { flex: 1; }
+
+.tw-terminal-cwd {
+  color: #9cdcfe;
+  font: 0.72rem Consolas, "Courier New", monospace;
+  overflow-wrap: anywhere;
+}
+
+.tw-terminal-badge {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: #1f6f43;
+  color: #fff;
+}
+
+.tw-terminal-links a {
+  display: block;
+  color: #4ec9b0;
+  font-size: 0.78rem;
+}
+
+.tw-terminal-output {
+  flex: 1;
+  min-height: 6rem;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #d4d4d4;
+  font: 0.78rem/1.45 Consolas, "Courier New", monospace;
+}
+
+.tw-terminal-form {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-top: 1px solid #333;
+  padding-top: 0.4rem;
+}
+
+.tw-terminal-prompt { color: #4ec9b0; font-family: Consolas, monospace; }
+
+.tw-terminal-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: #fff;
+  font: 0.8rem Consolas, "Courier New", monospace;
+}
+
+.codebuilder-filename {
+  color: var(--text-main);
+  font-weight: 600;
 }
