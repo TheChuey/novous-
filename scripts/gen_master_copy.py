@@ -8,7 +8,17 @@ TODAY = datetime.now().strftime("%Y%m%d")
 OUT = ROOT / "app_documentation" / f"MASTER_COPY_{TODAY}.md"
 
 INCLUDE = {".py", ".js", ".css", ".html", ".json", ".md", ".bat", ".sh"}
-EXCLUDE_DIRS = {"venv", "__pycache__", ".git", "node_modules", "test_agents", "app_documentation"}
+EXCLUDE_DIRS = {
+    "venv",
+    "__pycache__",
+    ".git",
+    ".pytest_cache",
+    "node_modules",
+    "test_agents",
+    "test_reports",
+    "model_logs",
+    "app_documentation",
+}
 MAX_FILE_BYTES = 200_000
 
 

@@ -10,7 +10,19 @@ try:
 except Exception:
     COMMIT = "unknown"
 
-EXCLUDE_DIRS = {"venv", "__pycache__", ".git", "node_modules", "dist", "build", "app_documentation"}
+EXCLUDE_DIRS = {
+    "venv",
+    "__pycache__",
+    ".git",
+    ".pytest_cache",
+    "node_modules",
+    "dist",
+    "build",
+    "app_documentation",
+    "test_agents",
+    "test_reports",
+    "model_logs",
+}
 INCLUDE_EXT = {".py", ".js", ".css", ".html", ".json", ".md", ".txt", ".bat", ".sh", ".yaml", ".yml", ".cfg", ".ini"}
 SKIP_FILES = {"MASTER_COPY.md", "novous2-ai-builder-prompt-v2.md"}
 
