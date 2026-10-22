@@ -1,12 +1,130 @@
-# Novous Agent Factory — Master Copy
+# Novous — Master Copy
 
-Generated from `E:\novous` — 123 files.
+Complete source copy of the Novous repository — 126 files.
+Date: 2026-10-22
+Commit: 5c4473b
+
+## `file_manager_listing.txt`
+```text
+file_manager/__init__.py
+file_manager/backend.py
+file_manager/interface.py
+file_manager/schemas.py
+file_manager/service.py
+file_manager/test_file_manager.py
+
+```
+
+## `requirements.txt`
+```text
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+websockets>=12.0
+pydantic>=2.6.0
+ollama>=0.1.7
+langchain-core>=0.1.30
+langgraph>=0.0.25
+docling>=1.0.0
+chromadb>=0.4.24
+jinja2>=3.1.3
+python-multipart>=0.0.9
+
+```
+
+## `server.py`
+```python
+import os
+from pathlib import Path
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+from core_engine.interface import router as core_router
+from editor.interface import router as editor_router
+from workspace.interface import router as workspace_router
+from test_environment.interface import router as test_router
+from codebuilder.interface import router as codebuilder_router
+from file_manager.interface import router as file_manager_router
+from tools.interface import router as tools_router
+
+app = FastAPI(title="Novous AGENT FACTORY", version="4.0.0")
+
+
+@app.on_event("startup")
+def migrate_sandbox_environment():
+    """Move packages from the old in-repo sandbox venv to the configured sandbox folder."""
+    import threading
+    from agentMemory.interface import start_document_scanner
+    from test_environment import sandbox_env
+
+    threading.Thread(target=sandbox_env.migrate_legacy, daemon=True).start()
+    start_document_scanner()
+
+# Mount Component Backend Routers
+app.include_router(tools_router)
+app.include_router(core_router)
+app.include_router(editor_router)
+app.include_router(workspace_router)
+app.include_router(test_router)
+app.include_router(codebuilder_router)
+app.include_router(file_manager_router)
+
+# Serve Static Assets (CSS, JS)
+app.mount("/static", StaticFiles(directory=Path("frontend") / "static"), name="static")
+
+# Mount Page Routes
+@app.get("/")
+def index_page():
+    return FileResponse("frontend/pages/index.html")
+
+@app.get("/editor")
+def editor_page():
+    return FileResponse("frontend/pages/editor.html")
+
+@app.get("/codebuilder")
+def codebuilder_page():
+    return FileResponse("frontend/pages/codeBuilder.html")
+
+@app.get("/chat")
+def chat_page():
+    return FileResponse("frontend/pages/chat.html")
+
+@app.get("/terminal")
+def terminal_page():
+    return FileResponse("frontend/pages/terminal.html")
+
+@app.api_route("/test", methods=["GET", "POST"])
+def test_page():
+    return FileResponse("frontend/pages/testing.html")
+
+if __name__ == "__main__":
+    import uvicorn
+    host = os.getenv("PROJECT_MANAGER_HOST", "127.0.0.1")
+    port = int(os.getenv("PROJECT_MANAGER_PORT", "8000"))
+    uvicorn.run("server:app", host=host, port=port, reload=True)
+
+```
+
+## `tools_listing.txt`
+```text
+tools/__init__.py
+tools/agent_memory_tool.py
+tools/allowed_paths.json
+tools/delete_file_tool.py
+tools/editor_tool.py
+tools/interface.py
+tools/map_files_tool.py
+tools/promoted_tools.py
+tools/read_tool.py
+tools/write_tool.py
+
+```
 
 ## `about/about.md`
-```md
-Date: 2026-10-21
+```markdown
+Date: 2026-10-22
 Name: Novous Application Snapshot
-Filename: NOVOUS_APP_SNAPSHOT_20261021_new.md
+Filename: NOVOUS_APP_SNAPSHOT_20261022_new.md
 
 
 
@@ -34,7 +152,7 @@ Self-contained reference for an AI agent. Captures Novous app purpose, architect
 ```
 
 ## `about/about.py`
-```py
+```python
 """Sync app identity from about.md to the index page and app documentation."""
 
 import argparse
@@ -187,19 +305,13 @@ if __name__ == "__main__":
 ```
 
 ## `agentMemory/__init__.py`
-```py
+```python
 """Shared scratchpad and SQL-backed semantic memory for Novous agents."""
 
 ```
 
-## `agentMemory/data/scratchpad.json`
-```json
-{}
-
-```
-
 ## `agentMemory/indexer.py`
-```py
+```python
 """Document discovery, parsing, chunking, and local Ollama embedding generation."""
 
 import logging
@@ -437,7 +549,7 @@ def refresh_index(force: bool = False) -> dict:
 ```
 
 ## `agentMemory/interface.py`
-```py
+```python
 """The public doorway to agent scratchpad memory and the document knowledge base."""
 
 import math
@@ -636,7 +748,7 @@ def start_document_scanner() -> bool:
 ```
 
 ## `agentMemory/rag_config.py`
-```py
+```python
 """Configurable location of the RAG Knowledge Base folder."""
 
 import json
@@ -706,7 +818,7 @@ def _write_config(data: dict) -> None:
 ```
 
 ## `agentMemory/rag_database.py`
-```py
+```python
 """SQLite CRUD operations for indexed document chunks and embedding vectors."""
 
 import json
@@ -890,7 +1002,7 @@ def get_document_chunks(path: str) -> list[dict[str, Any]]:
 ```
 
 ## `agentMemory/scratchpad.py`
-```py
+```python
 """Atomic, single-file storage for the latest agent memory snapshots."""
 
 import json
@@ -997,8 +1109,75 @@ def clear_memory() -> dict[str, Any]:
 
 ```
 
+## `codebuilder/README.md`
+````markdown
+# codebuilder/ — refactored pillar (drop-in)
+
+Replaces the existing `codebuilder/` folder. Nothing else in the app changes: same package name,
+same import paths, same URLs, and same JSON/SSE shapes.
+
+## Layers (dependencies point downward only)
+
+```
+interface.py   HTTP adapter: routes, status codes, SSE framing      ─┐
+tools/         agent adapter: @tool functions                        ─┼─> service.py ─> host bridge (lazy imports)
+                                                                      │
+execution.py   engine: isolated runs + stuck handling                ─┘ (interface also calls the engine directly)
+schemas.py     contracts (pydantic only)
+```
+
+| Module | Concern | Knows about |
+| :-- | :-- | :-- |
+| `schemas.py` | data shapes | pydantic |
+| `execution.py` | processes, deadlines, diagnostics | stdlib + schemas |
+| `service.py` | use-cases (edits, agent info, questionnaire) and the **only** `core_engine` coupling | schemas |
+| `interface.py` | HTTP | FastAPI, service, execution |
+| `tools/tool_library.py` | agent tools | core `@tool`, service |
+
+12 modules became 6 (+ a one-line `tools/__init__.py`). Removed: `agent_codebuilder`,
+`execution_codebuilder`, `codebuilder_schemas`, `interface_codebuilder` (aliases), `runner` + `execution`
+(merged), `agent_loader` (now in `service`), `diagnostics` (unused; folded into the engine).
+
+## Host contract (unchanged)
+
+| Host code | Needs |
+| :-- | :-- |
+| `server.py` | `codebuilder.interface.router`, `tools.interface.router` |
+| `tools/codebuilder_tools.py` | `codebuilder.execution.execute_python_code`, `codebuilder.schemas.CodeExecutionRequest`, `codebuilder.service` |
+| `core_engine/tool_catalog.py` | auto-discovers `tools/codebuilder_tools.py` (registry-only) |
+| `core_engine/agent_factory.py` | `library/<id>.md` |
+
+## When code gets stuck
+
+Both modes run in a child process under one supervisor, so user code can never freeze the server.
+
+| Situation | What happens |
+| :-- | :-- |
+| Infinite loop / long `sleep` / blocking call | Killed at the deadline. `faulthandler` reports the line it was stuck on. |
+| Unbounded `print` loop | Stopped at 64 KiB (`output_limit`) instead of spinning until timeout. |
+| `input()` | stdin is closed: immediate `EOFError`, no hang. |
+| Code spawned child processes | The whole process tree is killed (`taskkill /T` on Windows, process group elsewhere). |
+| Browser tab closed / stream abandoned | Generator close kills the run; a watchdog kills it at `timeout + 1s` regardless. |
+| User or tool wants to stop it | `POST /api/codebuilder/execute/{run_id}/cancel` (id is in the stream's `start` event). |
+| Agent runs hanging code | `run_python_code` returns `timed_out` + `stuck {reason, line, source, hint}` so the model can fix it. |
+
+`timeout_seconds` is clamped to 0.1–120 s. The editor marker lands on the stuck line.
+
+## Behaviour changes to be aware of
+
+* `safe` mode no longer executes inside the server process (it is an isolated child, ~60 ms start-up).
+  Its timeout is now actually enforced; before, `timeout_seconds` was ignored in safe mode.
+* `/edit` rejects paths outside the project root (override with `CODEBUILDER_EDIT_ROOT`).
+* `ask_user_questions` registers only if the host has `core_engine.hitl`.
+
+## Tests
+
+`python -m pytest codebuilder/tests -q` (needs pytest, fastapi, httpx; no Ollama, no running host).
+
+````
+
 ## `codebuilder/__init__.py`
-```py
+```python
 """CodeBuilder pillar package.
 
 Layers (dependencies point downward only):
@@ -1033,7 +1212,7 @@ __all__ = [
 ```
 
 ## `codebuilder/execution.py`
-```py
+```python
 """CodeBuilder engine: run Python in an isolated process and never get stuck.
 
 Layer rule: this module knows about processes and diagnostics only. It does not
@@ -1571,7 +1750,7 @@ def execute_python_code(req: CodeExecutionRequest) -> CodeExecutionResult:
 ```
 
 ## `codebuilder/files.py`
-```py
+```python
 """Save and open Python scripts for the Code Builder editor inside the allowed sandbox folders."""
 
 import os
@@ -1661,7 +1840,7 @@ def run_command(path: str, source: str) -> str:
 ```
 
 ## `codebuilder/interface.py`
-```py
+```python
 """CodeBuilder doorway: the HTTP adapter. Routing, status codes and SSE framing only.
 
 Layer rule: no business logic here. Each endpoint validates transport concerns and
@@ -1862,179 +2041,8 @@ def api_run_command(req: RunCommandRequest):
     return {"command": script_files.run_command(str(path), req.content), "cwd": str(path.parent)}
 ```
 
-## `codebuilder/markdown/CODEBUILDER-MASTER.md`
-```md
-﻿# CodeBuilder Architecture Master Reference
-
-## Overview
-
-CodeBuilder provides isolated Python code execution, interactive Monaco editor integration, and human-in-the-loop questionnaire workflows for Novous agents.
-
----
-
-## Tool Architecture & `core_engine/tool_catalog.py`
-
-### 1. Transition: From Single Master File to Registry-Only Catalog
-
-Previously, `core_engine/tool_catalog.py` served as a single master file containing both the registration logic and the inline implementations of all system tools. 
-
-Under the locked modular architecture, **`core_engine/tool_catalog.py` is registry-only**. Tool implementations have been migrated into dedicated modules under the `tools/` directory. `tool_catalog.py` is strictly responsible for:
-- Maintaining `REGISTRY: dict[str, dict]` and the `@tool` decorator.
-- Discovering and dynamically loading tool modules from `tools/`.
-- Tracking isolated module load failures in `LOAD_ERRORS`.
-- Generating comprehensive diagnostics through `get_catalog_report()`.
-
-### 2. Target Layout (`tools/`)
-
-```
-tools/
-├── __init__.py            # Minimal; no eager module imports
-├── interface.py           # Doorway: FastAPI router + Python functions + promoted-module IO
-├── core_tools.py          # calculator, docling_parse, rag_agent_tool, agent_info (+ _safe_eval, _OPERATORS)
-├── editor_tools.py        # read_file, write_file, create_file, delete_file, list_directory, extract_docstrings, search_workspace
-├── workspace_tools.py     # project_status
-├── file_manager_tools.py  # fm_list_directory, fm_read_file, fm_write_file (file-manager-backed tools)
-├── map_tools.py           # list_allowed_paths, map_folder, map_file (allow-list restricted folder/file mapping)
-├── codebuilder_tools.py   # run_python_code, send_code_to_editor, run_code_in_editor, ask_user_questions (module currently has load errors)
-├── promoted.py            # Workbench-promoted custom tools (with promotion marker section)
-└── allowed_paths.json     # Allow-list of root paths for map tools
-```
-
-#### Module Responsibilities
-- **`tools/core_tools.py`**: Evaluation tools, document parsing via Docling, RAG search, and agent profile inspection.
-- **`tools/editor_tools.py`**: Workspace filesystem manipulation, directory tree inspection, AST docstring extraction, and workspace searches.
-- **`tools/workspace_tools.py`**: Project state reporting (`project_status`).
-- **	ools/codebuilder_tools.py**: CodeBuilder pillar tools:
-  - 
-un_python_code: executes code through codebuilder.execution.execute_python_code.
-  - send_code_to_editor: queues code insertion into Monaco editor.
-  - 
-un_code_in_editor: triggers execution of active editor buffer.
-  - sk_user_questions: Questionnaire flow (registered only when host supports questionnaires). 
-  - **Note:** Current file contains an IndentationError (line 41) preventing load; see Diagnostics below.
-- **	ools/file_manager_tools.py**: File-manager-backed tools for listing/reading/writing under the configured file-manager root.
-- **	ools/map_tools.py**: Read-only folder/file mapping restricted to roots in llowed_paths.json (list_allowed_paths, map_folder with paging, map_file with AST inspection).
-- **	ools/promoted.py**: Holds workbench-promoted custom tools. Maintains the # PROMOTION_MARKER separator.
-- **	ools/interface.py**: The single doorway for tool catalog HTTP routes and Python APIs.
-
-### 3. Dynamic Auto-Discovery & Isolation
-
-The loader (`tool_catalog.load_tools(reload=False)`) discovers tool modules automatically:
-- Scans all `*.py` files in `tools/`, strictly excluding `__init__.py`, `interface.py`, and any private files starting with `_*`.
-- Loads each module in isolation using `importlib.util.spec_from_file_location`.
-- **Fault-Tolerance**: If a tool module contains syntax errors, broken imports, or duplicate tool name collisions, the error is captured in `LOAD_ERRORS[filename]` and the module is skipped. The failure is non-fatal: `/api/tools`, the catalog registry, and all other agents remain operational (HTTP 200).
-- Adding a new tool module to `tools/` requires no edits to `__init__.py`.
-
-### 4. Promotion Flow (`tools/promoted.py`)
-
-Tools created and tested in the Function Testing Workbench are promoted into the active runtime:
-1. Workbench tests and validates the tool function.
-2. Promotion calls `tools.interface.register_tool(source, name)`.
-3. The source is decorated with `@tool` and appended to `tools/promoted.py` below the `# PROMOTION_MARKER`.
-4. The function block is executed into `tool_catalog.__dict__` for instant runtime availability without server restart.
-5. If execution fails, `promoted.py` is rolled back and the entry is popped from `REGISTRY`.
-6. Deletion via `tools.interface.remove_tool(name)` removes the function span from `tools/promoted.py` and pops it from `REGISTRY`. Promoted file additions and removals are byte-identical round-trips.
-
-### 5. Doorway APIs & Routes (`tools/interface.py`)
-
-#### HTTP Routes:
-- `GET /api/tools`: Returns `{tools: [...], providers: {...}, warnings: [...]}`. Base tools plus custom overlay (`custom: true` for promoted tools).
-- `GET /api/tools/{name}`: Returns metadata for a specific tool.
-- `POST /api/tools/register`: Registers a custom tool (`{source, name}`).
-- `DELETE /api/tools/{name}`: Removes a custom tool.
-- POST /api/tools/map-page: Returns paged folder tree (body: {path, max_depth, include_files, offset}) for allow-listed absolute paths via 	ools.map_tools.render_map_page.
-- `GET /api/tools/health`: Returns catalog health and any active `load_errors`.
-
-#### Python Doorway:
-- `list_tools()`
-- `get_tool(name)`
-- `get_tool_source(name)`
-- `register_tool(source, name)`
-- `remove_tool(name)`
-- `provider_bindings()`
-- `catalog_report()`
-
-### 6. Diagnostics & Verification
-
-`tool_catalog.get_catalog_report()` walks all registered agent definitions under the agent library (`LIBRARY_ROOT = REPO_ROOT / "library"`; see `core_engine/agent_factory.py`) and parses `library/*.md` agent files (YAML frontmatter) to detect missing tools. It maps requested tools against `REGISTRY`. 
-
-**Current state:** `core_engine.tool_catalog.load_tools()` reports load errors for tool modules (e.g. `tools/codebuilder_tools.py` currently fails to load due to an IndentationError). The catalog captures these in `LOAD_ERRORS` and marks failures as warnings in `get_catalog_report()`; the system remains operational. Builtin tool set includes `calculator`, `docling_parse`, `rag_agent_tool`, `agent_info`, `read_file`, `write_file`, `create_file`, `delete_file`, `list_directory`, `extract_docstrings`, `search_workspace`, `fm_list_directory`, `fm_read_file`, `fm_write_file`, `list_allowed_paths`, `map_folder`, `map_file`, `project_status` (18 tools registered at runtime as observed; counts may vary if any modules fail to load).
-
-
-
-**Note:** Per this request (plan-only update scope), the CodeBuilder pillar (execution engine, /api/codebuilder/* routes, terminal, files, HITL questionnaire flow) is not expanded in this refresh. 
-
-```
-
-## `codebuilder/README.md`
-```md
-# codebuilder/ — refactored pillar (drop-in)
-
-Replaces the existing `codebuilder/` folder. Nothing else in the app changes: same package name,
-same import paths, same URLs, and same JSON/SSE shapes.
-
-## Layers (dependencies point downward only)
-
-```
-interface.py   HTTP adapter: routes, status codes, SSE framing      ─┐
-tools/         agent adapter: @tool functions                        ─┼─> service.py ─> host bridge (lazy imports)
-                                                                      │
-execution.py   engine: isolated runs + stuck handling                ─┘ (interface also calls the engine directly)
-schemas.py     contracts (pydantic only)
-```
-
-| Module | Concern | Knows about |
-| :-- | :-- | :-- |
-| `schemas.py` | data shapes | pydantic |
-| `execution.py` | processes, deadlines, diagnostics | stdlib + schemas |
-| `service.py` | use-cases (edits, agent info, questionnaire) and the **only** `core_engine` coupling | schemas |
-| `interface.py` | HTTP | FastAPI, service, execution |
-| `tools/tool_library.py` | agent tools | core `@tool`, service |
-
-12 modules became 6 (+ a one-line `tools/__init__.py`). Removed: `agent_codebuilder`,
-`execution_codebuilder`, `codebuilder_schemas`, `interface_codebuilder` (aliases), `runner` + `execution`
-(merged), `agent_loader` (now in `service`), `diagnostics` (unused; folded into the engine).
-
-## Host contract (unchanged)
-
-| Host code | Needs |
-| :-- | :-- |
-| `server.py` | `codebuilder.interface.router`, `tools.interface.router` |
-| `tools/codebuilder_tools.py` | `codebuilder.execution.execute_python_code`, `codebuilder.schemas.CodeExecutionRequest`, `codebuilder.service` |
-| `core_engine/tool_catalog.py` | auto-discovers `tools/codebuilder_tools.py` (registry-only) |
-| `core_engine/agent_factory.py` | `library/<id>.md` |
-
-## When code gets stuck
-
-Both modes run in a child process under one supervisor, so user code can never freeze the server.
-
-| Situation | What happens |
-| :-- | :-- |
-| Infinite loop / long `sleep` / blocking call | Killed at the deadline. `faulthandler` reports the line it was stuck on. |
-| Unbounded `print` loop | Stopped at 64 KiB (`output_limit`) instead of spinning until timeout. |
-| `input()` | stdin is closed: immediate `EOFError`, no hang. |
-| Code spawned child processes | The whole process tree is killed (`taskkill /T` on Windows, process group elsewhere). |
-| Browser tab closed / stream abandoned | Generator close kills the run; a watchdog kills it at `timeout + 1s` regardless. |
-| User or tool wants to stop it | `POST /api/codebuilder/execute/{run_id}/cancel` (id is in the stream's `start` event). |
-| Agent runs hanging code | `run_python_code` returns `timed_out` + `stuck {reason, line, source, hint}` so the model can fix it. |
-
-`timeout_seconds` is clamped to 0.1–120 s. The editor marker lands on the stuck line.
-
-## Behaviour changes to be aware of
-
-* `safe` mode no longer executes inside the server process (it is an isolated child, ~60 ms start-up).
-  Its timeout is now actually enforced; before, `timeout_seconds` was ignored in safe mode.
-* `/edit` rejects paths outside the project root (override with `CODEBUILDER_EDIT_ROOT`).
-* `ask_user_questions` registers only if the host has `core_engine.hitl`.
-
-## Tests
-
-`python -m pytest codebuilder/tests -q` (needs pytest, fastapi, httpx; no Ollama, no running host).
-
-```
-
 ## `codebuilder/schemas.py`
-```py
+```python
 """CodeBuilder contracts: the data shapes shared by every layer.
 
 This module is dependency-free (pydantic only). The HTTP adapter, the service,
@@ -2104,7 +2112,7 @@ class StructuredEditRequest(BaseModel):
 ```
 
 ## `codebuilder/service.py`
-```py
+```python
 """CodeBuilder application layer: the use-cases, and the ONLY bridge to the host app.
 
 Layer rule: no FastAPI here (HTTP lives in ``interface.py``), no process handling
@@ -2289,7 +2297,7 @@ def ask_user(json_file_path: str, timeout_seconds: float = 300.0) -> str:
 ```
 
 ## `codebuilder/terminal.py`
-```py
+```python
 """Shared terminal for the CodeBuilder: runs one shell command at a time in the sandbox environment.
 
 A single session is shared by the docked panel and the pop-out window. Output is kept in a
@@ -2486,13 +2494,117 @@ session = TerminalSession()
 
 ```
 
+## `codebuilder/markdown/CODEBUILDER-MASTER.md`
+````markdown
+﻿# CodeBuilder Architecture Master Reference
+
+## Overview
+
+CodeBuilder provides isolated Python code execution, interactive Monaco editor integration, and human-in-the-loop questionnaire workflows for Novous agents.
+
+---
+
+## Tool Architecture & `core_engine/tool_catalog.py`
+
+### 1. Transition: From Single Master File to Registry-Only Catalog
+
+Previously, `core_engine/tool_catalog.py` served as a single master file containing both the registration logic and the inline implementations of all system tools. 
+
+Under the locked modular architecture, **`core_engine/tool_catalog.py` is registry-only**. Tool implementations have been migrated into dedicated modules under the `tools/` directory. `tool_catalog.py` is strictly responsible for:
+- Maintaining `REGISTRY: dict[str, dict]` and the `@tool` decorator.
+- Discovering and dynamically loading tool modules from `tools/`.
+- Tracking isolated module load failures in `LOAD_ERRORS`.
+- Generating comprehensive diagnostics through `get_catalog_report()`.
+
+### 2. Target Layout (`tools/`)
+
+```
+tools/
+├── __init__.py            # Minimal; no eager module imports
+├── interface.py           # Doorway: FastAPI router + Python functions + promoted-module IO
+├── core_tools.py          # calculator, docling_parse, rag_agent_tool, agent_info (+ _safe_eval, _OPERATORS)
+├── editor_tools.py        # read_file, write_file, create_file, delete_file, list_directory, extract_docstrings, search_workspace
+├── workspace_tools.py     # project_status
+├── file_manager_tools.py  # fm_list_directory, fm_read_file, fm_write_file (file-manager-backed tools)
+├── map_tools.py           # list_allowed_paths, map_folder, map_file (allow-list restricted folder/file mapping)
+├── codebuilder_tools.py   # run_python_code, send_code_to_editor, run_code_in_editor, ask_user_questions (module currently has load errors)
+├── promoted.py            # Workbench-promoted custom tools (with promotion marker section)
+└── allowed_paths.json     # Allow-list of root paths for map tools
+```
+
+#### Module Responsibilities
+- **`tools/core_tools.py`**: Evaluation tools, document parsing via Docling, RAG search, and agent profile inspection.
+- **`tools/editor_tools.py`**: Workspace filesystem manipulation, directory tree inspection, AST docstring extraction, and workspace searches.
+- **`tools/workspace_tools.py`**: Project state reporting (`project_status`).
+- **	ools/codebuilder_tools.py**: CodeBuilder pillar tools:
+  - 
+un_python_code: executes code through codebuilder.execution.execute_python_code.
+  - send_code_to_editor: queues code insertion into Monaco editor.
+  - 
+un_code_in_editor: triggers execution of active editor buffer.
+  - sk_user_questions: Questionnaire flow (registered only when host supports questionnaires). 
+  - **Note:** Current file contains an IndentationError (line 41) preventing load; see Diagnostics below.
+- **	ools/file_manager_tools.py**: File-manager-backed tools for listing/reading/writing under the configured file-manager root.
+- **	ools/map_tools.py**: Read-only folder/file mapping restricted to roots in llowed_paths.json (list_allowed_paths, map_folder with paging, map_file with AST inspection).
+- **	ools/promoted.py**: Holds workbench-promoted custom tools. Maintains the # PROMOTION_MARKER separator.
+- **	ools/interface.py**: The single doorway for tool catalog HTTP routes and Python APIs.
+
+### 3. Dynamic Auto-Discovery & Isolation
+
+The loader (`tool_catalog.load_tools(reload=False)`) discovers tool modules automatically:
+- Scans all `*.py` files in `tools/`, strictly excluding `__init__.py`, `interface.py`, and any private files starting with `_*`.
+- Loads each module in isolation using `importlib.util.spec_from_file_location`.
+- **Fault-Tolerance**: If a tool module contains syntax errors, broken imports, or duplicate tool name collisions, the error is captured in `LOAD_ERRORS[filename]` and the module is skipped. The failure is non-fatal: `/api/tools`, the catalog registry, and all other agents remain operational (HTTP 200).
+- Adding a new tool module to `tools/` requires no edits to `__init__.py`.
+
+### 4. Promotion Flow (`tools/promoted.py`)
+
+Tools created and tested in the Function Testing Workbench are promoted into the active runtime:
+1. Workbench tests and validates the tool function.
+2. Promotion calls `tools.interface.register_tool(source, name)`.
+3. The source is decorated with `@tool` and appended to `tools/promoted.py` below the `# PROMOTION_MARKER`.
+4. The function block is executed into `tool_catalog.__dict__` for instant runtime availability without server restart.
+5. If execution fails, `promoted.py` is rolled back and the entry is popped from `REGISTRY`.
+6. Deletion via `tools.interface.remove_tool(name)` removes the function span from `tools/promoted.py` and pops it from `REGISTRY`. Promoted file additions and removals are byte-identical round-trips.
+
+### 5. Doorway APIs & Routes (`tools/interface.py`)
+
+#### HTTP Routes:
+- `GET /api/tools`: Returns `{tools: [...], providers: {...}, warnings: [...]}`. Base tools plus custom overlay (`custom: true` for promoted tools).
+- `GET /api/tools/{name}`: Returns metadata for a specific tool.
+- `POST /api/tools/register`: Registers a custom tool (`{source, name}`).
+- `DELETE /api/tools/{name}`: Removes a custom tool.
+- POST /api/tools/map-page: Returns paged folder tree (body: {path, max_depth, include_files, offset}) for allow-listed absolute paths via 	ools.map_tools.render_map_page.
+- `GET /api/tools/health`: Returns catalog health and any active `load_errors`.
+
+#### Python Doorway:
+- `list_tools()`
+- `get_tool(name)`
+- `get_tool_source(name)`
+- `register_tool(source, name)`
+- `remove_tool(name)`
+- `provider_bindings()`
+- `catalog_report()`
+
+### 6. Diagnostics & Verification
+
+`tool_catalog.get_catalog_report()` walks all registered agent definitions under the agent library (`LIBRARY_ROOT = REPO_ROOT / "library"`; see `core_engine/agent_factory.py`) and parses `library/*.md` agent files (YAML frontmatter) to detect missing tools. It maps requested tools against `REGISTRY`. 
+
+**Current state:** `core_engine.tool_catalog.load_tools()` reports load errors for tool modules (e.g. `tools/codebuilder_tools.py` currently fails to load due to an IndentationError). The catalog captures these in `LOAD_ERRORS` and marks failures as warnings in `get_catalog_report()`; the system remains operational. Builtin tool set includes `calculator`, `docling_parse`, `rag_agent_tool`, `agent_info`, `read_file`, `write_file`, `create_file`, `delete_file`, `list_directory`, `extract_docstrings`, `search_workspace`, `fm_list_directory`, `fm_read_file`, `fm_write_file`, `list_allowed_paths`, `map_folder`, `map_file`, `project_status` (18 tools registered at runtime as observed; counts may vary if any modules fail to load).
+
+
+
+**Note:** Per this request (plan-only update scope), the CodeBuilder pillar (execution engine, /api/codebuilder/* routes, terminal, files, HITL questionnaire flow) is not expanded in this refresh. 
+
+````
+
 ## `codebuilder/tests/__init__.py`
-```py
+```python
 
 ```
 
 ## `codebuilder/tests/test_codebuilder.py`
-```py
+```python
 """CodeBuilder pillar tests. Standalone: no Ollama, no running host.
 
 Run from the repo root:  python -m pytest codebuilder/tests -q
@@ -2786,7 +2898,7 @@ def test_questionnaire_reports_bad_files_as_text_errors():
 ```
 
 ## `codebuilder/tests/test_sandbox_files.py`
-```py
+```python
 import pytest
 
 from codebuilder import files
@@ -2867,7 +2979,7 @@ def test_unconfigured_root_falls_back_inside_repo(tmp_path, monkeypatch):
 ```
 
 ## `codebuilder/tests/test_terminal.py`
-```py
+```python
 import time
 
 from codebuilder.terminal import TerminalBusy, TerminalSession
@@ -2919,13 +3031,13 @@ def test_busy_then_stop():
 ```
 
 ## `codebuilder/tools/__init__.py`
-```py
+```python
 """Agent-facing adapters for the CodeBuilder pillar."""
 
 ```
 
 ## `codebuilder/tools/tool_library.py`
-```py
+```python
 """CodeBuilder agent tools: the thin adapter between the chat agent and the pillar.
 
 Importing this module registers each decorated function into the core tool
@@ -2973,12 +3085,12 @@ if service.host_supports_questionnaire():
 ```
 
 ## `core_engine/__init__.py`
-```py
+```python
 
 ```
 
 ## `core_engine/agent_factory.py`
-```py
+```python
 import json
 from pathlib import Path
 from core_engine.runtime import AgentProfile
@@ -3302,7 +3414,7 @@ def list_agents(environment: str | None = None) -> list[dict]:
 ```
 
 ## `core_engine/core_tools.py`
-```py
+```python
 """Non-file core tools (promoted custom tools live in tools/promoted_tools.py)."""
 
 import ast
@@ -3442,7 +3554,7 @@ def project_status() -> str:
 ```
 
 ## `core_engine/hitl.py`
-```py
+```python
 """Human-in-the-Loop (HITL) bridge for interactive agent questionnaires.
 
 Shared in-memory registry that connects the ``ask_user_questions`` workspace
@@ -3509,7 +3621,7 @@ def list_pending() -> list[dict]:
 ```
 
 ## `core_engine/interface.py`
-```py
+```python
 """Core Engine Doorway: Python API & FastAPI Router (/api/chat, /api/agents, /api/tools)."""
 
 import json
@@ -3839,7 +3951,7 @@ def api_models():
 ```
 
 ## `core_engine/langgraph_tools.py`
-```py
+```python
 """LangGraph & Docling Tool Suite for Novous Agent Factory.
 
 Provides safe file CRUD, workspace directory mapping, AST docstring extraction,
@@ -4004,7 +4116,7 @@ def rag_agent_tool(
 ```
 
 ## `core_engine/runtime.py`
-```py
+````python
 import json
 import inspect
 from dataclasses import dataclass, field
@@ -4210,10 +4322,10 @@ class Agent:
             }
         }
 
-```
+````
 
 ## `core_engine/tool_catalog.py`
-```py
+```python
 """@tool registry & provider bindings for the Novous core engine.
 
 Registry-only catalog: does not define any tools directly. All tool definitions
@@ -4452,12 +4564,12 @@ def get_catalog_report() -> dict:
 ```
 
 ## `editor/__init__.py`
-```py
+```python
 
 ```
 
 ## `editor/editor_operations.py`
-```py
+```python
 """Physical file CRUD & Path Security for the editor pillar."""
 
 import json
@@ -4612,7 +4724,7 @@ def get_directory_tree(relative_path: str = "") -> dict:
 ```
 
 ## `editor/editor_schemas.py`
-```py
+```python
 """Scope & Event Payload Types for the editor session layer."""
 
 from dataclasses import dataclass, asdict
@@ -4664,7 +4776,7 @@ class EditorSessionInfo:
 ```
 
 ## `editor/editor_session.py`
-```py
+```python
 """Session Manager & Event Bus for the editor pillar."""
 
 import asyncio
@@ -4740,7 +4852,7 @@ manager = EditorSessionManager()
 ```
 
 ## `editor/interface.py`
-```py
+```python
 """Editor Doorway: Python API & FastAPI Router (/api/file/*, /api/directory/*, /api/ws)."""
 
 import asyncio
@@ -4889,7 +5001,7 @@ async def api_ws(websocket: WebSocket):
 ```
 
 ## `file_manager/__init__.py`
-```py
+```python
 """Workspace-scoped file manager."""
 
 from file_manager.service import FileManagerService, file_manager_service
@@ -4899,7 +5011,7 @@ __all__ = ["FileManagerService", "file_manager_service"]
 ```
 
 ## `file_manager/backend.py`
-```py
+```python
 """Secure physical file operations constrained to the configured file-manager root."""
 
 import json
@@ -5297,7 +5409,7 @@ def copy_path(source_path: str, destination_path: str) -> dict:
 ```
 
 ## `file_manager/interface.py`
-```py
+```python
 """REST and elFinder interfaces for the workspace file manager."""
 
 import base64
@@ -5637,7 +5749,7 @@ async def elfinder_connector(request: Request):
 ```
 
 ## `file_manager/schemas.py`
-```py
+```python
 """Request and response schemas for workspace file operations."""
 
 from typing import Literal
@@ -5686,7 +5798,7 @@ class DirectoryListing(BaseModel):
 ```
 
 ## `file_manager/service.py`
-```py
+```python
 """Business logic for workspace file management."""
 
 from file_manager import backend
@@ -5730,7 +5842,7 @@ file_manager_service = FileManagerService()
 ```
 
 ## `file_manager/test_file_manager.py`
-```py
+```python
 import base64
 import json
 
@@ -8253,7 +8365,7 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 ```
 
 ## `frontend/static/js/api.js`
-```js
+```javascript
 /**
  * Novous Unified API Client Wrapper
  */
@@ -8693,7 +8805,7 @@ export const Api = {
 ```
 
 ## `frontend/static/js/app.js`
-```js
+```javascript
 import { Api } from './api.js';
 import { renderTree } from './tree.js';
 import { renderEditorView } from './editor.js';
@@ -9186,7 +9298,7 @@ boot();
 ```
 
 ## `frontend/static/js/chat.js`
-```js
+```javascript
 import { Api } from './api.js';
 import { createIcon } from './icons.js';
 import { buildTestPanel } from './test_panel.js';
@@ -10262,1904 +10374,8 @@ function openQuestionDialogModal(requestId, questions) {
 
 ```
 
-## `frontend/static/js/codebuilder/codebuilder.js`
-```js
-import { attachCodeBuilderEditor, loadMonaco } from './codebuilder_editor.js';
-import { offerInstallForRun, confirmReset, dialog as pickerDialog } from '../sandbox_ui.js';
-import { renderTree } from '../tree.js';
-import { mountTerminal, TERMINAL_CHANNEL } from '../terminal.js?v=2';
-import { setupFileControls } from './files_ui.js';
-import { Api } from '../api.js';
-
-const DEMO_CODE = `print("Hello from Novous CodeBuilder!")
-for i in range(3):
-    print(f"count={i}")
-`;
-
-const CODE_LANGUAGE_MAP = {
-  py: 'python', python: 'python', python3: 'python',
-  js: 'javascript', javascript: 'javascript', node: 'javascript',
-  ts: 'typescript', typescript: 'typescript',
-  html: 'html', css: 'css', scss: 'scss', json: 'json',
-  sh: 'shell', bash: 'shell', shell: 'shell', zsh: 'shell', powershell: 'powershell',
-  yaml: 'yaml', yml: 'yaml', ini: 'ini', toml: 'ini', xml: 'xml',
-  md: 'markdown', markdown: 'markdown', text: 'plaintext', txt: 'plaintext',
-};
-
-async function copyTextToClipboard(text) {
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch { /* fall through to legacy copy */ }
-  }
-  const area = document.createElement('textarea');
-  area.value = text;
-  area.setAttribute('readonly', '');
-  area.style.position = 'fixed';
-  area.style.top = '0';
-  area.style.left = '0';
-  area.style.opacity = '0';
-  document.body.appendChild(area);
-  area.select();
-  let ok = false;
-  try { ok = document.execCommand('copy'); } catch { ok = false; }
-  area.remove();
-  return ok;
-}
-
-const PREFS_KEY = 'novous2.codebuilder.';
-const PANEL_CONF = {
-  chat:    { var: '--chat-w',    min: 240, maxFactor: 0.45, rail: 44, default: 320 },
-  console: { var: '--console-w', min: 220, maxFactor: 0.45, rail: 44, default: 300 },
-  agents:  { var: '--agents-h',  min: 120, max: 340,        rail: 38, default: 220 },
-};
-const PANEL_LABELS = { chat: 'Chat', console: 'Console', agents: 'Agents' };
-const PANEL_GLYPHS = { chat: ['«', '»'], console: ['»', '«'], agents: ['⌄', '⌃'] };
-const PANEL_BUTTONS = {
-  chat: '#codebuilder-chat-expand',
-  console: '#codebuilder-console-collapse',
-  agents: '#codebuilder-agents-toggle',
-};
-
-const readPref = key => {
-  try { return localStorage.getItem(PREFS_KEY + key); } catch { return null; }
-};
-const writePref = (key, value) => {
-  try { localStorage.setItem(PREFS_KEY + key, value); } catch { /* storage unavailable */ }
-};
-const readVar = (element, name) => parseFloat(
-  element.style.getPropertyValue(name) || getComputedStyle(element).getPropertyValue(name)
-);
-
-const clampSize = (layout, name, value) => {
-  const conf = PANEL_CONF[name];
-  const max = conf.max ?? Math.max(conf.min, layout.clientWidth * conf.maxFactor);
-  return Math.round(Math.min(Math.max(value, conf.min), max));
-};
-
-function restoreLayoutState(shell) {
-  const layout = shell.querySelector('.codebuilder-layout');
-  if (!layout) return;
-  for (const name of Object.keys(PANEL_CONF)) {
-    const conf = PANEL_CONF[name];
-    const saved = parseFloat(readPref(name + 'Width'));
-    if (Number.isFinite(saved)) layout.style.setProperty(conf.var, clampSize(layout, name, saved) + 'px');
-    if (readPref(name + 'Collapsed') === '1') {
-      shell.classList.add(name + '-collapsed');
-      layout.style.setProperty(conf.var, conf.rail + 'px');
-    }
-  }
-}
-
-function refreshPanelToggle(shell, name) {
-  const button = shell.querySelector(PANEL_BUTTONS[name]);
-  if (!button) return;
-  const collapsed = shell.classList.contains(name + '-collapsed');
-  const label = PANEL_LABELS[name];
-  button.textContent = collapsed ? PANEL_GLYPHS[name][1] : PANEL_GLYPHS[name][0];
-  button.title = collapsed ? `Expand ${label} panel` : `Collapse ${label} panel`;
-  button.setAttribute('aria-label', button.title);
-  button.setAttribute('aria-expanded', String(!collapsed));
-}
-
-function setupResizers(shell) {
-  const layout = shell.querySelector('.codebuilder-layout');
-  if (!layout) return;
-  shell.querySelectorAll('.codebuilder-resizer').forEach(resizer => {
-    const name = resizer.dataset.resize;
-    const conf = PANEL_CONF[name];
-    if (!conf) return;
-    resizer.addEventListener('pointerdown', event => {
-      if (event.button !== 0) return;
-      event.preventDefault();
-      if (shell.classList.contains(name + '-collapsed')) {
-        shell.classList.remove(name + '-collapsed');
-        writePref(name + 'Collapsed', '0');
-        refreshPanelToggle(shell, name);
-      }
-      const axis = name === 'agents' ? 'clientY' : 'clientX';
-      const startPos = event[axis];
-      const start = clampSize(layout, name, readVar(layout, conf.var) || conf.default);
-      resizer.setPointerCapture(event.pointerId);
-      document.body.classList.add('is-resizing');
-      resizer.classList.add('is-dragging');
-      const onMove = moveEvent => {
-        layout.style.setProperty(
-          conf.var,
-          clampSize(layout, name, start + (moveEvent[axis] - startPos)) + 'px'
-        );
-      };
-      const onUp = () => {
-        resizer.removeEventListener('pointermove', onMove);
-        resizer.removeEventListener('pointerup', onUp);
-        document.body.classList.remove('is-resizing');
-        resizer.classList.remove('is-dragging');
-        const final = readVar(layout, conf.var);
-        if (Number.isFinite(final)) writePref(name + 'Width', String(final));
-      };
-      resizer.addEventListener('pointermove', onMove);
-      resizer.addEventListener('pointerup', onUp);
-    });
-  });
-}
-
-const RISKY_CODE_PATTERN = /\b(?:subprocess|os\.system|os\.popen|os\.spawn|pty|commands)\b|shell\s*[:=]\s*true|\binput\s*\(|^\s*!/im;
-const RUN_MODE_KEY = 'codebuilder.runMode';
-
-export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
-  const root = document.getElementById(rootId);
-  const output = document.getElementById('codebuilder-output');
-  const diagnostics = document.getElementById('diagnostics');
-  const runButton = document.getElementById('run-code');
-  const runMode = document.getElementById('codebuilder-run-mode');
-  const demoButton = document.getElementById('load-demo');
-  const clearButton = document.getElementById('clear-console');
-  const status = document.getElementById('codebuilder-status');
-  const agentList = document.getElementById('codebuilder-agent-list');
-  const agentRefresh = document.getElementById('codebuilder-agent-refresh');
-  const agentsPanel = document.getElementById('codebuilder-agents-panel');
-  const agentsToggle = document.getElementById('codebuilder-agents-toggle');
-  const modelSelect = document.getElementById('codebuilder-model');
-  const chatForm = document.getElementById('codebuilder-chat-form');
-  const chatInput = document.getElementById('codebuilder-chat-input');
-  const chatMessages = document.getElementById('codebuilder-chat-messages');
-  const chatStatus = document.getElementById('codebuilder-chat-status');
-  const chatPanel = document.getElementById('codebuilder-chat-panel');
-  const chatExpand = document.getElementById('codebuilder-chat-expand');
-  const chatClear = document.getElementById('codebuilder-chat-clear');
-  const consoleCollapse = document.getElementById('codebuilder-console-collapse');
-  const shell = agentsPanel?.closest('.codebuilder-shell') ?? root.closest('.codebuilder-shell');
-  const layout = shell?.querySelector('.codebuilder-layout');
-
-  if (!root || !output || !diagnostics || !runButton || !runMode || !demoButton || !clearButton ||
-      !agentList || !agentRefresh || !agentsPanel || !agentsToggle ||
-      !modelSelect || !chatForm || !chatInput || !chatMessages || !chatStatus ||
-      !chatPanel || !chatExpand || !chatClear || !consoleCollapse || !shell || !layout) {
-    console.error('CodeBuilder could not start because a required page element is missing.');
-    return null;
-  }
-
-  restoreLayoutState(shell);
-  setupResizers(shell);
-
-  const editor = await attachCodeBuilderEditor(root, DEMO_CODE);
-  let agents = [];
-  let selectedAgent = null;
-  let defaultModel = 'qwen2.5-coder:latest';
-  let chatPending = false;
-  let manualRunMode = null;
-  const chatCodeEditors = new Set();
-
-  const detectRunMode = () => (RISKY_CODE_PATTERN.test(editor.getValue()) ? 'risky' : 'safe');
-  const currentRunMode = () => (manualRunMode || detectRunMode());
-
-  const disposeChatCodeEditors = () => {
-    chatCodeEditors.forEach(editor => {
-      try { editor.dispose(); } catch { /* already disposed */ }
-    });
-    chatCodeEditors.clear();
-  };
-
-  // The harness diagnostic can be a shortened form; prefer the exception line the console actually printed.
-  const EXCEPTION_LINE = /^(?:[A-Za-z_][\w.]*\.)?[A-Z]\w*(?:Error|Exception|Exit|Interrupt)\b.*$/;
-  const consoleErrorLine = () => {
-    const lines = output.textContent.split('\n').map(line => line.trimEnd()).filter(Boolean);
-    for (let i = lines.length - 1; i >= 0; i -= 1) {
-      if (EXCEPTION_LINE.test(lines[i].trim())) return lines[i].trim();
-    }
-    return '';
-  };
-  const consoleErrorLineNumber = () => {
-    let line = null;
-    for (const match of output.textContent.matchAll(/File "[^"]*tool_test[^"]*", line (\d+)|File "<[^>]*>", line (\d+)|File "[^"]*", line (\d+)/g)) {
-      line = Number(match[1] || match[2] || match[3]);
-    }
-    return line;
-  };
-
-  let lastRunCode = '';
-  let lastFailure = null;
-  const fixButton = document.getElementById('codebuilder-fix-with-agent');
-
-  const buildFixPrompt = () => {
-    const failure = lastFailure;
-    const consoleText = output.textContent.trim();
-    const trimmed = consoleText.length > 6000 ? `[earlier output omitted]\n${consoleText.slice(-6000)}` : consoleText;
-    const location = failure.line ? ` (line ${failure.line})` : '';
-    return [
-      'My Python code failed when I ran it. Please fix it.',
-      '',
-      `Error${location}:`,
-      failure.message,
-      '',
-      'Full console output:',
-      '```',
-      trimmed || '(no console output)',
-      '```',
-      '',
-      'Code that was run:',
-      '```python',
-      lastRunCode.replace(/\s+$/, ''),
-      '```',
-      '',
-      'Instructions:',
-      '1. Find the root cause of the error above using the traceback; do not guess at unrelated problems.',
-      '2. Change only what is needed to fix it. Keep the existing function names, signatures and behavior.',
-      '3. Reply with the complete corrected code in a single ```python block.',
-      '4. Add one or two sentences on what was wrong and what you changed.',
-      '5. If you can, put the corrected code in the editor and run it to confirm the error is gone.'
-    ].join('\n');
-  };
-
-  const renderDiagnostics = (items = []) => {
-    diagnostics.replaceChildren();
-    lastFailure = null;
-    if (fixButton) fixButton.disabled = true;
-    if (!items.length) {
-      const empty = document.createElement('p');
-      empty.className = 'text-muted';
-      empty.textContent = 'No diagnostics reported.';
-      diagnostics.appendChild(empty);
-      return;
-    }
-
-    const exceptionLine = consoleErrorLine();
-    const tracebackLine = consoleErrorLineNumber();
-    items.forEach((item, index) => {
-      const isError = (item.severity || 'error') === 'error';
-      const message = isError && index === 0 && exceptionLine && !/^SyntaxError/.test(item.message || '')
-        ? exceptionLine
-        : item.message;
-      const line = item.line || (isError && index === 0 ? tracebackLine : null);
-      const entry = document.createElement('button');
-      entry.type = 'button';
-      entry.className = 'diagnostic-item';
-      entry.dataset.severity = item.severity || 'error';
-      entry.textContent = `${item.severity || 'error'}${line ? ` · line ${line}` : ''} · ${message}`;
-      entry.title = message;
-      if (line) {
-        entry.addEventListener('click', () => editor.revealLine(line));
-      }
-      diagnostics.appendChild(entry);
-      if (!lastFailure && isError) lastFailure = { message, line };
-    });
-    if (fixButton) fixButton.disabled = !lastFailure;
-  };
-
-  const copyConsoleButton = document.getElementById('codebuilder-copy-console');
-  let openTerminalWith = () => {};
-  // ---- Terminal tab (docked) with pop-out ----
-  const consolePanel = root.closest('.codebuilder-shell')?.querySelector('.codebuilder-console-panel');
-  const terminalSection = consolePanel?.querySelector('.codebuilder-terminal-section');
-  const terminalMount = document.getElementById('codebuilder-terminal-mount');
-  const terminalPopped = document.getElementById('codebuilder-terminal-popped');
-  const terminalBringBack = document.getElementById('codebuilder-terminal-bring-back');
-  if (consolePanel && terminalSection && terminalMount) {
-    const channel = 'BroadcastChannel' in window ? new BroadcastChannel(TERMINAL_CHANNEL) : null;
-    let popupWindow = null;
-    let isPoppedOut = false;
-    let terminal = null;
-
-    const showTab = (tab) => {
-      const showTerminal = tab === 'terminal';
-      consolePanel.classList.toggle('show-terminal', showTerminal);
-      terminalSection.hidden = !showTerminal;
-      consolePanel.querySelectorAll('[data-console-tab]').forEach(button => {
-        button.classList.toggle('active', button.dataset.consoleTab === tab);
-      });
-      if (showTerminal && !terminal && !isPoppedOut) {
-        terminal = mountTerminal(terminalMount, { popOut: openPopOut, compact: true });
-      }
-      if (showTerminal) terminal?.focus();
-    };
-
-    const setPoppedOut = (value) => {
-      isPoppedOut = value;
-      terminalPopped.hidden = !value;
-      terminalMount.hidden = value;
-      if (value && terminal) {
-        terminal.destroy();
-        terminal = null;
-      } else if (!value && !terminalSection.hidden && !terminal) {
-        terminal = mountTerminal(terminalMount, { popOut: openPopOut, compact: true });
-      }
-    };
-
-    function openPopOut() {
-      popupWindow = window.open('/terminal', 'novous2-terminal', 'width=900,height=600');
-      if (!popupWindow) {
-        status.textContent = 'The browser blocked the pop-up window. Allow pop-ups for this site.';
-        return;
-      }
-      setPoppedOut(true);
-      popupWindow.focus();
-    }
-
-    consolePanel.querySelectorAll('[data-console-tab]').forEach(button => {
-      button.addEventListener('click', () => showTab(button.dataset.consoleTab));
-    });
-    openTerminalWith = (command) => {
-      if (isPoppedOut) {
-        status.textContent = `Terminal is in its own window. Run: ${command}`;
-        return;
-      }
-      showTab('terminal');
-      terminal?.setInput(command);
-    };
-    terminalBringBack?.addEventListener('click', () => {
-      channel?.postMessage({ type: 'close-popout' });
-      try { popupWindow?.close(); } catch { /* already closed */ }
-      setPoppedOut(false);
-    });
-    if (channel) {
-      channel.onmessage = (event) => {
-        if (event.data?.type === 'popout-open') setPoppedOut(true);
-        if (event.data?.type === 'popout-closed') setPoppedOut(false);
-      };
-      channel.postMessage({ type: 'ping' });
-    }
-  }
-  copyConsoleButton?.addEventListener('click', async () => {
-    const text = output.textContent;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const area = document.createElement('textarea');
-      area.value = text;
-      document.body.appendChild(area);
-      area.select();
-      document.execCommand('copy');
-      area.remove();
-    }
-    copyConsoleButton.textContent = 'Copied';
-    setTimeout(() => { copyConsoleButton.textContent = 'Copy'; }, 1500);
-  });
-
-  fixButton?.addEventListener('click', () => {
-    if (!lastFailure) return;
-    chatInput.value = buildFixPrompt();
-    chatInput.dispatchEvent(new Event('input', { bubbles: true }));
-    chatInput.focus();
-    chatInput.scrollTop = 0;
-    status.textContent = 'Error and code copied to the agent message box';
-  });
-
-  const streamRiskyRun = async () => {
-    const timeoutSeconds = 10;
-    const response = await fetch('/api/codebuilder/execute/stream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: editor.getValue(), timeout_seconds: timeoutSeconds, mode: 'risky' })
-    });
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      throw new Error(payload.detail || `Stream request failed (${response.status}).`);
-    }
-    if (!response.body || typeof response.body.getReader !== 'function') {
-      throw new Error('Live streaming is not supported by this browser.');
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let returnCode = 0;
-    let runStatus = 'SUCCESS';
-    let streamedText = '';
-    let syntaxError = null;
-
-    const ingest = (event) => {
-      switch (event.type) {
-        case 'stdout':
-          output.textContent += event.text;
-          streamedText += event.text;
-          break;
-        case 'stderr':
-          output.textContent += event.text;
-          streamedText += event.text;
-          break;
-        case 'truncated':
-          output.textContent += '\n[Earlier output truncated]\n';
-          break;
-        case 'syntax_error':
-          syntaxError = { line: event.line, message: event.message };
-          break;
-        case 'done':
-          returnCode = event.return_code ?? returnCode;
-          runStatus = event.status || runStatus;
-          break;
-        default:
-          break;
-      }
-    };
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let separator = buffer.indexOf('\n\n');
-      while (separator !== -1) {
-        const rawEvent = buffer.slice(0, separator);
-        buffer = buffer.slice(separator + 2);
-        for (const line of rawEvent.split('\n')) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            ingest(JSON.parse(line.slice(6)));
-          } catch { /* ignore malformed event */ }
-        }
-        separator = buffer.indexOf('\n\n');
-      }
-    }
-    const remainder = buffer.trim();
-    if (remainder.startsWith('data: ')) {
-      try { ingest(JSON.parse(remainder.slice(6))); } catch { /* ignore */ }
-    }
-
-    if (syntaxError) {
-      renderDiagnostics([{ severity: 'error', line: syntaxError.line, message: syntaxError.message }]);
-      editor.setDiagnostics([{ severity: 'error', line: syntaxError.line, message: syntaxError.message }]);
-      status.textContent = 'Finished with errors';
-    } else if (runStatus === 'ERROR') {
-      const lastLine = [...streamedText.trim().split('\n')].filter(Boolean).pop() || '';
-      const message = lastLine || `Process exited with code ${returnCode}.`;
-      renderDiagnostics([{ severity: 'error', message }]);
-      editor.setDiagnostics([]);
-      status.textContent = 'Finished with errors';
-    } else {
-      renderDiagnostics([]);
-      editor.setDiagnostics([]);
-    }
-
-    return {
-      status: runStatus === 'SUCCESS' ? 'SUCCESS' : 'ERROR',
-      stdout: streamedText,
-      stderr: '',
-      diagnostics: [],
-    };
-  };
-
-  const runCodeOnce = async () => {
-    const mode = currentRunMode();
-    lastRunCode = editor.getValue();
-    runButton.disabled = true;
-    runButton.textContent = mode === 'risky' ? 'Running… (stream)' : 'Running…';
-    output.textContent = '';
-    status.textContent = 'Running';
-    diagnostics.replaceChildren();
-    editor.setDiagnostics([]);
-
-    try {
-      if (mode === 'risky') {
-        const result = await streamRiskyRun();
-        if (result && !output.textContent.trim()) {
-          output.textContent = 'Execution completed with no output.';
-        }
-        return result;
-      }
-
-      const response = await fetch('/api/codebuilder/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: editor.getValue(), timeout_seconds: 10, mode: 'safe' })
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.detail || 'Execution failed.');
-      }
-
-      const stdout = payload.stdout || '';
-      const stderr = payload.stderr || '';
-      output.textContent = [stdout, stderr].filter(Boolean).join('\n').trim()
-        || 'Execution completed with no output.';
-      renderDiagnostics(payload.diagnostics || []);
-      editor.setDiagnostics(payload.diagnostics || []);
-      status.textContent = payload.status === 'SUCCESS' ? 'Finished' : 'Finished with errors';
-      return payload;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      output.textContent = `Error: ${message}`;
-      renderDiagnostics([{ severity: 'error', message }]);
-      status.textContent = 'Request failed';
-      return null;
-    } finally {
-      runButton.disabled = false;
-      runButton.textContent = '▶ Run Python';
-      editor.focus();
-    }
-  };
-
-  const runCode = async () => {
-    const result = await runCodeOnce();
-    if (result && result.status !== 'SUCCESS' &&
-        await offerInstallForRun(editor.getValue(), output.textContent)) {
-      return runCodeOnce();
-    }
-    return result;
-  };
-
-  const sendCodeToEditor = (code, source = 'chat') => {
-    if (typeof code !== 'string' || !code.trim()) return false;
-    editor.setValue(code);
-    editor.setDiagnostics([]);
-    renderDiagnostics([]);
-    status.textContent = source === 'agent'
-      ? 'Code received from agent'
-      : 'Code sent to editor';
-    editor.focus();
-    return true;
-  };
-
-  // Code handed over from the Tool Function Testing Workbench.
-  try {
-    const incoming = localStorage.getItem('novous2.codebuilder.incoming');
-    if (incoming) {
-      localStorage.removeItem('novous2.codebuilder.incoming');
-      if (sendCodeToEditor(incoming)) status.textContent = 'Code received from Tool Workbench';
-    }
-  } catch { /* storage unavailable */ }
-
-  const handleCodeBuilderToolEvents = async (events = []) => {
-    for (const event of events) {
-      if (event.status !== 'success') continue;
-      if (['write_file', 'create_file', 'delete_file'].includes(event.tool)) {
-        window.dispatchEvent(new CustomEvent('novous:fs-changed'));
-      }
-      if (event.tool === 'send_code_to_editor') {
-        const code = event.args?.code;
-        if (sendCodeToEditor(code, 'agent')) {
-          appendChatMessage('system', 'The agent placed its code in the Monaco editor.');
-        }
-      } else if (event.tool === 'run_code_in_editor') {
-        appendChatMessage('system', 'The agent requested a run of the current editor code.');
-        const result = await runCode();
-        if (!result) {
-          appendChatMessage('system', 'The editor code could not be run. See Run Output for details.');
-        } else {
-          appendChatMessage(
-            'system',
-            result.status === 'SUCCESS'
-              ? 'Editor code ran successfully. See Run Output.'
-              : 'Editor code ran with errors. See Run Output and Problems.'
-          );
-        }
-      }
-    }
-  };
-
-  const createCopyCodeButton = (code) => {
-    const copyButton = document.createElement('button');
-    copyButton.type = 'button';
-    copyButton.className = 'btn btn-sm codebuilder-copy-code';
-    copyButton.textContent = 'Copy Code';
-    copyButton.setAttribute('aria-label', 'Copy code to clipboard');
-    copyButton.addEventListener('click', async () => {
-      const ok = await copyTextToClipboard(code);
-      copyButton.textContent = ok ? 'Copied!' : 'Copy failed';
-      copyButton.disabled = ok;
-      setTimeout(() => {
-        copyButton.textContent = 'Copy Code';
-        copyButton.disabled = false;
-      }, 2000);
-    });
-    return copyButton;
-  };
-
-  const createSendToEditorButton = (code) => {
-    const sendButton = document.createElement('button');
-    sendButton.type = 'button';
-    sendButton.className = 'btn btn-sm codebuilder-send-code';
-    sendButton.textContent = 'Send to editor';
-    sendButton.setAttribute('aria-label', 'Send code to the editor');
-    sendButton.addEventListener('click', () => {
-      if (sendCodeToEditor(code)) {
-        sendButton.textContent = 'Sent to editor';
-        sendButton.disabled = true;
-      }
-    });
-    return sendButton;
-  };
-
-  const openChatCodeModal = (code, codeLanguage) => {
-    const overlay = document.createElement('div');
-    overlay.className = 'codebuilder-code-overlay';
-    overlay.setAttribute('role', 'dialog');
-    overlay.setAttribute('aria-modal', 'true');
-    overlay.setAttribute('aria-label', `Expanded ${codeLanguage} code block`);
-
-    const panel = document.createElement('div');
-    panel.className = 'codebuilder-code-modal';
-
-    const heading = document.createElement('div');
-    heading.className = 'codebuilder-code-modal-heading';
-    const title = document.createElement('span');
-    title.className = 'codebuilder-code-language';
-    title.textContent = codeLanguage;
-    heading.appendChild(title);
-
-    const actions = document.createElement('div');
-    actions.className = 'codebuilder-code-actions';
-    actions.append(createCopyCodeButton(code), createSendToEditorButton(code));
-    const closeButton = document.createElement('button');
-    closeButton.type = 'button';
-    closeButton.className = 'btn btn-sm codebuilder-modal-close';
-    closeButton.textContent = 'Close';
-    closeButton.setAttribute('aria-label', 'Close expanded code block');
-    actions.appendChild(closeButton);
-    heading.appendChild(actions);
-
-    const body = document.createElement('div');
-    body.className = 'codebuilder-code-modal-body';
-
-    const pre = document.createElement('pre');
-    const codeElement = document.createElement('code');
-    codeElement.className = `language-${codeLanguage}`;
-    codeElement.textContent = code;
-    pre.appendChild(codeElement);
-    body.appendChild(pre);
-
-    panel.append(heading, body);
-    overlay.appendChild(panel);
-    document.body.appendChild(overlay);
-
-    let modalEditor = null;
-    const close = () => {
-      if (modalEditor) {
-        try { modalEditor.dispose(); } catch { /* already disposed */ }
-      }
-      overlay.remove();
-      document.body.classList.remove('codebuilder-modal-open');
-      document.removeEventListener('keydown', onKey);
-    };
-    const onKey = event => { if (event.key === 'Escape') close(); };
-
-    overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
-    closeButton.addEventListener('click', close);
-    document.addEventListener('keydown', onKey);
-    document.body.classList.add('codebuilder-modal-open');
-
-    mountChatCodeEditor(body, pre, code, codeLanguage, {
-      maxHeight: Math.round(window.innerHeight * 0.6),
-      wordWrap: 'off',
-      addToRegistry: false,
-    }).then(editor => { modalEditor = editor; });
-  };
-
-  const appendAssistantMessage = (message, content) => {
-    content = String(content ?? '');
-    const codeBlockPattern = /```([^\r\n`]*)\r?\n([\s\S]*?)```/g;
-    let lastIndex = 0;
-    let match;
-
-    const appendText = text => {
-      if (!text) return;
-      const paragraph = document.createElement('div');
-      paragraph.className = 'codebuilder-chat-text';
-      paragraph.textContent = text;
-      message.appendChild(paragraph);
-    };
-
-    const buildCodeBlock = (code, rawLanguage) => {
-      const language = rawLanguage || 'python';
-      const block = document.createElement('section');
-      block.className = 'codebuilder-code-block';
-
-      const heading = document.createElement('div');
-      heading.className = 'codebuilder-code-heading';
-      const languageLabel = document.createElement('span');
-      languageLabel.className = 'codebuilder-code-language';
-      languageLabel.textContent = language;
-      heading.appendChild(languageLabel);
-
-      const actions = document.createElement('div');
-      actions.className = 'codebuilder-code-actions';
-      actions.append(createCopyCodeButton(code), createSendToEditorButton(code));
-
-      const expandButton = document.createElement('button');
-      expandButton.type = 'button';
-      expandButton.className = 'btn btn-sm codebuilder-expand-code';
-      expandButton.textContent = 'Expand';
-      expandButton.setAttribute('aria-label', 'Open this code block in a larger view');
-      expandButton.addEventListener('click', () => openChatCodeModal(code, language));
-      actions.appendChild(expandButton);
-      heading.appendChild(actions);
-
-      const body = document.createElement('div');
-      body.className = 'codebuilder-chat-code';
-
-      const pre = document.createElement('pre');
-      const codeElement = document.createElement('code');
-      codeElement.className = `language-${language}`;
-      codeElement.textContent = code;
-      pre.appendChild(codeElement);
-      body.appendChild(pre);
-
-      block.append(heading, body);
-      message.appendChild(block);
-
-      mountChatCodeEditor(body, pre, code, language, {
-        maxHeight: 420,
-        wordWrap: 'on',
-        addToRegistry: true,
-      });
-    };
-
-    while ((match = codeBlockPattern.exec(content)) !== null) {
-      appendText(content.slice(lastIndex, match.index));
-      let rawLanguage = match[1].trim().split(/\s+/, 1)[0].toLowerCase();
-      let snippet = match[2].trimEnd();
-      if (rawLanguage === 'json' || ['text', 'txt', 'plaintext', ''].includes(rawLanguage)) {
-        try {
-          snippet = JSON.stringify(JSON.parse(snippet), null, 2);
-          rawLanguage = 'python';
-        } catch { /* keep the raw snippet when it is not valid JSON */ }
-      }
-      buildCodeBlock(snippet, rawLanguage);
-      lastIndex = codeBlockPattern.lastIndex;
-    }
-
-    appendText(content.slice(lastIndex));
-  };
-
-  const mountChatCodeEditor = (container, fallbackPre, code, rawLanguage, options = {}) => {
-    const { maxHeight = 360, wordWrap = 'on', addToRegistry = true } = options;
-    const language = CODE_LANGUAGE_MAP[rawLanguage] || rawLanguage || 'plaintext';
-    const lineCount = code.split('\n').length;
-    container.style.height = `${Math.min(maxHeight, Math.max(72, lineCount * 18 + 16))}px`;
-
-    return loadMonaco().then(monaco => {
-      if (!container.isConnected || !chatCodeEditors) return null;
-      if (!monaco?.editor || typeof monaco.editor.create !== 'function') return null;
-      fallbackPre.remove();
-      const editor = monaco.editor.create(container, {
-        value: code,
-        language,
-        theme: 'vs-dark',
-        readOnly: true,
-        automaticLayout: true,
-        minimap: { enabled: false },
-        folding: false,
-        glyphMargin: false,
-        lineDecorationsWidth: 0,
-        lineNumbers: 'off',
-        renderLineHighlight: 'none',
-        scrollBeyondLastLine: false,
-        wordWrap,
-        contextmenu: false,
-        fixedOverflowWidgets: true,
-      });
-      if (addToRegistry) chatCodeEditors.add(editor);
-      return editor;
-    }).catch(() => null);
-  };
-
-  const appendChatMessage = (role, content) => {
-    const message = document.createElement('div');
-    message.className = `codebuilder-chat-message ${role}`;
-    if (role === 'assistant') {
-      appendAssistantMessage(message, content);
-    } else {
-      message.textContent = content;
-    }
-    chatMessages.appendChild(message);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-  };
-
-  const updateChatControls = () => {
-    const sendButton = chatForm.querySelector('button[type="submit"]');
-    chatInput.disabled = chatPending;
-    sendButton.disabled = chatPending || !selectedAgent || !modelSelect.value || modelSelect.disabled;
-  };
-
-  const FUTURE_AGENT_OPTIONS = [
-    { id: 'debugAgent', label: 'Debug Agent', icon: 'bug' },
-    { id: 'diagnostics', label: 'Diagnostics', icon: 'activity' },
-  ];
-
-  // Memory mode: the chat transcript is saved to a file the user picks.
-  let memoryPath = null;
-  let transcript = [];
-
-  const notifyFilesChanged = () => window.dispatchEvent(new CustomEvent('novous:fs-changed'));
-
-  const writeMemory = async () => {
-    if (!memoryPath) return;
-    const body = transcript
-      .map(entry => `[${entry.role}]\n${entry.text}`)
-      .join('\n\n');
-    try {
-      await Api.writeManagedFile(memoryPath, `${body}\n`);
-      notifyFilesChanged();
-    } catch (error) {
-      appendChatMessage('system', `Memory mode stopped: could not write ${memoryPath} (${error.message}).`);
-      memoryPath = null;
-      renderAgents();
-    }
-  };
-
-  // Opens the file manager: click a folder (or an existing file) and name the memory file.
-  const pickMemoryLocation = () => new Promise(resolve => {
-    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
-    let folder = '';
-    let settled = false;
-    const finish = (value, close) => {
-      if (settled) return;
-      settled = true;
-      close();
-      resolve(value);
-    };
-
-    pickerDialog('Memory mode — choose where to save', (modal, close) => {
-      modal.classList.add('is-resizable');
-      const hint = document.createElement('p');
-      hint.className = 'text-muted small';
-      hint.textContent = 'Pick a folder in the file manager and name the file. The chat is saved after every reply.';
-
-      const treeHost = document.createElement('div');
-      treeHost.className = 'codebuilder-open-tree';
-
-      const target = document.createElement('p');
-      target.className = 'small codebuilder-memory-target';
-      const nameInput = document.createElement('input');
-      nameInput.className = 'form-input';
-      nameInput.type = 'text';
-      nameInput.value = `chat_memory_${stamp}.txt`;
-      nameInput.setAttribute('aria-label', 'Memory file name');
-      const error = document.createElement('p');
-      error.className = 'text-danger small';
-
-      const refreshTarget = () => {
-        target.textContent = `Save to: ${folder || '(workspace root)'}/${nameInput.value.trim()}`;
-      };
-      nameInput.addEventListener('input', refreshTarget);
-      refreshTarget();
-
-      const actions = document.createElement('div');
-      actions.className = 'question-dialog-actions';
-      const cancel = document.createElement('button');
-      cancel.type = 'button';
-      cancel.className = 'btn';
-      cancel.textContent = 'Cancel';
-      const start = document.createElement('button');
-      start.type = 'button';
-      start.className = 'btn btn-primary';
-      start.textContent = 'Start';
-      actions.append(cancel, start);
-      modal.append(hint, treeHost, target, nameInput, error, actions);
-
-      renderTree(treeHost, {
-        manageRoots: true,
-        onSelectDirectory: path => { folder = path; refreshTarget(); },
-        onSelect: path => {
-          const slash = path.lastIndexOf('/');
-          folder = slash >= 0 ? path.slice(0, slash) : '';
-          nameInput.value = path.slice(slash + 1);
-          refreshTarget();
-        }
-      });
-
-      cancel.addEventListener('click', () => finish(null, close));
-      const submit = () => {
-        const name = nameInput.value.trim();
-        if (!name || name === '.' || name === '..' || /[\\/]/.test(name)) {
-          error.textContent = 'Enter a file name without folder separators.';
-          return;
-        }
-        finish([folder, name].filter(Boolean).join('/'), close);
-      };
-      start.addEventListener('click', submit);
-      nameInput.addEventListener('keydown', event => { if (event.key === 'Enter') submit(); });
-    });
-  });
-
-  const toggleMemory = async () => {
-    if (memoryPath) {
-      memoryPath = null;
-      appendChatMessage('system', 'Memory mode off.');
-      renderAgents();
-      return;
-    }
-    const path = await pickMemoryLocation();
-    if (!path) return;
-    memoryPath = path;
-    transcript = [];
-    appendChatMessage('system', `Memory mode on. Saving this chat to ${path}.`);
-    renderAgents();
-    await writeMemory();
-  };
-
-  const hasAgentFunctions = agent => Array.isArray(agent.tools) && agent.tools.length > 0;
-
-  const AGENT_TILE_ICONS = {
-    bot: [
-      'M12 8V4H8',
-      'M4 8v12a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1Z',
-      'M8 13v2',
-      'M12 13v2',
-      'M16 13v2',
-    ],
-    bug: [
-      'm8 2 1.88 1.88',
-      'M14.12 3.88 16 2',
-      'M9 7.13v-1a3.003 3.003 0 1 1 6 0v1',
-      'M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6',
-      'M12 20v-9',
-      'M6.53 9C4.6 8.8 3 7.1 3 5',
-      'M6 13H2',
-      'M3 21c0-2.1 1.7-3.9 3.8-4',
-      'M20.97 5c0 2.1-1.6 3.8-3.5 4',
-      'M22 13h-4',
-      'M17.2 17c2.1.1 3.8 1.9 3.8 4',
-    ],
-    activity: [
-      'M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2',
-    ],
-    memory: [
-      'M4 6c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2Z',
-      'M4 6v6c0 1.1 3.6 2 8 2s8-.9 8-2V6',
-      'M4 12v6c0 1.1 3.6 2 8 2s8-.9 8-2v-6',
-    ],
-  };
-
-  const buildTileIcon = (name) => {
-    const iconPath = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(iconPath, 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('width', '20');
-    svg.setAttribute('height', '20');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '2');
-    svg.setAttribute('stroke-linecap', 'round');
-    svg.setAttribute('stroke-linejoin', 'round');
-    svg.setAttribute('aria-hidden', 'true');
-    (AGENT_TILE_ICONS[name] || []).forEach(pathData => {
-      const path = document.createElementNS(iconPath, 'path');
-      path.setAttribute('d', pathData);
-      svg.appendChild(path);
-    });
-    return svg;
-  };
-
-  const buildAgentTile = (label, icon, title, onClick, isSelected) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'test-function codebuilder-agent-tile';
-    button.title = title;
-    if (isSelected) button.classList.add('selected');
-    button.setAttribute('aria-pressed', String(Boolean(isSelected)));
-
-    const iconElement = buildTileIcon(icon);
-    const labelElement = document.createElement('span');
-    labelElement.textContent = label;
-
-    if (typeof onClick === 'function') {
-      button.addEventListener('click', onClick);
-    } else {
-      button.disabled = true;
-      button.classList.add('disabled');
-    }
-    button.append(iconElement, labelElement);
-    return button;
-  };
-
-  const renderAgents = () => {
-    agentList.replaceChildren();
-
-    const picker = document.createElement('select');
-    picker.className = 'form-select codebuilder-agent-select';
-    picker.id = 'codebuilder-agent-select';
-    picker.setAttribute('aria-label', 'Choose agent');
-    picker.disabled = chatPending || !agents.length;
-    agents.forEach(agent => {
-      const toolCount = (agent.tools || []).length;
-      const option = new Option(`${agent.name} (${toolCount} tool${toolCount === 1 ? '' : 's'})`, agent.id);
-      option.disabled = !hasAgentFunctions(agent);
-      option.title = (agent.tools || []).join(', ') || 'No tools';
-      picker.add(option);
-    });
-    if (selectedAgent) picker.value = selectedAgent.id;
-    picker.addEventListener('change', () => {
-      const chosen = agents.find(agent => agent.id === picker.value);
-      if (chosen && chosen.id !== selectedAgent?.id) selectAgent(chosen);
-    });
-    agentList.appendChild(picker);
-
-    agents.forEach(agent => {
-      const isSelected = selectedAgent?.id === agent.id;
-      const hasFunctions = hasAgentFunctions(agent);
-      const tile = buildAgentTile(
-        agent.name,
-        'bot',
-        hasFunctions
-          ? (agent.description || agent.name)
-          : `${agent.name} — no tools available`,
-        () => selectAgent(agent),
-        isSelected
-      );
-      tile.setAttribute('aria-label', `${agent.name} agent`);
-      if (chatPending || !hasFunctions) {
-        tile.disabled = true;
-        tile.classList.add('disabled');
-      }
-      agentList.appendChild(tile);
-    });
-
-    const memoryTile = buildAgentTile(
-      'Memory',
-      'memory',
-      memoryPath
-        ? `Memory mode on — saving to ${memoryPath}. Click to turn off.`
-        : 'Save this chat to a text file you choose',
-      toggleMemory,
-      Boolean(memoryPath)
-    );
-    memoryTile.setAttribute('aria-label', 'Memory mode');
-    agentList.appendChild(memoryTile);
-
-    FUTURE_AGENT_OPTIONS.forEach(option => {
-      const tile = buildAgentTile(
-        option.label,
-        option.icon,
-        `${option.label} — not implemented yet`,
-        null,
-        false
-      );
-      agentList.appendChild(tile);
-    });
-
-    if (!agents.length) {
-      selectedAgent = null;
-      const empty = document.createElement('p');
-      empty.className = 'text-muted small';
-      empty.textContent = 'No agents found in the workspace agents folder.';
-      agentList.appendChild(empty);
-    }
-
-    updateChatControls();
-  };
-
-  const selectAgent = (agent) => {
-    selectedAgent = agent;
-    renderAgents();
-    const preferredModel = agent.model || defaultModel;
-    if ([...modelSelect.options].some(option => option.value === preferredModel)) {
-      modelSelect.value = preferredModel;
-    }
-    chatMessages.replaceChildren();
-    disposeChatCodeEditors();
-    appendChatMessage('system', `Chatting with ${agent.name}.`);
-    chatStatus.textContent = `Agent: ${agent.name}`;
-  };
-
-  const loadAgents = async () => {
-    agentRefresh.disabled = true;
-    try {
-      const data = await fetch('/api/codebuilder/agents').then(async response => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.detail || 'Could not load agents.');
-        return payload;
-      });
-      agents = data.agents || [];
-      const selectedId = selectedAgent?.id;
-      selectedAgent = agents.find(agent => agent.id === selectedId) || agents[0] || null;
-      renderAgents();
-      if (selectedAgent) selectAgent(selectedAgent);
-    } catch (error) {
-      const message = document.createElement('p');
-      message.className = 'text-danger small';
-      message.textContent = error instanceof Error ? error.message : String(error);
-      agentList.replaceChildren(message);
-    } finally {
-      agentRefresh.disabled = false;
-    }
-  };
-
-  const loadModels = async () => {
-    modelSelect.replaceChildren();
-    const loadingOption = document.createElement('option');
-    loadingOption.textContent = 'Loading models…';
-    loadingOption.value = '';
-    modelSelect.appendChild(loadingOption);
-    modelSelect.disabled = true;
-    try {
-      const response = await fetch('/api/models');
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail || 'Could not load models.');
-      const models = (payload.models || []).slice().sort();
-      defaultModel = payload.default || defaultModel;
-      modelSelect.replaceChildren();
-
-      const availableModels = models.length ? models : [defaultModel];
-      availableModels.forEach(model => {
-        const option = document.createElement('option');
-        option.value = model;
-        option.textContent = models.length ? model : `${model} (not detected)`;
-        modelSelect.appendChild(option);
-      });
-      modelSelect.disabled = models.length === 0;
-      if (models.length) {
-        const preferredModel = selectedAgent?.model || defaultModel;
-        modelSelect.value = models.includes(preferredModel) ? preferredModel : models[0];
-      }
-      if (!models.length) {
-        chatStatus.textContent = payload.error || 'No installed models detected.';
-      }
-      updateChatControls();
-    } catch (error) {
-      modelSelect.replaceChildren();
-      const option = document.createElement('option');
-      option.value = '';
-      option.textContent = 'Could not load models';
-      modelSelect.appendChild(option);
-      modelSelect.disabled = true;
-      chatStatus.textContent = error instanceof Error ? error.message : String(error);
-      updateChatControls();
-    }
-  };
-
-  demoButton.addEventListener('click', () => {
-    editor.setValue(DEMO_CODE);
-    editor.setDiagnostics([]);
-    status.textContent = 'Demo loaded';
-    editor.focus();
-  });
-  clearButton.addEventListener('click', () => {
-    output.textContent = 'Console cleared.';
-    renderDiagnostics([]);
-    editor.setDiagnostics([]);
-    status.textContent = 'Ready';
-  });
-  runButton.addEventListener('click', runCode);
-  document.getElementById('reset-sandbox')?.addEventListener('click', async () => {
-    try {
-      const result = await confirmReset();
-      if (result) status.textContent = result.output;
-    } catch (err) {
-      status.textContent = `Reset failed: ${err.message}`;
-    }
-  });
-  editor.setRunHandler(runCode);
-
-  const persistedRunMode = readPref(RUN_MODE_KEY);
-  if (persistedRunMode === 'risky' || persistedRunMode === 'safe') {
-    manualRunMode = persistedRunMode;
-    runMode.value = persistedRunMode;
-  }
-  runMode.addEventListener('change', () => {
-    manualRunMode = runMode.value;
-    writePref(RUN_MODE_KEY, runMode.value);
-  });
-  const fileControls = setupFileControls({
-    editor,
-    status,
-    label: document.getElementById('codebuilder-filename'),
-    buttons: {
-      save: document.getElementById('save-file'),
-      saveAs: document.getElementById('save-file-as'),
-      open: document.getElementById('open-file'),
-      runTerminal: document.getElementById('run-in-terminal')
-    },
-    openTerminalWith: (command) => openTerminalWith(command)
-  });
-  editor.onChange(() => {
-    fileControls.refreshLabel();
-    if (manualRunMode) return;
-    if (runMode.value !== detectRunMode()) runMode.value = detectRunMode();
-  });
-  agentRefresh.addEventListener('click', loadAgents);
-
-  const togglePanel = (name) => {
-    const conf = PANEL_CONF[name];
-    const collapsed = !shell.classList.contains(name + '-collapsed');
-    if (collapsed) {
-      const current = readVar(layout, conf.var);
-      if (Number.isFinite(current) && current > conf.rail) writePref(name + 'Width', String(current));
-      shell.classList.add(name + '-collapsed');
-      layout.style.setProperty(conf.var, conf.rail + 'px');
-    } else {
-      const saved = parseFloat(readPref(name + 'Width'));
-      layout.style.setProperty(
-        conf.var,
-        (Number.isFinite(saved) ? clampSize(layout, name, saved) : conf.default) + 'px'
-      );
-      shell.classList.remove(name + '-collapsed');
-    }
-    writePref(name + 'Collapsed', collapsed ? '1' : '0');
-    return collapsed;
-  };
-
-  chatExpand.addEventListener('click', () => { togglePanel('chat'); refreshPanelToggle(shell, 'chat'); });
-  consoleCollapse.addEventListener('click', () => { togglePanel('console'); refreshPanelToggle(shell, 'console'); });
-  agentsToggle.addEventListener('click', () => { togglePanel('agents'); refreshPanelToggle(shell, 'agents'); });
-
-  refreshPanelToggle(shell, 'chat');
-  refreshPanelToggle(shell, 'console');
-  refreshPanelToggle(shell, 'agents');
-
-  chatForm.addEventListener('submit', async event => {
-    event.preventDefault();
-    const message = chatInput.value.trim();
-    if (!message || chatPending) return;
-    if (!selectedAgent) {
-      chatStatus.textContent = 'Select an agent before sending a message.';
-      return;
-    }
-    if (!modelSelect.value) {
-      chatStatus.textContent = 'Select an installed model before sending a message.';
-      return;
-    }
-
-    appendChatMessage('user', message);
-    if (memoryPath) transcript.push({ role: 'user', text: message });
-    chatInput.value = '';
-    chatPending = true;
-    chatStatus.textContent = `Waiting for ${selectedAgent.name}…`;
-    updateChatControls();
-    try {
-      const response = await fetch('/api/chat/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message,
-          agent_id: selectedAgent.id,
-          model: modelSelect.value,
-          session_id: `codebuilder-${selectedAgent.id}`,
-          environment: 'codebuilder',
-        })
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.detail || 'The agent request failed.');
-      }
-
-      const bubble = document.createElement('div');
-      bubble.className = 'codebuilder-chat-message assistant';
-      chatMessages.appendChild(bubble);
-
-      let text = '';
-      let liveCode = null;
-      let paintQueued = false;
-      let donePayload = null;
-      let failure = null;
-
-      // Newest ```python fence in the streamed text; an unclosed fence counts as in progress.
-      const latestCode = () => {
-        let found = null;
-        for (const match of text.matchAll(/```([\w+-]*)[^\n]*\n([\s\S]*?)(```|$)/g)) {
-          if (['', 'python', 'py'].includes(match[1].toLowerCase())) found = match[2];
-        }
-        return found;
-      };
-      const paint = () => {
-        paintQueued = false;
-        bubble.textContent = text;
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-        const code = latestCode();
-        if (code !== null && code !== liveCode) {
-          liveCode = code;
-          editor.setValue(code);
-          status.textContent = 'Agent is writing code…';
-        }
-      };
-      const schedulePaint = () => {
-        if (!paintQueued) { paintQueued = true; requestAnimationFrame(paint); }
-      };
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      const handleEvent = async item => {
-        if (item.type === 'token') {
-          text += item.text;
-          schedulePaint();
-        } else if (item.type === 'tool_event') {
-          await handleCodeBuilderToolEvents([item.event]);
-        } else if (item.type === 'done') {
-          donePayload = item;
-        } else if (item.type === 'error') {
-          failure = item.detail || 'The agent request failed.';
-        }
-      };
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const frames = buffer.split('\n\n');
-        buffer = frames.pop();
-        for (const frame of frames) {
-          const line = frame.split('\n').find(l => l.startsWith('data: '));
-          if (line) await handleEvent(JSON.parse(line.slice(6)));
-        }
-      }
-
-      paint();
-      if (failure) {
-        bubble.remove();
-        throw new Error(failure);
-      }
-      const reply = donePayload?.reply || text || 'The agent returned an empty response.';
-      bubble.textContent = '';
-      appendAssistantMessage(bubble, reply);
-      if (liveCode !== null) sendCodeToEditor(liveCode, 'agent');
-      if (memoryPath) {
-        transcript.push({ role: 'assistant', text: reply });
-        await writeMemory();
-      }
-      chatStatus.textContent = `${selectedAgent.name} · ${donePayload?.model || modelSelect.value}`;
-    } catch (error) {
-      const messageText = error instanceof Error ? error.message : String(error);
-      appendChatMessage('system', `Request failed: ${messageText}`);
-      chatStatus.textContent = 'Request failed';
-    } finally {
-      chatPending = false;
-      updateChatControls();
-      chatInput.focus();
-    }
-  });
-  chatInput.addEventListener('keydown', event => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      chatForm.requestSubmit();
-    }
-  });
-  chatClear.addEventListener('click', () => {
-    chatInput.value = '';
-    chatMessages.replaceChildren();
-    disposeChatCodeEditors();
-    if (selectedAgent) {
-      appendChatMessage('system', 'Chat cleared. Ask a new question.');
-      chatStatus.textContent = `Agent: ${selectedAgent.name}`;
-    } else {
-      appendChatMessage('system', 'Chat cleared.');
-      chatStatus.textContent = 'Chat cleared';
-    }
-    chatInput.focus();
-  });
-
-  renderDiagnostics([]);
-  status.textContent = 'Ready';
-  updateChatControls();
-  Promise.all([loadAgents(), loadModels()]);
-
-  return { editor, runCode, loadAgents };
-}
-
-export function renderCodeBuilderView(container) {
-  if (!container) return;
-  container.innerHTML = `
-    <div class="codebuilder-shell">
-      <div class="codebuilder-toolbar">
-        <div class="codebuilder-file-label">
-          <span class="codebuilder-python-icon">Py</span>
-          <span>Untitled Python File</span>
-          <span class="badge badge-success">Python</span>
-        </div>
-        <div class="codebuilder-toolbar-actions">
-          <label class="codebuilder-run-mode">
-            <select id="codebuilder-run-mode" aria-label="Choose how to run Python code">
-              <option value="safe">Safe (in-process)</option>
-              <option value="risky">Risky (isolated, streams)</option>
-            </select>
-          </label>
-          <button id="load-demo" class="btn btn-sm" type="button" title="Load the sample Python program">Sample</button>
-          <button id="open-file" class="btn btn-sm" type="button" title="Open a file from the file manager">Open…</button>
-          <button id="save-file" class="btn btn-sm" type="button" title="Save (Ctrl+S)">Save</button>
-          <button id="save-file-as" class="btn btn-sm" type="button" title="Save as a new file">Save As…</button>
-          <button id="run-in-terminal" class="btn btn-sm" type="button" title="Save, then prepare the command in the Terminal tab">Run in Terminal</button>
-          <button id="clear-console" class="btn btn-sm" type="button" title="Clear console and diagnostics">Clear Output</button>
-          <button id="reset-sandbox" class="btn btn-sm" type="button" title="Remove all packages installed for testing">Reset Environment</button>
-          <button id="run-code" class="btn btn-sm btn-primary" type="button" title="Run Python (Ctrl+Enter)">▶ Run Python</button>
-        </div>
-      </div>
-
-      <main class="codebuilder-layout">
-        <section id="codebuilder-chat-panel" class="codebuilder-chat-panel" aria-label="Chat with an agent">
-          <div class="codebuilder-chat-heading">
-            <h2>Ask an Agent</h2>
-            <span id="codebuilder-chat-status" class="text-muted small">Select an agent to start.</span>
-            <button id="codebuilder-chat-expand" class="btn btn-sm codebuilder-chat-expand"
-                    type="button" aria-label="Collapse chat panel" aria-expanded="true"
-                    title="Collapse chat panel">«</button>
-          </div>
-          <div id="codebuilder-chat-messages" class="codebuilder-chat-messages" aria-live="polite">
-            <div class="codebuilder-chat-message system">Messages with your selected agent appear here.</div>
-          </div>
-          <form id="codebuilder-chat-form" class="codebuilder-chat-form">
-            <label class="codebuilder-model-picker">
-              <span class="text-muted small">Model</span>
-              <select id="codebuilder-model" class="form-select" aria-label="Choose model">
-                <option value="">Loading models…</option>
-              </select>
-            </label>
-            <textarea id="codebuilder-chat-input" class="form-input" rows="4"
-                      placeholder="Ask the selected agent about your Python code…"
-                      aria-label="Message to agent"></textarea>
-            <div class="codebuilder-chat-actions">
-              <button id="codebuilder-chat-clear" class="btn btn-sm"
-                      type="button" aria-label="Clear chat" title="Clear the chat conversation">Clear</button>
-              <button class="btn btn-primary" type="submit" disabled>Send</button>
-            </div>
-          </form>
-        </section>
-
-        <div class="codebuilder-resizer" data-resize="chat" role="separator"
-             aria-orientation="vertical" aria-label="Resize chat panel"></div>
-
-        <section class="codebuilder-editor-panel" aria-label="Python editor">
-          <div id="codebuilder-editor" class="editor-surface"></div>
-          <div class="codebuilder-statusbar">
-            <span id="codebuilder-status">Loading editor…</span>
-            <span id="codebuilder-filename" class="codebuilder-filename">Untitled</span>
-            <span>Python</span>
-            <span>UTF-8</span>
-            <span>Spaces: 4</span>
-          </div>
-        </section>
-
-        <div class="codebuilder-resizer" data-resize="console" role="separator"
-             aria-orientation="vertical" aria-label="Resize console panel"></div>
-
-        <aside class="codebuilder-console-panel" aria-label="Run output and diagnostics">
-          <div class="codebuilder-console-heading">
-            <h2>Run Output</h2>
-            <span class="codebuilder-console-subtitle">Console &amp; Problems</span>
-            <button id="codebuilder-console-collapse" class="btn btn-sm codebuilder-console-collapse"
-                    type="button" aria-label="Collapse console panel" aria-expanded="true"
-                    title="Collapse console panel">»</button>
-          </div>
-          <div class="codebuilder-console-tabs" role="tablist">
-            <button type="button" class="btn btn-sm active" data-console-tab="console" role="tab">Console</button>
-            <button type="button" class="btn btn-sm" data-console-tab="terminal" role="tab">Terminal</button>
-          </div>
-          <section class="codebuilder-output-section">
-            <h3>Console</h3>
-            <button id="codebuilder-copy-console" class="btn btn-sm" type="button"
-                    title="Copy the console output">Copy</button>
-            <pre id="codebuilder-output" class="console-output">Ready. Run your Python code to see output here.</pre>
-          </section>
-          <section class="codebuilder-problems-section">
-            <h3>Problems</h3>
-            <button id="codebuilder-fix-with-agent" class="btn btn-sm btn-primary" type="button" disabled
-                    title="Copy the error, console output and code into the agent message box">Fix with Agent</button>
-            <div id="diagnostics" class="diagnostics-list"></div>
-          </section>
-          <section class="codebuilder-terminal-section" hidden>
-            <div id="codebuilder-terminal-mount" class="codebuilder-terminal-mount"></div>
-            <div id="codebuilder-terminal-popped" class="codebuilder-terminal-popped" hidden>
-              <p>The terminal is open in a separate window.</p>
-              <button id="codebuilder-terminal-bring-back" class="btn btn-sm btn-primary" type="button">Bring back</button>
-            </div>
-          </section>
-        </aside>
-
-        <div class="codebuilder-resizer" data-resize="agents" role="separator"
-             aria-orientation="horizontal" aria-label="Resize agents panel"></div>
-
-        <aside id="codebuilder-agents-panel" class="codebuilder-agents-panel" aria-label="Workspace agents">
-          <div class="codebuilder-agents-heading">
-            <button id="codebuilder-agents-toggle" class="btn btn-sm codebuilder-agents-toggle"
-                    type="button" aria-label="Collapse agents panel" aria-expanded="true"
-                    title="Collapse agents panel">⌄</button>
-            <button id="codebuilder-agent-refresh" class="btn btn-sm codebuilder-agent-refresh"
-                    type="button" title="Refresh agents" aria-label="Refresh agents">↻</button>
-          </div>
-          <div id="codebuilder-agent-list" class="codebuilder-agent-list"></div>
-        </aside>
-      </main>
-    </div>
-  `;
-
-  setupCodeBuilderPage();
-}
-
-if (typeof window !== 'undefined' && document.readyState !== 'loading') {
-  const root = document.getElementById('codebuilder-editor');
-  if (root) setupCodeBuilderPage();
-}
-
-```
-
-## `frontend/static/js/codebuilder/codebuilder_editor.js`
-```js
-const MONACO_VS_PATH = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs';
-let monacoPromise;
-
-export function loadMonaco() {
-  if (window.monaco?.editor) return Promise.resolve(window.monaco);
-  if (monacoPromise) return monacoPromise;
-
-  monacoPromise = new Promise((resolve, reject) => {
-    if (typeof window.require !== 'function') {
-      reject(new Error('The Monaco Editor loader is unavailable.'));
-      return;
-    }
-
-    window.require.config({ paths: { vs: MONACO_VS_PATH } });
-    window.require(['vs/editor/editor.main'], () => {
-      if (!window.monaco?.editor) {
-        reject(new Error('Monaco Editor failed to initialize.'));
-        return;
-      }
-      resolve(window.monaco);
-    }, reject);
-  });
-  return monacoPromise;
-}
-
-function createTextareaEditor(element, initialValue) {
-  const textarea = document.createElement('textarea');
-  textarea.className = 'codebuilder-textarea';
-  textarea.value = initialValue;
-  textarea.setAttribute('aria-label', 'Python source code');
-  element.replaceChildren(textarea);
-  let runHandler = null;
-  let saveHandler = null;
-  let changeHandler = null;
-  let positionHandler = null;
-  textarea.addEventListener('input', () => changeHandler?.());
-  textarea.addEventListener('keyup', () => positionHandler?.());
-  textarea.addEventListener('click', () => positionHandler?.());
-  textarea.addEventListener('keydown', event => {
-    if (event.ctrlKey || event.metaKey) {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        runHandler?.();
-      } else if (event.key.toLowerCase() === 's' && saveHandler) {
-        event.preventDefault();
-        saveHandler?.();
-      }
-    }
-  });
-
-  return {
-    getValue: () => textarea.value,
-    setValue: (value) => { textarea.value = value; changeHandler?.(); },
-    setLanguage: () => {},
-    getPosition: () => {
-      const lines = textarea.value.slice(0, textarea.selectionStart).split('\n');
-      return { lineNumber: lines.length, column: lines[lines.length - 1].length + 1 };
-    },
-    setDiagnostics: () => {},
-    setRunHandler: (handler) => { runHandler = handler; },
-    setSaveHandler: (handler) => { saveHandler = handler; },
-    onChange: (handler) => { changeHandler = handler; },
-    onPosition: (handler) => { positionHandler = handler; },
-    revealLine: (line) => {
-      const lineStart = textarea.value.split('\n').slice(0, Math.max(0, line - 1)).join('\n').length;
-      textarea.focus();
-      textarea.setSelectionRange(lineStart, lineStart);
-    },
-    focus: () => textarea.focus(),
-    dispose: () => textarea.remove(),
-  };
-}
-
-export async function attachCodeBuilderEditor(
-  element,
-  initialValue = "print('Hello from Novous CodeBuilder!')\n",
-  language = 'python'
-) {
-  if (!element) {
-    throw new Error('The CodeBuilder editor container was not found.');
-  }
-
-  try {
-    const monaco = await loadMonaco();
-    const editor = monaco.editor.create(element, {
-      value: initialValue,
-      language,
-      theme: 'vs-dark',
-      automaticLayout: true,
-      ariaLabel: 'Python code editor',
-      accessibilitySupport: 'auto',
-      bracketPairColorization: { enabled: true },
-      cursorBlinking: 'smooth',
-      detectIndentation: false,
-      folding: true,
-      fontSize: 14,
-      fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace",
-      fontLigatures: true,
-      formatOnPaste: true,
-      guides: { bracketPairs: true, indentation: true },
-      lineNumbers: 'on',
-      minimap: { enabled: true, scale: 0.8 },
-      padding: { top: 12, bottom: 12 },
-      renderLineHighlight: 'all',
-      scrollBeyondLastLine: false,
-      smoothScrolling: true,
-      stickyScroll: { enabled: true },
-      tabSize: 4,
-      insertSpaces: true,
-      wordWrap: 'off',
-    });
-    let runHandler = null;
-    let saveHandler = null;
-    let changeHandler = null;
-    let positionHandler = null;
-    editor.onDidChangeModelContent(() => changeHandler?.());
-    editor.onDidChangeCursorPosition(() => positionHandler?.());
-    editor.addAction({
-      id: 'codebuilder.runPython',
-      label: 'Run Python',
-      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
-      run: () => runHandler?.(),
-    });
-    let saveAction = null;
-
-    return {
-      getValue: () => editor.getValue(),
-      setValue: (value) => { editor.setValue(value); },
-      setLanguage: (nextLanguage) => {
-        const model = editor.getModel();
-        if (model) monaco.editor.setModelLanguage(model, nextLanguage);
-      },
-      getPosition: () => editor.getPosition(),
-      focus: () => editor.focus(),
-      setRunHandler: (handler) => { runHandler = handler; },
-      setSaveHandler: (handler) => {
-        saveAction?.dispose();
-        saveHandler = handler;
-        if (handler) {
-          saveAction = editor.addAction({
-            id: 'codebuilder.save',
-            label: 'Save',
-            keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
-            run: () => saveHandler?.(),
-          });
-        }
-      },
-      onChange: (handler) => { changeHandler = handler; },
-      onPosition: (handler) => { positionHandler = handler; },
-      revealLine: (line) => {
-        editor.revealLineInCenter(line);
-        editor.setPosition({ lineNumber: line, column: 1 });
-        editor.focus();
-      },
-      setDiagnostics: (items) => {
-        const model = editor.getModel();
-        if (!model) return;
-        monaco.editor.setModelMarkers(model, 'codebuilder', items.map(item => ({
-          severity: item.severity === 'warning'
-            ? monaco.MarkerSeverity.Warning
-            : item.severity === 'info'
-              ? monaco.MarkerSeverity.Info
-              : monaco.MarkerSeverity.Error,
-          message: item.message,
-          startLineNumber: item.line || 1,
-          endLineNumber: item.line || 1,
-          startColumn: item.column || 1,
-          endColumn: (item.column || 1) + 1,
-        })));
-      },
-      dispose: () => editor.dispose(),
-    };
-  } catch (error) {
-    console.error('Monaco Editor could not be loaded; using the basic Python editor instead.', error);
-    return createTextareaEditor(element, initialValue);
-  }
-}
-
-```
-
-## `frontend/static/js/codebuilder/files_ui.js`
-```js
-import { dialog } from '../sandbox_ui.js';
-import { renderTree } from '../tree.js';
-import { Api } from '../api.js';
-
-async function call(method, url, body) {
-  const response = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(typeof payload.detail === 'string' ? payload.detail : `Request failed (${response.status}).`);
-  }
-  return payload;
-}
-
-const Files = {
-  list: () => call('GET', '/api/codebuilder/files'),
-  read: path => call('GET', `/api/codebuilder/files/read?path=${encodeURIComponent(path)}`),
-  save: (folder, name, content, overwrite) =>
-    call('POST', '/api/codebuilder/files/save', { folder, name, content, overwrite }),
-  runCommand: (path, content) => call('POST', '/api/codebuilder/files/run-command', { path, content })
-};
-
-function button(label, className = 'btn') {
-  const el = document.createElement('button');
-  el.type = 'button';
-  el.className = className;
-  el.textContent = label;
-  return el;
-}
-
-// Save, Save As, Open and Run-in-terminal for the editor. `openTerminalWith(command)` prefills the terminal.
-export function setupFileControls({ editor, status, label, buttons, openTerminalWith }) {
-  let currentPath = '';
-  let managedPath = ''; // set when the open file came from the file manager (saved through it too)
-  let savedValue = editor.getValue();
-
-  const isDirty = () => editor.getValue() !== savedValue;
-  const nameOf = path => path.split(/[\\/]/).pop();
-
-  const refreshLabel = () => {
-    if (!label) return;
-    label.textContent = currentPath ? `${nameOf(currentPath)}${isDirty() ? ' ●' : ''}` : (isDirty() ? 'Unsaved ●' : 'Untitled');
-    label.title = currentPath || 'Not saved to a file yet';
-  };
-
-  const markSaved = (path) => {
-    currentPath = path;
-    savedValue = editor.getValue();
-    refreshLabel();
-  };
-
-  const writeFile = async (folder, name, overwrite = false) => {
-    const result = await Files.save(folder, name, editor.getValue(), overwrite);
-    if (result.saved) {
-      managedPath = '';
-      markSaved(result.path);
-      status.textContent = `Saved ${result.path}`;
-      return result;
-    }
-    if (result.exists && confirm(`${result.name} already exists. Replace it?`)) {
-      return writeFile(folder, name, true);
-    }
-    return null;
-  };
-
-  const saveAs = () => new Promise(resolve => {
-    Files.list().then(info => {
-      dialog('Save as', (modal, close) => {
-        const nameInput = document.createElement('input');
-        nameInput.className = 'form-input question-dialog-input';
-        nameInput.placeholder = 'file name, e.g. app.py';
-        nameInput.value = currentPath ? nameOf(currentPath) : '';
-        nameInput.setAttribute('aria-label', 'File name');
-        const folderSelect = document.createElement('select');
-        folderSelect.className = 'form-select';
-        folderSelect.setAttribute('aria-label', 'Folder');
-        info.folders.forEach(folder => {
-          const option = document.createElement('option');
-          option.value = folder;
-          option.textContent = folder;
-          folderSelect.appendChild(option);
-        });
-        folderSelect.value = currentPath
-          ? currentPath.slice(0, Math.max(currentPath.lastIndexOf('\\'), currentPath.lastIndexOf('/')))
-          : info.default_folder;
-        if (!folderSelect.value) folderSelect.value = info.default_folder;
-        const error = document.createElement('p');
-        error.className = 'text-danger small';
-        const actions = document.createElement('div');
-        actions.className = 'question-dialog-actions';
-        const cancel = button('Cancel');
-        const save = button('Save', 'btn btn-primary');
-        actions.append(cancel, save);
-        modal.append(nameInput, folderSelect, error, actions);
-        nameInput.focus();
-        cancel.addEventListener('click', () => { close(); resolve(null); });
-        const submit = async () => {
-          if (!nameInput.value.trim()) { error.textContent = 'Enter a file name.'; return; }
-          save.disabled = true;
-          try {
-            const result = await writeFile(folderSelect.value, nameInput.value);
-            if (result) { close(); resolve(result); }
-          } catch (err) {
-            error.textContent = err.message;
-          }
-          save.disabled = false;
-        };
-        save.addEventListener('click', submit);
-        nameInput.addEventListener('keydown', event => { if (event.key === 'Enter') submit(); });
-      });
-    }).catch(err => { status.textContent = err.message; resolve(null); });
-  });
-
-  const save = async () => {
-    if (managedPath) {
-      try {
-        await Api.writeManagedFile(managedPath, editor.getValue());
-        markSaved(managedPath);
-        status.textContent = `Saved ${managedPath}`;
-        window.dispatchEvent(new CustomEvent('novous:fs-changed'));
-        return { saved: true, path: managedPath };
-      } catch (err) {
-        status.textContent = `Save failed: ${err.message}`;
-        return null;
-      }
-    }
-    if (!currentPath) return saveAs();
-    const folder = currentPath.slice(0, Math.max(currentPath.lastIndexOf('\\'), currentPath.lastIndexOf('/')));
-    try {
-      return await writeFile(folder, nameOf(currentPath), true);
-    } catch (err) {
-      status.textContent = `Save failed: ${err.message}`;
-      return null;
-    }
-  };
-
-  const open = async () => {
-    if (isDirty() && !confirm('Discard unsaved changes in the editor?')) return;
-    dialog('Open from file manager', (modal, close) => {
-      modal.classList.add('is-resizable');
-      const treeHost = document.createElement('div');
-      treeHost.className = 'codebuilder-open-tree';
-      const actions = document.createElement('div');
-      actions.className = 'question-dialog-actions';
-      const cancel = button('Cancel');
-      cancel.addEventListener('click', close);
-      actions.appendChild(cancel);
-      modal.append(treeHost, actions);
-
-      renderTree(treeHost, {
-        manageRoots: true,
-        onSelect: async (path, type) => {
-          if (type !== 'file') return;
-          try {
-            const opened = await Api.readManagedFile(path);
-            editor.setValue(opened.content);
-            managedPath = opened.path;
-            markSaved(opened.path);
-            status.textContent = `Opened ${opened.path}`;
-            close();
-          } catch (err) {
-            status.textContent = `Could not open ${path}: ${err.message}`;
-          }
-        }
-      });
-    });
-  };
-
-  const runInTerminal = async () => {
-    const saved = await save();
-    if (!saved && !currentPath) return;
-    try {
-      const { command } = await Files.runCommand(currentPath, editor.getValue());
-      openTerminalWith?.(command);
-      status.textContent = 'Press Enter in the terminal to run';
-    } catch (err) {
-      status.textContent = err.message;
-    }
-  };
-
-  buttons.save?.addEventListener('click', save);
-  buttons.saveAs?.addEventListener('click', saveAs);
-  buttons.open?.addEventListener('click', open);
-  buttons.runTerminal?.addEventListener('click', runInTerminal);
-  editor.setSaveHandler?.(save);
-  refreshLabel();
-
-  return { refreshLabel, save, saveAs, open };
-}
-
-```
-
 ## `frontend/static/js/editor.js`
-```js
+```javascript
 import { Api } from './api.js';
 import { attachCodeBuilderEditor } from './codebuilder/codebuilder_editor.js';
 import { renderTree } from './tree.js';
@@ -12588,7 +10804,7 @@ export function renderEditorView(container, initialPath = null) {
 ```
 
 ## `frontend/static/js/icons.js`
-```js
+```javascript
 const ICON_MARKUP = {
   activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   bug: '<path d="M12 20v-8"/><path d="M8 20v-4a4 4 0 0 1 8 0v4"/><path d="M19 8h-3"/><path d="M8 8H5"/><path d="M19 12h-3"/><path d="M8 12H5"/><path d="M16 4a4 4 0 0 0-8 0"/>',
@@ -12628,7 +10844,7 @@ export function createIcon(name) {
 ```
 
 ## `frontend/static/js/prompt_creation.js`
-```js
+````javascript
 import { Api } from './api.js';
 
 function esc(value) {
@@ -14437,10 +12653,10 @@ export function renderPromptCreationView(container) {
   }
 }
 
-```
+````
 
 ## `frontend/static/js/sandbox_ui.js`
-```js
+```javascript
 // Shared UI for the isolated test environment (install missing packages, reset).
 
 async function call(method, url, body) {
@@ -14577,7 +12793,7 @@ export async function confirmReset() {
 ```
 
 ## `frontend/static/js/terminal.js`
-```js
+```javascript
 const API = '/api/codebuilder/terminal';
 const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g;
 const URL_PATTERN = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d+\S*/g;
@@ -14766,7 +12982,7 @@ export function mountTerminal(root, { popOut = null, compact = false } = {}) {
 ```
 
 ## `frontend/static/js/test_panel.js`
-```js
+```javascript
 import { createIcon } from './icons.js';
 
 const TEST_FUNCTIONS = [
@@ -14851,7 +13067,7 @@ export function buildTestPanel(containerId, actions = {}) {
 ```
 
 ## `frontend/static/js/test_suite_runner.js`
-```js
+```javascript
 import { Api } from './api.js';
 
 let openSuiteDialog = null;
@@ -15311,7 +13527,7 @@ export function openTestSuiteRunner({
 ```
 
 ## `frontend/static/js/testing.js`
-```js
+```javascript
 import { Api } from './api.js';
 import { offerInstallForRun, offerInstallBeforeRun, confirmReset } from './sandbox_ui.js';
 
@@ -16124,7 +14340,7 @@ function renderToolWorkbench(container, toolPayload = null) {
 ```
 
 ## `frontend/static/js/tree.js`
-```js
+```javascript
 import { Api } from './api.js';
 
 function esc(value) {
@@ -16341,8 +14557,1904 @@ export function renderTree(container, options = {}) {
 
 ```
 
+## `frontend/static/js/codebuilder/codebuilder.js`
+````javascript
+import { attachCodeBuilderEditor, loadMonaco } from './codebuilder_editor.js';
+import { offerInstallForRun, confirmReset, dialog as pickerDialog } from '../sandbox_ui.js';
+import { renderTree } from '../tree.js';
+import { mountTerminal, TERMINAL_CHANNEL } from '../terminal.js?v=2';
+import { setupFileControls } from './files_ui.js';
+import { Api } from '../api.js';
+
+const DEMO_CODE = `print("Hello from Novous CodeBuilder!")
+for i in range(3):
+    print(f"count={i}")
+`;
+
+const CODE_LANGUAGE_MAP = {
+  py: 'python', python: 'python', python3: 'python',
+  js: 'javascript', javascript: 'javascript', node: 'javascript',
+  ts: 'typescript', typescript: 'typescript',
+  html: 'html', css: 'css', scss: 'scss', json: 'json',
+  sh: 'shell', bash: 'shell', shell: 'shell', zsh: 'shell', powershell: 'powershell',
+  yaml: 'yaml', yml: 'yaml', ini: 'ini', toml: 'ini', xml: 'xml',
+  md: 'markdown', markdown: 'markdown', text: 'plaintext', txt: 'plaintext',
+};
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch { /* fall through to legacy copy */ }
+  }
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.top = '0';
+  area.style.left = '0';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { ok = false; }
+  area.remove();
+  return ok;
+}
+
+const PREFS_KEY = 'novous2.codebuilder.';
+const PANEL_CONF = {
+  chat:    { var: '--chat-w',    min: 240, maxFactor: 0.45, rail: 44, default: 320 },
+  console: { var: '--console-w', min: 220, maxFactor: 0.45, rail: 44, default: 300 },
+  agents:  { var: '--agents-h',  min: 120, max: 340,        rail: 38, default: 220 },
+};
+const PANEL_LABELS = { chat: 'Chat', console: 'Console', agents: 'Agents' };
+const PANEL_GLYPHS = { chat: ['«', '»'], console: ['»', '«'], agents: ['⌄', '⌃'] };
+const PANEL_BUTTONS = {
+  chat: '#codebuilder-chat-expand',
+  console: '#codebuilder-console-collapse',
+  agents: '#codebuilder-agents-toggle',
+};
+
+const readPref = key => {
+  try { return localStorage.getItem(PREFS_KEY + key); } catch { return null; }
+};
+const writePref = (key, value) => {
+  try { localStorage.setItem(PREFS_KEY + key, value); } catch { /* storage unavailable */ }
+};
+const readVar = (element, name) => parseFloat(
+  element.style.getPropertyValue(name) || getComputedStyle(element).getPropertyValue(name)
+);
+
+const clampSize = (layout, name, value) => {
+  const conf = PANEL_CONF[name];
+  const max = conf.max ?? Math.max(conf.min, layout.clientWidth * conf.maxFactor);
+  return Math.round(Math.min(Math.max(value, conf.min), max));
+};
+
+function restoreLayoutState(shell) {
+  const layout = shell.querySelector('.codebuilder-layout');
+  if (!layout) return;
+  for (const name of Object.keys(PANEL_CONF)) {
+    const conf = PANEL_CONF[name];
+    const saved = parseFloat(readPref(name + 'Width'));
+    if (Number.isFinite(saved)) layout.style.setProperty(conf.var, clampSize(layout, name, saved) + 'px');
+    if (readPref(name + 'Collapsed') === '1') {
+      shell.classList.add(name + '-collapsed');
+      layout.style.setProperty(conf.var, conf.rail + 'px');
+    }
+  }
+}
+
+function refreshPanelToggle(shell, name) {
+  const button = shell.querySelector(PANEL_BUTTONS[name]);
+  if (!button) return;
+  const collapsed = shell.classList.contains(name + '-collapsed');
+  const label = PANEL_LABELS[name];
+  button.textContent = collapsed ? PANEL_GLYPHS[name][1] : PANEL_GLYPHS[name][0];
+  button.title = collapsed ? `Expand ${label} panel` : `Collapse ${label} panel`;
+  button.setAttribute('aria-label', button.title);
+  button.setAttribute('aria-expanded', String(!collapsed));
+}
+
+function setupResizers(shell) {
+  const layout = shell.querySelector('.codebuilder-layout');
+  if (!layout) return;
+  shell.querySelectorAll('.codebuilder-resizer').forEach(resizer => {
+    const name = resizer.dataset.resize;
+    const conf = PANEL_CONF[name];
+    if (!conf) return;
+    resizer.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      if (shell.classList.contains(name + '-collapsed')) {
+        shell.classList.remove(name + '-collapsed');
+        writePref(name + 'Collapsed', '0');
+        refreshPanelToggle(shell, name);
+      }
+      const axis = name === 'agents' ? 'clientY' : 'clientX';
+      const startPos = event[axis];
+      const start = clampSize(layout, name, readVar(layout, conf.var) || conf.default);
+      resizer.setPointerCapture(event.pointerId);
+      document.body.classList.add('is-resizing');
+      resizer.classList.add('is-dragging');
+      const onMove = moveEvent => {
+        layout.style.setProperty(
+          conf.var,
+          clampSize(layout, name, start + (moveEvent[axis] - startPos)) + 'px'
+        );
+      };
+      const onUp = () => {
+        resizer.removeEventListener('pointermove', onMove);
+        resizer.removeEventListener('pointerup', onUp);
+        document.body.classList.remove('is-resizing');
+        resizer.classList.remove('is-dragging');
+        const final = readVar(layout, conf.var);
+        if (Number.isFinite(final)) writePref(name + 'Width', String(final));
+      };
+      resizer.addEventListener('pointermove', onMove);
+      resizer.addEventListener('pointerup', onUp);
+    });
+  });
+}
+
+const RISKY_CODE_PATTERN = /\b(?:subprocess|os\.system|os\.popen|os\.spawn|pty|commands)\b|shell\s*[:=]\s*true|\binput\s*\(|^\s*!/im;
+const RUN_MODE_KEY = 'codebuilder.runMode';
+
+export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
+  const root = document.getElementById(rootId);
+  const output = document.getElementById('codebuilder-output');
+  const diagnostics = document.getElementById('diagnostics');
+  const runButton = document.getElementById('run-code');
+  const runMode = document.getElementById('codebuilder-run-mode');
+  const demoButton = document.getElementById('load-demo');
+  const clearButton = document.getElementById('clear-console');
+  const status = document.getElementById('codebuilder-status');
+  const agentList = document.getElementById('codebuilder-agent-list');
+  const agentRefresh = document.getElementById('codebuilder-agent-refresh');
+  const agentsPanel = document.getElementById('codebuilder-agents-panel');
+  const agentsToggle = document.getElementById('codebuilder-agents-toggle');
+  const modelSelect = document.getElementById('codebuilder-model');
+  const chatForm = document.getElementById('codebuilder-chat-form');
+  const chatInput = document.getElementById('codebuilder-chat-input');
+  const chatMessages = document.getElementById('codebuilder-chat-messages');
+  const chatStatus = document.getElementById('codebuilder-chat-status');
+  const chatPanel = document.getElementById('codebuilder-chat-panel');
+  const chatExpand = document.getElementById('codebuilder-chat-expand');
+  const chatClear = document.getElementById('codebuilder-chat-clear');
+  const consoleCollapse = document.getElementById('codebuilder-console-collapse');
+  const shell = agentsPanel?.closest('.codebuilder-shell') ?? root.closest('.codebuilder-shell');
+  const layout = shell?.querySelector('.codebuilder-layout');
+
+  if (!root || !output || !diagnostics || !runButton || !runMode || !demoButton || !clearButton ||
+      !agentList || !agentRefresh || !agentsPanel || !agentsToggle ||
+      !modelSelect || !chatForm || !chatInput || !chatMessages || !chatStatus ||
+      !chatPanel || !chatExpand || !chatClear || !consoleCollapse || !shell || !layout) {
+    console.error('CodeBuilder could not start because a required page element is missing.');
+    return null;
+  }
+
+  restoreLayoutState(shell);
+  setupResizers(shell);
+
+  const editor = await attachCodeBuilderEditor(root, DEMO_CODE);
+  let agents = [];
+  let selectedAgent = null;
+  let defaultModel = 'qwen2.5-coder:latest';
+  let chatPending = false;
+  let manualRunMode = null;
+  const chatCodeEditors = new Set();
+
+  const detectRunMode = () => (RISKY_CODE_PATTERN.test(editor.getValue()) ? 'risky' : 'safe');
+  const currentRunMode = () => (manualRunMode || detectRunMode());
+
+  const disposeChatCodeEditors = () => {
+    chatCodeEditors.forEach(editor => {
+      try { editor.dispose(); } catch { /* already disposed */ }
+    });
+    chatCodeEditors.clear();
+  };
+
+  // The harness diagnostic can be a shortened form; prefer the exception line the console actually printed.
+  const EXCEPTION_LINE = /^(?:[A-Za-z_][\w.]*\.)?[A-Z]\w*(?:Error|Exception|Exit|Interrupt)\b.*$/;
+  const consoleErrorLine = () => {
+    const lines = output.textContent.split('\n').map(line => line.trimEnd()).filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      if (EXCEPTION_LINE.test(lines[i].trim())) return lines[i].trim();
+    }
+    return '';
+  };
+  const consoleErrorLineNumber = () => {
+    let line = null;
+    for (const match of output.textContent.matchAll(/File "[^"]*tool_test[^"]*", line (\d+)|File "<[^>]*>", line (\d+)|File "[^"]*", line (\d+)/g)) {
+      line = Number(match[1] || match[2] || match[3]);
+    }
+    return line;
+  };
+
+  let lastRunCode = '';
+  let lastFailure = null;
+  const fixButton = document.getElementById('codebuilder-fix-with-agent');
+
+  const buildFixPrompt = () => {
+    const failure = lastFailure;
+    const consoleText = output.textContent.trim();
+    const trimmed = consoleText.length > 6000 ? `[earlier output omitted]\n${consoleText.slice(-6000)}` : consoleText;
+    const location = failure.line ? ` (line ${failure.line})` : '';
+    return [
+      'My Python code failed when I ran it. Please fix it.',
+      '',
+      `Error${location}:`,
+      failure.message,
+      '',
+      'Full console output:',
+      '```',
+      trimmed || '(no console output)',
+      '```',
+      '',
+      'Code that was run:',
+      '```python',
+      lastRunCode.replace(/\s+$/, ''),
+      '```',
+      '',
+      'Instructions:',
+      '1. Find the root cause of the error above using the traceback; do not guess at unrelated problems.',
+      '2. Change only what is needed to fix it. Keep the existing function names, signatures and behavior.',
+      '3. Reply with the complete corrected code in a single ```python block.',
+      '4. Add one or two sentences on what was wrong and what you changed.',
+      '5. If you can, put the corrected code in the editor and run it to confirm the error is gone.'
+    ].join('\n');
+  };
+
+  const renderDiagnostics = (items = []) => {
+    diagnostics.replaceChildren();
+    lastFailure = null;
+    if (fixButton) fixButton.disabled = true;
+    if (!items.length) {
+      const empty = document.createElement('p');
+      empty.className = 'text-muted';
+      empty.textContent = 'No diagnostics reported.';
+      diagnostics.appendChild(empty);
+      return;
+    }
+
+    const exceptionLine = consoleErrorLine();
+    const tracebackLine = consoleErrorLineNumber();
+    items.forEach((item, index) => {
+      const isError = (item.severity || 'error') === 'error';
+      const message = isError && index === 0 && exceptionLine && !/^SyntaxError/.test(item.message || '')
+        ? exceptionLine
+        : item.message;
+      const line = item.line || (isError && index === 0 ? tracebackLine : null);
+      const entry = document.createElement('button');
+      entry.type = 'button';
+      entry.className = 'diagnostic-item';
+      entry.dataset.severity = item.severity || 'error';
+      entry.textContent = `${item.severity || 'error'}${line ? ` · line ${line}` : ''} · ${message}`;
+      entry.title = message;
+      if (line) {
+        entry.addEventListener('click', () => editor.revealLine(line));
+      }
+      diagnostics.appendChild(entry);
+      if (!lastFailure && isError) lastFailure = { message, line };
+    });
+    if (fixButton) fixButton.disabled = !lastFailure;
+  };
+
+  const copyConsoleButton = document.getElementById('codebuilder-copy-console');
+  let openTerminalWith = () => {};
+  // ---- Terminal tab (docked) with pop-out ----
+  const consolePanel = root.closest('.codebuilder-shell')?.querySelector('.codebuilder-console-panel');
+  const terminalSection = consolePanel?.querySelector('.codebuilder-terminal-section');
+  const terminalMount = document.getElementById('codebuilder-terminal-mount');
+  const terminalPopped = document.getElementById('codebuilder-terminal-popped');
+  const terminalBringBack = document.getElementById('codebuilder-terminal-bring-back');
+  if (consolePanel && terminalSection && terminalMount) {
+    const channel = 'BroadcastChannel' in window ? new BroadcastChannel(TERMINAL_CHANNEL) : null;
+    let popupWindow = null;
+    let isPoppedOut = false;
+    let terminal = null;
+
+    const showTab = (tab) => {
+      const showTerminal = tab === 'terminal';
+      consolePanel.classList.toggle('show-terminal', showTerminal);
+      terminalSection.hidden = !showTerminal;
+      consolePanel.querySelectorAll('[data-console-tab]').forEach(button => {
+        button.classList.toggle('active', button.dataset.consoleTab === tab);
+      });
+      if (showTerminal && !terminal && !isPoppedOut) {
+        terminal = mountTerminal(terminalMount, { popOut: openPopOut, compact: true });
+      }
+      if (showTerminal) terminal?.focus();
+    };
+
+    const setPoppedOut = (value) => {
+      isPoppedOut = value;
+      terminalPopped.hidden = !value;
+      terminalMount.hidden = value;
+      if (value && terminal) {
+        terminal.destroy();
+        terminal = null;
+      } else if (!value && !terminalSection.hidden && !terminal) {
+        terminal = mountTerminal(terminalMount, { popOut: openPopOut, compact: true });
+      }
+    };
+
+    function openPopOut() {
+      popupWindow = window.open('/terminal', 'novous2-terminal', 'width=900,height=600');
+      if (!popupWindow) {
+        status.textContent = 'The browser blocked the pop-up window. Allow pop-ups for this site.';
+        return;
+      }
+      setPoppedOut(true);
+      popupWindow.focus();
+    }
+
+    consolePanel.querySelectorAll('[data-console-tab]').forEach(button => {
+      button.addEventListener('click', () => showTab(button.dataset.consoleTab));
+    });
+    openTerminalWith = (command) => {
+      if (isPoppedOut) {
+        status.textContent = `Terminal is in its own window. Run: ${command}`;
+        return;
+      }
+      showTab('terminal');
+      terminal?.setInput(command);
+    };
+    terminalBringBack?.addEventListener('click', () => {
+      channel?.postMessage({ type: 'close-popout' });
+      try { popupWindow?.close(); } catch { /* already closed */ }
+      setPoppedOut(false);
+    });
+    if (channel) {
+      channel.onmessage = (event) => {
+        if (event.data?.type === 'popout-open') setPoppedOut(true);
+        if (event.data?.type === 'popout-closed') setPoppedOut(false);
+      };
+      channel.postMessage({ type: 'ping' });
+    }
+  }
+  copyConsoleButton?.addEventListener('click', async () => {
+    const text = output.textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const area = document.createElement('textarea');
+      area.value = text;
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand('copy');
+      area.remove();
+    }
+    copyConsoleButton.textContent = 'Copied';
+    setTimeout(() => { copyConsoleButton.textContent = 'Copy'; }, 1500);
+  });
+
+  fixButton?.addEventListener('click', () => {
+    if (!lastFailure) return;
+    chatInput.value = buildFixPrompt();
+    chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+    chatInput.focus();
+    chatInput.scrollTop = 0;
+    status.textContent = 'Error and code copied to the agent message box';
+  });
+
+  const streamRiskyRun = async () => {
+    const timeoutSeconds = 10;
+    const response = await fetch('/api/codebuilder/execute/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: editor.getValue(), timeout_seconds: timeoutSeconds, mode: 'risky' })
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.detail || `Stream request failed (${response.status}).`);
+    }
+    if (!response.body || typeof response.body.getReader !== 'function') {
+      throw new Error('Live streaming is not supported by this browser.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let returnCode = 0;
+    let runStatus = 'SUCCESS';
+    let streamedText = '';
+    let syntaxError = null;
+
+    const ingest = (event) => {
+      switch (event.type) {
+        case 'stdout':
+          output.textContent += event.text;
+          streamedText += event.text;
+          break;
+        case 'stderr':
+          output.textContent += event.text;
+          streamedText += event.text;
+          break;
+        case 'truncated':
+          output.textContent += '\n[Earlier output truncated]\n';
+          break;
+        case 'syntax_error':
+          syntaxError = { line: event.line, message: event.message };
+          break;
+        case 'done':
+          returnCode = event.return_code ?? returnCode;
+          runStatus = event.status || runStatus;
+          break;
+        default:
+          break;
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let separator = buffer.indexOf('\n\n');
+      while (separator !== -1) {
+        const rawEvent = buffer.slice(0, separator);
+        buffer = buffer.slice(separator + 2);
+        for (const line of rawEvent.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            ingest(JSON.parse(line.slice(6)));
+          } catch { /* ignore malformed event */ }
+        }
+        separator = buffer.indexOf('\n\n');
+      }
+    }
+    const remainder = buffer.trim();
+    if (remainder.startsWith('data: ')) {
+      try { ingest(JSON.parse(remainder.slice(6))); } catch { /* ignore */ }
+    }
+
+    if (syntaxError) {
+      renderDiagnostics([{ severity: 'error', line: syntaxError.line, message: syntaxError.message }]);
+      editor.setDiagnostics([{ severity: 'error', line: syntaxError.line, message: syntaxError.message }]);
+      status.textContent = 'Finished with errors';
+    } else if (runStatus === 'ERROR') {
+      const lastLine = [...streamedText.trim().split('\n')].filter(Boolean).pop() || '';
+      const message = lastLine || `Process exited with code ${returnCode}.`;
+      renderDiagnostics([{ severity: 'error', message }]);
+      editor.setDiagnostics([]);
+      status.textContent = 'Finished with errors';
+    } else {
+      renderDiagnostics([]);
+      editor.setDiagnostics([]);
+    }
+
+    return {
+      status: runStatus === 'SUCCESS' ? 'SUCCESS' : 'ERROR',
+      stdout: streamedText,
+      stderr: '',
+      diagnostics: [],
+    };
+  };
+
+  const runCodeOnce = async () => {
+    const mode = currentRunMode();
+    lastRunCode = editor.getValue();
+    runButton.disabled = true;
+    runButton.textContent = mode === 'risky' ? 'Running… (stream)' : 'Running…';
+    output.textContent = '';
+    status.textContent = 'Running';
+    diagnostics.replaceChildren();
+    editor.setDiagnostics([]);
+
+    try {
+      if (mode === 'risky') {
+        const result = await streamRiskyRun();
+        if (result && !output.textContent.trim()) {
+          output.textContent = 'Execution completed with no output.';
+        }
+        return result;
+      }
+
+      const response = await fetch('/api/codebuilder/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: editor.getValue(), timeout_seconds: 10, mode: 'safe' })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Execution failed.');
+      }
+
+      const stdout = payload.stdout || '';
+      const stderr = payload.stderr || '';
+      output.textContent = [stdout, stderr].filter(Boolean).join('\n').trim()
+        || 'Execution completed with no output.';
+      renderDiagnostics(payload.diagnostics || []);
+      editor.setDiagnostics(payload.diagnostics || []);
+      status.textContent = payload.status === 'SUCCESS' ? 'Finished' : 'Finished with errors';
+      return payload;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      output.textContent = `Error: ${message}`;
+      renderDiagnostics([{ severity: 'error', message }]);
+      status.textContent = 'Request failed';
+      return null;
+    } finally {
+      runButton.disabled = false;
+      runButton.textContent = '▶ Run Python';
+      editor.focus();
+    }
+  };
+
+  const runCode = async () => {
+    const result = await runCodeOnce();
+    if (result && result.status !== 'SUCCESS' &&
+        await offerInstallForRun(editor.getValue(), output.textContent)) {
+      return runCodeOnce();
+    }
+    return result;
+  };
+
+  const sendCodeToEditor = (code, source = 'chat') => {
+    if (typeof code !== 'string' || !code.trim()) return false;
+    editor.setValue(code);
+    editor.setDiagnostics([]);
+    renderDiagnostics([]);
+    status.textContent = source === 'agent'
+      ? 'Code received from agent'
+      : 'Code sent to editor';
+    editor.focus();
+    return true;
+  };
+
+  // Code handed over from the Tool Function Testing Workbench.
+  try {
+    const incoming = localStorage.getItem('novous2.codebuilder.incoming');
+    if (incoming) {
+      localStorage.removeItem('novous2.codebuilder.incoming');
+      if (sendCodeToEditor(incoming)) status.textContent = 'Code received from Tool Workbench';
+    }
+  } catch { /* storage unavailable */ }
+
+  const handleCodeBuilderToolEvents = async (events = []) => {
+    for (const event of events) {
+      if (event.status !== 'success') continue;
+      if (['write_file', 'create_file', 'delete_file'].includes(event.tool)) {
+        window.dispatchEvent(new CustomEvent('novous:fs-changed'));
+      }
+      if (event.tool === 'send_code_to_editor') {
+        const code = event.args?.code;
+        if (sendCodeToEditor(code, 'agent')) {
+          appendChatMessage('system', 'The agent placed its code in the Monaco editor.');
+        }
+      } else if (event.tool === 'run_code_in_editor') {
+        appendChatMessage('system', 'The agent requested a run of the current editor code.');
+        const result = await runCode();
+        if (!result) {
+          appendChatMessage('system', 'The editor code could not be run. See Run Output for details.');
+        } else {
+          appendChatMessage(
+            'system',
+            result.status === 'SUCCESS'
+              ? 'Editor code ran successfully. See Run Output.'
+              : 'Editor code ran with errors. See Run Output and Problems.'
+          );
+        }
+      }
+    }
+  };
+
+  const createCopyCodeButton = (code) => {
+    const copyButton = document.createElement('button');
+    copyButton.type = 'button';
+    copyButton.className = 'btn btn-sm codebuilder-copy-code';
+    copyButton.textContent = 'Copy Code';
+    copyButton.setAttribute('aria-label', 'Copy code to clipboard');
+    copyButton.addEventListener('click', async () => {
+      const ok = await copyTextToClipboard(code);
+      copyButton.textContent = ok ? 'Copied!' : 'Copy failed';
+      copyButton.disabled = ok;
+      setTimeout(() => {
+        copyButton.textContent = 'Copy Code';
+        copyButton.disabled = false;
+      }, 2000);
+    });
+    return copyButton;
+  };
+
+  const createSendToEditorButton = (code) => {
+    const sendButton = document.createElement('button');
+    sendButton.type = 'button';
+    sendButton.className = 'btn btn-sm codebuilder-send-code';
+    sendButton.textContent = 'Send to editor';
+    sendButton.setAttribute('aria-label', 'Send code to the editor');
+    sendButton.addEventListener('click', () => {
+      if (sendCodeToEditor(code)) {
+        sendButton.textContent = 'Sent to editor';
+        sendButton.disabled = true;
+      }
+    });
+    return sendButton;
+  };
+
+  const openChatCodeModal = (code, codeLanguage) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'codebuilder-code-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', `Expanded ${codeLanguage} code block`);
+
+    const panel = document.createElement('div');
+    panel.className = 'codebuilder-code-modal';
+
+    const heading = document.createElement('div');
+    heading.className = 'codebuilder-code-modal-heading';
+    const title = document.createElement('span');
+    title.className = 'codebuilder-code-language';
+    title.textContent = codeLanguage;
+    heading.appendChild(title);
+
+    const actions = document.createElement('div');
+    actions.className = 'codebuilder-code-actions';
+    actions.append(createCopyCodeButton(code), createSendToEditorButton(code));
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'btn btn-sm codebuilder-modal-close';
+    closeButton.textContent = 'Close';
+    closeButton.setAttribute('aria-label', 'Close expanded code block');
+    actions.appendChild(closeButton);
+    heading.appendChild(actions);
+
+    const body = document.createElement('div');
+    body.className = 'codebuilder-code-modal-body';
+
+    const pre = document.createElement('pre');
+    const codeElement = document.createElement('code');
+    codeElement.className = `language-${codeLanguage}`;
+    codeElement.textContent = code;
+    pre.appendChild(codeElement);
+    body.appendChild(pre);
+
+    panel.append(heading, body);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    let modalEditor = null;
+    const close = () => {
+      if (modalEditor) {
+        try { modalEditor.dispose(); } catch { /* already disposed */ }
+      }
+      overlay.remove();
+      document.body.classList.remove('codebuilder-modal-open');
+      document.removeEventListener('keydown', onKey);
+    };
+    const onKey = event => { if (event.key === 'Escape') close(); };
+
+    overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+    closeButton.addEventListener('click', close);
+    document.addEventListener('keydown', onKey);
+    document.body.classList.add('codebuilder-modal-open');
+
+    mountChatCodeEditor(body, pre, code, codeLanguage, {
+      maxHeight: Math.round(window.innerHeight * 0.6),
+      wordWrap: 'off',
+      addToRegistry: false,
+    }).then(editor => { modalEditor = editor; });
+  };
+
+  const appendAssistantMessage = (message, content) => {
+    content = String(content ?? '');
+    const codeBlockPattern = /```([^\r\n`]*)\r?\n([\s\S]*?)```/g;
+    let lastIndex = 0;
+    let match;
+
+    const appendText = text => {
+      if (!text) return;
+      const paragraph = document.createElement('div');
+      paragraph.className = 'codebuilder-chat-text';
+      paragraph.textContent = text;
+      message.appendChild(paragraph);
+    };
+
+    const buildCodeBlock = (code, rawLanguage) => {
+      const language = rawLanguage || 'python';
+      const block = document.createElement('section');
+      block.className = 'codebuilder-code-block';
+
+      const heading = document.createElement('div');
+      heading.className = 'codebuilder-code-heading';
+      const languageLabel = document.createElement('span');
+      languageLabel.className = 'codebuilder-code-language';
+      languageLabel.textContent = language;
+      heading.appendChild(languageLabel);
+
+      const actions = document.createElement('div');
+      actions.className = 'codebuilder-code-actions';
+      actions.append(createCopyCodeButton(code), createSendToEditorButton(code));
+
+      const expandButton = document.createElement('button');
+      expandButton.type = 'button';
+      expandButton.className = 'btn btn-sm codebuilder-expand-code';
+      expandButton.textContent = 'Expand';
+      expandButton.setAttribute('aria-label', 'Open this code block in a larger view');
+      expandButton.addEventListener('click', () => openChatCodeModal(code, language));
+      actions.appendChild(expandButton);
+      heading.appendChild(actions);
+
+      const body = document.createElement('div');
+      body.className = 'codebuilder-chat-code';
+
+      const pre = document.createElement('pre');
+      const codeElement = document.createElement('code');
+      codeElement.className = `language-${language}`;
+      codeElement.textContent = code;
+      pre.appendChild(codeElement);
+      body.appendChild(pre);
+
+      block.append(heading, body);
+      message.appendChild(block);
+
+      mountChatCodeEditor(body, pre, code, language, {
+        maxHeight: 420,
+        wordWrap: 'on',
+        addToRegistry: true,
+      });
+    };
+
+    while ((match = codeBlockPattern.exec(content)) !== null) {
+      appendText(content.slice(lastIndex, match.index));
+      let rawLanguage = match[1].trim().split(/\s+/, 1)[0].toLowerCase();
+      let snippet = match[2].trimEnd();
+      if (rawLanguage === 'json' || ['text', 'txt', 'plaintext', ''].includes(rawLanguage)) {
+        try {
+          snippet = JSON.stringify(JSON.parse(snippet), null, 2);
+          rawLanguage = 'python';
+        } catch { /* keep the raw snippet when it is not valid JSON */ }
+      }
+      buildCodeBlock(snippet, rawLanguage);
+      lastIndex = codeBlockPattern.lastIndex;
+    }
+
+    appendText(content.slice(lastIndex));
+  };
+
+  const mountChatCodeEditor = (container, fallbackPre, code, rawLanguage, options = {}) => {
+    const { maxHeight = 360, wordWrap = 'on', addToRegistry = true } = options;
+    const language = CODE_LANGUAGE_MAP[rawLanguage] || rawLanguage || 'plaintext';
+    const lineCount = code.split('\n').length;
+    container.style.height = `${Math.min(maxHeight, Math.max(72, lineCount * 18 + 16))}px`;
+
+    return loadMonaco().then(monaco => {
+      if (!container.isConnected || !chatCodeEditors) return null;
+      if (!monaco?.editor || typeof monaco.editor.create !== 'function') return null;
+      fallbackPre.remove();
+      const editor = monaco.editor.create(container, {
+        value: code,
+        language,
+        theme: 'vs-dark',
+        readOnly: true,
+        automaticLayout: true,
+        minimap: { enabled: false },
+        folding: false,
+        glyphMargin: false,
+        lineDecorationsWidth: 0,
+        lineNumbers: 'off',
+        renderLineHighlight: 'none',
+        scrollBeyondLastLine: false,
+        wordWrap,
+        contextmenu: false,
+        fixedOverflowWidgets: true,
+      });
+      if (addToRegistry) chatCodeEditors.add(editor);
+      return editor;
+    }).catch(() => null);
+  };
+
+  const appendChatMessage = (role, content) => {
+    const message = document.createElement('div');
+    message.className = `codebuilder-chat-message ${role}`;
+    if (role === 'assistant') {
+      appendAssistantMessage(message, content);
+    } else {
+      message.textContent = content;
+    }
+    chatMessages.appendChild(message);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  };
+
+  const updateChatControls = () => {
+    const sendButton = chatForm.querySelector('button[type="submit"]');
+    chatInput.disabled = chatPending;
+    sendButton.disabled = chatPending || !selectedAgent || !modelSelect.value || modelSelect.disabled;
+  };
+
+  const FUTURE_AGENT_OPTIONS = [
+    { id: 'debugAgent', label: 'Debug Agent', icon: 'bug' },
+    { id: 'diagnostics', label: 'Diagnostics', icon: 'activity' },
+  ];
+
+  // Memory mode: the chat transcript is saved to a file the user picks.
+  let memoryPath = null;
+  let transcript = [];
+
+  const notifyFilesChanged = () => window.dispatchEvent(new CustomEvent('novous:fs-changed'));
+
+  const writeMemory = async () => {
+    if (!memoryPath) return;
+    const body = transcript
+      .map(entry => `[${entry.role}]\n${entry.text}`)
+      .join('\n\n');
+    try {
+      await Api.writeManagedFile(memoryPath, `${body}\n`);
+      notifyFilesChanged();
+    } catch (error) {
+      appendChatMessage('system', `Memory mode stopped: could not write ${memoryPath} (${error.message}).`);
+      memoryPath = null;
+      renderAgents();
+    }
+  };
+
+  // Opens the file manager: click a folder (or an existing file) and name the memory file.
+  const pickMemoryLocation = () => new Promise(resolve => {
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+    let folder = '';
+    let settled = false;
+    const finish = (value, close) => {
+      if (settled) return;
+      settled = true;
+      close();
+      resolve(value);
+    };
+
+    pickerDialog('Memory mode — choose where to save', (modal, close) => {
+      modal.classList.add('is-resizable');
+      const hint = document.createElement('p');
+      hint.className = 'text-muted small';
+      hint.textContent = 'Pick a folder in the file manager and name the file. The chat is saved after every reply.';
+
+      const treeHost = document.createElement('div');
+      treeHost.className = 'codebuilder-open-tree';
+
+      const target = document.createElement('p');
+      target.className = 'small codebuilder-memory-target';
+      const nameInput = document.createElement('input');
+      nameInput.className = 'form-input';
+      nameInput.type = 'text';
+      nameInput.value = `chat_memory_${stamp}.txt`;
+      nameInput.setAttribute('aria-label', 'Memory file name');
+      const error = document.createElement('p');
+      error.className = 'text-danger small';
+
+      const refreshTarget = () => {
+        target.textContent = `Save to: ${folder || '(workspace root)'}/${nameInput.value.trim()}`;
+      };
+      nameInput.addEventListener('input', refreshTarget);
+      refreshTarget();
+
+      const actions = document.createElement('div');
+      actions.className = 'question-dialog-actions';
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.className = 'btn';
+      cancel.textContent = 'Cancel';
+      const start = document.createElement('button');
+      start.type = 'button';
+      start.className = 'btn btn-primary';
+      start.textContent = 'Start';
+      actions.append(cancel, start);
+      modal.append(hint, treeHost, target, nameInput, error, actions);
+
+      renderTree(treeHost, {
+        manageRoots: true,
+        onSelectDirectory: path => { folder = path; refreshTarget(); },
+        onSelect: path => {
+          const slash = path.lastIndexOf('/');
+          folder = slash >= 0 ? path.slice(0, slash) : '';
+          nameInput.value = path.slice(slash + 1);
+          refreshTarget();
+        }
+      });
+
+      cancel.addEventListener('click', () => finish(null, close));
+      const submit = () => {
+        const name = nameInput.value.trim();
+        if (!name || name === '.' || name === '..' || /[\\/]/.test(name)) {
+          error.textContent = 'Enter a file name without folder separators.';
+          return;
+        }
+        finish([folder, name].filter(Boolean).join('/'), close);
+      };
+      start.addEventListener('click', submit);
+      nameInput.addEventListener('keydown', event => { if (event.key === 'Enter') submit(); });
+    });
+  });
+
+  const toggleMemory = async () => {
+    if (memoryPath) {
+      memoryPath = null;
+      appendChatMessage('system', 'Memory mode off.');
+      renderAgents();
+      return;
+    }
+    const path = await pickMemoryLocation();
+    if (!path) return;
+    memoryPath = path;
+    transcript = [];
+    appendChatMessage('system', `Memory mode on. Saving this chat to ${path}.`);
+    renderAgents();
+    await writeMemory();
+  };
+
+  const hasAgentFunctions = agent => Array.isArray(agent.tools) && agent.tools.length > 0;
+
+  const AGENT_TILE_ICONS = {
+    bot: [
+      'M12 8V4H8',
+      'M4 8v12a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1Z',
+      'M8 13v2',
+      'M12 13v2',
+      'M16 13v2',
+    ],
+    bug: [
+      'm8 2 1.88 1.88',
+      'M14.12 3.88 16 2',
+      'M9 7.13v-1a3.003 3.003 0 1 1 6 0v1',
+      'M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6',
+      'M12 20v-9',
+      'M6.53 9C4.6 8.8 3 7.1 3 5',
+      'M6 13H2',
+      'M3 21c0-2.1 1.7-3.9 3.8-4',
+      'M20.97 5c0 2.1-1.6 3.8-3.5 4',
+      'M22 13h-4',
+      'M17.2 17c2.1.1 3.8 1.9 3.8 4',
+    ],
+    activity: [
+      'M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2',
+    ],
+    memory: [
+      'M4 6c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2Z',
+      'M4 6v6c0 1.1 3.6 2 8 2s8-.9 8-2V6',
+      'M4 12v6c0 1.1 3.6 2 8 2s8-.9 8-2v-6',
+    ],
+  };
+
+  const buildTileIcon = (name) => {
+    const iconPath = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(iconPath, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '20');
+    svg.setAttribute('height', '20');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    (AGENT_TILE_ICONS[name] || []).forEach(pathData => {
+      const path = document.createElementNS(iconPath, 'path');
+      path.setAttribute('d', pathData);
+      svg.appendChild(path);
+    });
+    return svg;
+  };
+
+  const buildAgentTile = (label, icon, title, onClick, isSelected) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'test-function codebuilder-agent-tile';
+    button.title = title;
+    if (isSelected) button.classList.add('selected');
+    button.setAttribute('aria-pressed', String(Boolean(isSelected)));
+
+    const iconElement = buildTileIcon(icon);
+    const labelElement = document.createElement('span');
+    labelElement.textContent = label;
+
+    if (typeof onClick === 'function') {
+      button.addEventListener('click', onClick);
+    } else {
+      button.disabled = true;
+      button.classList.add('disabled');
+    }
+    button.append(iconElement, labelElement);
+    return button;
+  };
+
+  const renderAgents = () => {
+    agentList.replaceChildren();
+
+    const picker = document.createElement('select');
+    picker.className = 'form-select codebuilder-agent-select';
+    picker.id = 'codebuilder-agent-select';
+    picker.setAttribute('aria-label', 'Choose agent');
+    picker.disabled = chatPending || !agents.length;
+    agents.forEach(agent => {
+      const toolCount = (agent.tools || []).length;
+      const option = new Option(`${agent.name} (${toolCount} tool${toolCount === 1 ? '' : 's'})`, agent.id);
+      option.disabled = !hasAgentFunctions(agent);
+      option.title = (agent.tools || []).join(', ') || 'No tools';
+      picker.add(option);
+    });
+    if (selectedAgent) picker.value = selectedAgent.id;
+    picker.addEventListener('change', () => {
+      const chosen = agents.find(agent => agent.id === picker.value);
+      if (chosen && chosen.id !== selectedAgent?.id) selectAgent(chosen);
+    });
+    agentList.appendChild(picker);
+
+    agents.forEach(agent => {
+      const isSelected = selectedAgent?.id === agent.id;
+      const hasFunctions = hasAgentFunctions(agent);
+      const tile = buildAgentTile(
+        agent.name,
+        'bot',
+        hasFunctions
+          ? (agent.description || agent.name)
+          : `${agent.name} — no tools available`,
+        () => selectAgent(agent),
+        isSelected
+      );
+      tile.setAttribute('aria-label', `${agent.name} agent`);
+      if (chatPending || !hasFunctions) {
+        tile.disabled = true;
+        tile.classList.add('disabled');
+      }
+      agentList.appendChild(tile);
+    });
+
+    const memoryTile = buildAgentTile(
+      'Memory',
+      'memory',
+      memoryPath
+        ? `Memory mode on — saving to ${memoryPath}. Click to turn off.`
+        : 'Save this chat to a text file you choose',
+      toggleMemory,
+      Boolean(memoryPath)
+    );
+    memoryTile.setAttribute('aria-label', 'Memory mode');
+    agentList.appendChild(memoryTile);
+
+    FUTURE_AGENT_OPTIONS.forEach(option => {
+      const tile = buildAgentTile(
+        option.label,
+        option.icon,
+        `${option.label} — not implemented yet`,
+        null,
+        false
+      );
+      agentList.appendChild(tile);
+    });
+
+    if (!agents.length) {
+      selectedAgent = null;
+      const empty = document.createElement('p');
+      empty.className = 'text-muted small';
+      empty.textContent = 'No agents found in the workspace agents folder.';
+      agentList.appendChild(empty);
+    }
+
+    updateChatControls();
+  };
+
+  const selectAgent = (agent) => {
+    selectedAgent = agent;
+    renderAgents();
+    const preferredModel = agent.model || defaultModel;
+    if ([...modelSelect.options].some(option => option.value === preferredModel)) {
+      modelSelect.value = preferredModel;
+    }
+    chatMessages.replaceChildren();
+    disposeChatCodeEditors();
+    appendChatMessage('system', `Chatting with ${agent.name}.`);
+    chatStatus.textContent = `Agent: ${agent.name}`;
+  };
+
+  const loadAgents = async () => {
+    agentRefresh.disabled = true;
+    try {
+      const data = await fetch('/api/codebuilder/agents').then(async response => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || 'Could not load agents.');
+        return payload;
+      });
+      agents = data.agents || [];
+      const selectedId = selectedAgent?.id;
+      selectedAgent = agents.find(agent => agent.id === selectedId) || agents[0] || null;
+      renderAgents();
+      if (selectedAgent) selectAgent(selectedAgent);
+    } catch (error) {
+      const message = document.createElement('p');
+      message.className = 'text-danger small';
+      message.textContent = error instanceof Error ? error.message : String(error);
+      agentList.replaceChildren(message);
+    } finally {
+      agentRefresh.disabled = false;
+    }
+  };
+
+  const loadModels = async () => {
+    modelSelect.replaceChildren();
+    const loadingOption = document.createElement('option');
+    loadingOption.textContent = 'Loading models…';
+    loadingOption.value = '';
+    modelSelect.appendChild(loadingOption);
+    modelSelect.disabled = true;
+    try {
+      const response = await fetch('/api/models');
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || 'Could not load models.');
+      const models = (payload.models || []).slice().sort();
+      defaultModel = payload.default || defaultModel;
+      modelSelect.replaceChildren();
+
+      const availableModels = models.length ? models : [defaultModel];
+      availableModels.forEach(model => {
+        const option = document.createElement('option');
+        option.value = model;
+        option.textContent = models.length ? model : `${model} (not detected)`;
+        modelSelect.appendChild(option);
+      });
+      modelSelect.disabled = models.length === 0;
+      if (models.length) {
+        const preferredModel = selectedAgent?.model || defaultModel;
+        modelSelect.value = models.includes(preferredModel) ? preferredModel : models[0];
+      }
+      if (!models.length) {
+        chatStatus.textContent = payload.error || 'No installed models detected.';
+      }
+      updateChatControls();
+    } catch (error) {
+      modelSelect.replaceChildren();
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'Could not load models';
+      modelSelect.appendChild(option);
+      modelSelect.disabled = true;
+      chatStatus.textContent = error instanceof Error ? error.message : String(error);
+      updateChatControls();
+    }
+  };
+
+  demoButton.addEventListener('click', () => {
+    editor.setValue(DEMO_CODE);
+    editor.setDiagnostics([]);
+    status.textContent = 'Demo loaded';
+    editor.focus();
+  });
+  clearButton.addEventListener('click', () => {
+    output.textContent = 'Console cleared.';
+    renderDiagnostics([]);
+    editor.setDiagnostics([]);
+    status.textContent = 'Ready';
+  });
+  runButton.addEventListener('click', runCode);
+  document.getElementById('reset-sandbox')?.addEventListener('click', async () => {
+    try {
+      const result = await confirmReset();
+      if (result) status.textContent = result.output;
+    } catch (err) {
+      status.textContent = `Reset failed: ${err.message}`;
+    }
+  });
+  editor.setRunHandler(runCode);
+
+  const persistedRunMode = readPref(RUN_MODE_KEY);
+  if (persistedRunMode === 'risky' || persistedRunMode === 'safe') {
+    manualRunMode = persistedRunMode;
+    runMode.value = persistedRunMode;
+  }
+  runMode.addEventListener('change', () => {
+    manualRunMode = runMode.value;
+    writePref(RUN_MODE_KEY, runMode.value);
+  });
+  const fileControls = setupFileControls({
+    editor,
+    status,
+    label: document.getElementById('codebuilder-filename'),
+    buttons: {
+      save: document.getElementById('save-file'),
+      saveAs: document.getElementById('save-file-as'),
+      open: document.getElementById('open-file'),
+      runTerminal: document.getElementById('run-in-terminal')
+    },
+    openTerminalWith: (command) => openTerminalWith(command)
+  });
+  editor.onChange(() => {
+    fileControls.refreshLabel();
+    if (manualRunMode) return;
+    if (runMode.value !== detectRunMode()) runMode.value = detectRunMode();
+  });
+  agentRefresh.addEventListener('click', loadAgents);
+
+  const togglePanel = (name) => {
+    const conf = PANEL_CONF[name];
+    const collapsed = !shell.classList.contains(name + '-collapsed');
+    if (collapsed) {
+      const current = readVar(layout, conf.var);
+      if (Number.isFinite(current) && current > conf.rail) writePref(name + 'Width', String(current));
+      shell.classList.add(name + '-collapsed');
+      layout.style.setProperty(conf.var, conf.rail + 'px');
+    } else {
+      const saved = parseFloat(readPref(name + 'Width'));
+      layout.style.setProperty(
+        conf.var,
+        (Number.isFinite(saved) ? clampSize(layout, name, saved) : conf.default) + 'px'
+      );
+      shell.classList.remove(name + '-collapsed');
+    }
+    writePref(name + 'Collapsed', collapsed ? '1' : '0');
+    return collapsed;
+  };
+
+  chatExpand.addEventListener('click', () => { togglePanel('chat'); refreshPanelToggle(shell, 'chat'); });
+  consoleCollapse.addEventListener('click', () => { togglePanel('console'); refreshPanelToggle(shell, 'console'); });
+  agentsToggle.addEventListener('click', () => { togglePanel('agents'); refreshPanelToggle(shell, 'agents'); });
+
+  refreshPanelToggle(shell, 'chat');
+  refreshPanelToggle(shell, 'console');
+  refreshPanelToggle(shell, 'agents');
+
+  chatForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const message = chatInput.value.trim();
+    if (!message || chatPending) return;
+    if (!selectedAgent) {
+      chatStatus.textContent = 'Select an agent before sending a message.';
+      return;
+    }
+    if (!modelSelect.value) {
+      chatStatus.textContent = 'Select an installed model before sending a message.';
+      return;
+    }
+
+    appendChatMessage('user', message);
+    if (memoryPath) transcript.push({ role: 'user', text: message });
+    chatInput.value = '';
+    chatPending = true;
+    chatStatus.textContent = `Waiting for ${selectedAgent.name}…`;
+    updateChatControls();
+    try {
+      const response = await fetch('/api/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          agent_id: selectedAgent.id,
+          model: modelSelect.value,
+          session_id: `codebuilder-${selectedAgent.id}`,
+          environment: 'codebuilder',
+        })
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail || 'The agent request failed.');
+      }
+
+      const bubble = document.createElement('div');
+      bubble.className = 'codebuilder-chat-message assistant';
+      chatMessages.appendChild(bubble);
+
+      let text = '';
+      let liveCode = null;
+      let paintQueued = false;
+      let donePayload = null;
+      let failure = null;
+
+      // Newest ```python fence in the streamed text; an unclosed fence counts as in progress.
+      const latestCode = () => {
+        let found = null;
+        for (const match of text.matchAll(/```([\w+-]*)[^\n]*\n([\s\S]*?)(```|$)/g)) {
+          if (['', 'python', 'py'].includes(match[1].toLowerCase())) found = match[2];
+        }
+        return found;
+      };
+      const paint = () => {
+        paintQueued = false;
+        bubble.textContent = text;
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        const code = latestCode();
+        if (code !== null && code !== liveCode) {
+          liveCode = code;
+          editor.setValue(code);
+          status.textContent = 'Agent is writing code…';
+        }
+      };
+      const schedulePaint = () => {
+        if (!paintQueued) { paintQueued = true; requestAnimationFrame(paint); }
+      };
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      const handleEvent = async item => {
+        if (item.type === 'token') {
+          text += item.text;
+          schedulePaint();
+        } else if (item.type === 'tool_event') {
+          await handleCodeBuilderToolEvents([item.event]);
+        } else if (item.type === 'done') {
+          donePayload = item;
+        } else if (item.type === 'error') {
+          failure = item.detail || 'The agent request failed.';
+        }
+      };
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split('\n\n');
+        buffer = frames.pop();
+        for (const frame of frames) {
+          const line = frame.split('\n').find(l => l.startsWith('data: '));
+          if (line) await handleEvent(JSON.parse(line.slice(6)));
+        }
+      }
+
+      paint();
+      if (failure) {
+        bubble.remove();
+        throw new Error(failure);
+      }
+      const reply = donePayload?.reply || text || 'The agent returned an empty response.';
+      bubble.textContent = '';
+      appendAssistantMessage(bubble, reply);
+      if (liveCode !== null) sendCodeToEditor(liveCode, 'agent');
+      if (memoryPath) {
+        transcript.push({ role: 'assistant', text: reply });
+        await writeMemory();
+      }
+      chatStatus.textContent = `${selectedAgent.name} · ${donePayload?.model || modelSelect.value}`;
+    } catch (error) {
+      const messageText = error instanceof Error ? error.message : String(error);
+      appendChatMessage('system', `Request failed: ${messageText}`);
+      chatStatus.textContent = 'Request failed';
+    } finally {
+      chatPending = false;
+      updateChatControls();
+      chatInput.focus();
+    }
+  });
+  chatInput.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      chatForm.requestSubmit();
+    }
+  });
+  chatClear.addEventListener('click', () => {
+    chatInput.value = '';
+    chatMessages.replaceChildren();
+    disposeChatCodeEditors();
+    if (selectedAgent) {
+      appendChatMessage('system', 'Chat cleared. Ask a new question.');
+      chatStatus.textContent = `Agent: ${selectedAgent.name}`;
+    } else {
+      appendChatMessage('system', 'Chat cleared.');
+      chatStatus.textContent = 'Chat cleared';
+    }
+    chatInput.focus();
+  });
+
+  renderDiagnostics([]);
+  status.textContent = 'Ready';
+  updateChatControls();
+  Promise.all([loadAgents(), loadModels()]);
+
+  return { editor, runCode, loadAgents };
+}
+
+export function renderCodeBuilderView(container) {
+  if (!container) return;
+  container.innerHTML = `
+    <div class="codebuilder-shell">
+      <div class="codebuilder-toolbar">
+        <div class="codebuilder-file-label">
+          <span class="codebuilder-python-icon">Py</span>
+          <span>Untitled Python File</span>
+          <span class="badge badge-success">Python</span>
+        </div>
+        <div class="codebuilder-toolbar-actions">
+          <label class="codebuilder-run-mode">
+            <select id="codebuilder-run-mode" aria-label="Choose how to run Python code">
+              <option value="safe">Safe (in-process)</option>
+              <option value="risky">Risky (isolated, streams)</option>
+            </select>
+          </label>
+          <button id="load-demo" class="btn btn-sm" type="button" title="Load the sample Python program">Sample</button>
+          <button id="open-file" class="btn btn-sm" type="button" title="Open a file from the file manager">Open…</button>
+          <button id="save-file" class="btn btn-sm" type="button" title="Save (Ctrl+S)">Save</button>
+          <button id="save-file-as" class="btn btn-sm" type="button" title="Save as a new file">Save As…</button>
+          <button id="run-in-terminal" class="btn btn-sm" type="button" title="Save, then prepare the command in the Terminal tab">Run in Terminal</button>
+          <button id="clear-console" class="btn btn-sm" type="button" title="Clear console and diagnostics">Clear Output</button>
+          <button id="reset-sandbox" class="btn btn-sm" type="button" title="Remove all packages installed for testing">Reset Environment</button>
+          <button id="run-code" class="btn btn-sm btn-primary" type="button" title="Run Python (Ctrl+Enter)">▶ Run Python</button>
+        </div>
+      </div>
+
+      <main class="codebuilder-layout">
+        <section id="codebuilder-chat-panel" class="codebuilder-chat-panel" aria-label="Chat with an agent">
+          <div class="codebuilder-chat-heading">
+            <h2>Ask an Agent</h2>
+            <span id="codebuilder-chat-status" class="text-muted small">Select an agent to start.</span>
+            <button id="codebuilder-chat-expand" class="btn btn-sm codebuilder-chat-expand"
+                    type="button" aria-label="Collapse chat panel" aria-expanded="true"
+                    title="Collapse chat panel">«</button>
+          </div>
+          <div id="codebuilder-chat-messages" class="codebuilder-chat-messages" aria-live="polite">
+            <div class="codebuilder-chat-message system">Messages with your selected agent appear here.</div>
+          </div>
+          <form id="codebuilder-chat-form" class="codebuilder-chat-form">
+            <label class="codebuilder-model-picker">
+              <span class="text-muted small">Model</span>
+              <select id="codebuilder-model" class="form-select" aria-label="Choose model">
+                <option value="">Loading models…</option>
+              </select>
+            </label>
+            <textarea id="codebuilder-chat-input" class="form-input" rows="4"
+                      placeholder="Ask the selected agent about your Python code…"
+                      aria-label="Message to agent"></textarea>
+            <div class="codebuilder-chat-actions">
+              <button id="codebuilder-chat-clear" class="btn btn-sm"
+                      type="button" aria-label="Clear chat" title="Clear the chat conversation">Clear</button>
+              <button class="btn btn-primary" type="submit" disabled>Send</button>
+            </div>
+          </form>
+        </section>
+
+        <div class="codebuilder-resizer" data-resize="chat" role="separator"
+             aria-orientation="vertical" aria-label="Resize chat panel"></div>
+
+        <section class="codebuilder-editor-panel" aria-label="Python editor">
+          <div id="codebuilder-editor" class="editor-surface"></div>
+          <div class="codebuilder-statusbar">
+            <span id="codebuilder-status">Loading editor…</span>
+            <span id="codebuilder-filename" class="codebuilder-filename">Untitled</span>
+            <span>Python</span>
+            <span>UTF-8</span>
+            <span>Spaces: 4</span>
+          </div>
+        </section>
+
+        <div class="codebuilder-resizer" data-resize="console" role="separator"
+             aria-orientation="vertical" aria-label="Resize console panel"></div>
+
+        <aside class="codebuilder-console-panel" aria-label="Run output and diagnostics">
+          <div class="codebuilder-console-heading">
+            <h2>Run Output</h2>
+            <span class="codebuilder-console-subtitle">Console &amp; Problems</span>
+            <button id="codebuilder-console-collapse" class="btn btn-sm codebuilder-console-collapse"
+                    type="button" aria-label="Collapse console panel" aria-expanded="true"
+                    title="Collapse console panel">»</button>
+          </div>
+          <div class="codebuilder-console-tabs" role="tablist">
+            <button type="button" class="btn btn-sm active" data-console-tab="console" role="tab">Console</button>
+            <button type="button" class="btn btn-sm" data-console-tab="terminal" role="tab">Terminal</button>
+          </div>
+          <section class="codebuilder-output-section">
+            <h3>Console</h3>
+            <button id="codebuilder-copy-console" class="btn btn-sm" type="button"
+                    title="Copy the console output">Copy</button>
+            <pre id="codebuilder-output" class="console-output">Ready. Run your Python code to see output here.</pre>
+          </section>
+          <section class="codebuilder-problems-section">
+            <h3>Problems</h3>
+            <button id="codebuilder-fix-with-agent" class="btn btn-sm btn-primary" type="button" disabled
+                    title="Copy the error, console output and code into the agent message box">Fix with Agent</button>
+            <div id="diagnostics" class="diagnostics-list"></div>
+          </section>
+          <section class="codebuilder-terminal-section" hidden>
+            <div id="codebuilder-terminal-mount" class="codebuilder-terminal-mount"></div>
+            <div id="codebuilder-terminal-popped" class="codebuilder-terminal-popped" hidden>
+              <p>The terminal is open in a separate window.</p>
+              <button id="codebuilder-terminal-bring-back" class="btn btn-sm btn-primary" type="button">Bring back</button>
+            </div>
+          </section>
+        </aside>
+
+        <div class="codebuilder-resizer" data-resize="agents" role="separator"
+             aria-orientation="horizontal" aria-label="Resize agents panel"></div>
+
+        <aside id="codebuilder-agents-panel" class="codebuilder-agents-panel" aria-label="Workspace agents">
+          <div class="codebuilder-agents-heading">
+            <button id="codebuilder-agents-toggle" class="btn btn-sm codebuilder-agents-toggle"
+                    type="button" aria-label="Collapse agents panel" aria-expanded="true"
+                    title="Collapse agents panel">⌄</button>
+            <button id="codebuilder-agent-refresh" class="btn btn-sm codebuilder-agent-refresh"
+                    type="button" title="Refresh agents" aria-label="Refresh agents">↻</button>
+          </div>
+          <div id="codebuilder-agent-list" class="codebuilder-agent-list"></div>
+        </aside>
+      </main>
+    </div>
+  `;
+
+  setupCodeBuilderPage();
+}
+
+if (typeof window !== 'undefined' && document.readyState !== 'loading') {
+  const root = document.getElementById('codebuilder-editor');
+  if (root) setupCodeBuilderPage();
+}
+
+````
+
+## `frontend/static/js/codebuilder/codebuilder_editor.js`
+```javascript
+const MONACO_VS_PATH = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs';
+let monacoPromise;
+
+export function loadMonaco() {
+  if (window.monaco?.editor) return Promise.resolve(window.monaco);
+  if (monacoPromise) return monacoPromise;
+
+  monacoPromise = new Promise((resolve, reject) => {
+    if (typeof window.require !== 'function') {
+      reject(new Error('The Monaco Editor loader is unavailable.'));
+      return;
+    }
+
+    window.require.config({ paths: { vs: MONACO_VS_PATH } });
+    window.require(['vs/editor/editor.main'], () => {
+      if (!window.monaco?.editor) {
+        reject(new Error('Monaco Editor failed to initialize.'));
+        return;
+      }
+      resolve(window.monaco);
+    }, reject);
+  });
+  return monacoPromise;
+}
+
+function createTextareaEditor(element, initialValue) {
+  const textarea = document.createElement('textarea');
+  textarea.className = 'codebuilder-textarea';
+  textarea.value = initialValue;
+  textarea.setAttribute('aria-label', 'Python source code');
+  element.replaceChildren(textarea);
+  let runHandler = null;
+  let saveHandler = null;
+  let changeHandler = null;
+  let positionHandler = null;
+  textarea.addEventListener('input', () => changeHandler?.());
+  textarea.addEventListener('keyup', () => positionHandler?.());
+  textarea.addEventListener('click', () => positionHandler?.());
+  textarea.addEventListener('keydown', event => {
+    if (event.ctrlKey || event.metaKey) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        runHandler?.();
+      } else if (event.key.toLowerCase() === 's' && saveHandler) {
+        event.preventDefault();
+        saveHandler?.();
+      }
+    }
+  });
+
+  return {
+    getValue: () => textarea.value,
+    setValue: (value) => { textarea.value = value; changeHandler?.(); },
+    setLanguage: () => {},
+    getPosition: () => {
+      const lines = textarea.value.slice(0, textarea.selectionStart).split('\n');
+      return { lineNumber: lines.length, column: lines[lines.length - 1].length + 1 };
+    },
+    setDiagnostics: () => {},
+    setRunHandler: (handler) => { runHandler = handler; },
+    setSaveHandler: (handler) => { saveHandler = handler; },
+    onChange: (handler) => { changeHandler = handler; },
+    onPosition: (handler) => { positionHandler = handler; },
+    revealLine: (line) => {
+      const lineStart = textarea.value.split('\n').slice(0, Math.max(0, line - 1)).join('\n').length;
+      textarea.focus();
+      textarea.setSelectionRange(lineStart, lineStart);
+    },
+    focus: () => textarea.focus(),
+    dispose: () => textarea.remove(),
+  };
+}
+
+export async function attachCodeBuilderEditor(
+  element,
+  initialValue = "print('Hello from Novous CodeBuilder!')\n",
+  language = 'python'
+) {
+  if (!element) {
+    throw new Error('The CodeBuilder editor container was not found.');
+  }
+
+  try {
+    const monaco = await loadMonaco();
+    const editor = monaco.editor.create(element, {
+      value: initialValue,
+      language,
+      theme: 'vs-dark',
+      automaticLayout: true,
+      ariaLabel: 'Python code editor',
+      accessibilitySupport: 'auto',
+      bracketPairColorization: { enabled: true },
+      cursorBlinking: 'smooth',
+      detectIndentation: false,
+      folding: true,
+      fontSize: 14,
+      fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace",
+      fontLigatures: true,
+      formatOnPaste: true,
+      guides: { bracketPairs: true, indentation: true },
+      lineNumbers: 'on',
+      minimap: { enabled: true, scale: 0.8 },
+      padding: { top: 12, bottom: 12 },
+      renderLineHighlight: 'all',
+      scrollBeyondLastLine: false,
+      smoothScrolling: true,
+      stickyScroll: { enabled: true },
+      tabSize: 4,
+      insertSpaces: true,
+      wordWrap: 'off',
+    });
+    let runHandler = null;
+    let saveHandler = null;
+    let changeHandler = null;
+    let positionHandler = null;
+    editor.onDidChangeModelContent(() => changeHandler?.());
+    editor.onDidChangeCursorPosition(() => positionHandler?.());
+    editor.addAction({
+      id: 'codebuilder.runPython',
+      label: 'Run Python',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
+      run: () => runHandler?.(),
+    });
+    let saveAction = null;
+
+    return {
+      getValue: () => editor.getValue(),
+      setValue: (value) => { editor.setValue(value); },
+      setLanguage: (nextLanguage) => {
+        const model = editor.getModel();
+        if (model) monaco.editor.setModelLanguage(model, nextLanguage);
+      },
+      getPosition: () => editor.getPosition(),
+      focus: () => editor.focus(),
+      setRunHandler: (handler) => { runHandler = handler; },
+      setSaveHandler: (handler) => {
+        saveAction?.dispose();
+        saveHandler = handler;
+        if (handler) {
+          saveAction = editor.addAction({
+            id: 'codebuilder.save',
+            label: 'Save',
+            keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
+            run: () => saveHandler?.(),
+          });
+        }
+      },
+      onChange: (handler) => { changeHandler = handler; },
+      onPosition: (handler) => { positionHandler = handler; },
+      revealLine: (line) => {
+        editor.revealLineInCenter(line);
+        editor.setPosition({ lineNumber: line, column: 1 });
+        editor.focus();
+      },
+      setDiagnostics: (items) => {
+        const model = editor.getModel();
+        if (!model) return;
+        monaco.editor.setModelMarkers(model, 'codebuilder', items.map(item => ({
+          severity: item.severity === 'warning'
+            ? monaco.MarkerSeverity.Warning
+            : item.severity === 'info'
+              ? monaco.MarkerSeverity.Info
+              : monaco.MarkerSeverity.Error,
+          message: item.message,
+          startLineNumber: item.line || 1,
+          endLineNumber: item.line || 1,
+          startColumn: item.column || 1,
+          endColumn: (item.column || 1) + 1,
+        })));
+      },
+      dispose: () => editor.dispose(),
+    };
+  } catch (error) {
+    console.error('Monaco Editor could not be loaded; using the basic Python editor instead.', error);
+    return createTextareaEditor(element, initialValue);
+  }
+}
+
+```
+
+## `frontend/static/js/codebuilder/files_ui.js`
+```javascript
+import { dialog } from '../sandbox_ui.js';
+import { renderTree } from '../tree.js';
+import { Api } from '../api.js';
+
+async function call(method, url, body) {
+  const response = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(typeof payload.detail === 'string' ? payload.detail : `Request failed (${response.status}).`);
+  }
+  return payload;
+}
+
+const Files = {
+  list: () => call('GET', '/api/codebuilder/files'),
+  read: path => call('GET', `/api/codebuilder/files/read?path=${encodeURIComponent(path)}`),
+  save: (folder, name, content, overwrite) =>
+    call('POST', '/api/codebuilder/files/save', { folder, name, content, overwrite }),
+  runCommand: (path, content) => call('POST', '/api/codebuilder/files/run-command', { path, content })
+};
+
+function button(label, className = 'btn') {
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = className;
+  el.textContent = label;
+  return el;
+}
+
+// Save, Save As, Open and Run-in-terminal for the editor. `openTerminalWith(command)` prefills the terminal.
+export function setupFileControls({ editor, status, label, buttons, openTerminalWith }) {
+  let currentPath = '';
+  let managedPath = ''; // set when the open file came from the file manager (saved through it too)
+  let savedValue = editor.getValue();
+
+  const isDirty = () => editor.getValue() !== savedValue;
+  const nameOf = path => path.split(/[\\/]/).pop();
+
+  const refreshLabel = () => {
+    if (!label) return;
+    label.textContent = currentPath ? `${nameOf(currentPath)}${isDirty() ? ' ●' : ''}` : (isDirty() ? 'Unsaved ●' : 'Untitled');
+    label.title = currentPath || 'Not saved to a file yet';
+  };
+
+  const markSaved = (path) => {
+    currentPath = path;
+    savedValue = editor.getValue();
+    refreshLabel();
+  };
+
+  const writeFile = async (folder, name, overwrite = false) => {
+    const result = await Files.save(folder, name, editor.getValue(), overwrite);
+    if (result.saved) {
+      managedPath = '';
+      markSaved(result.path);
+      status.textContent = `Saved ${result.path}`;
+      return result;
+    }
+    if (result.exists && confirm(`${result.name} already exists. Replace it?`)) {
+      return writeFile(folder, name, true);
+    }
+    return null;
+  };
+
+  const saveAs = () => new Promise(resolve => {
+    Files.list().then(info => {
+      dialog('Save as', (modal, close) => {
+        const nameInput = document.createElement('input');
+        nameInput.className = 'form-input question-dialog-input';
+        nameInput.placeholder = 'file name, e.g. app.py';
+        nameInput.value = currentPath ? nameOf(currentPath) : '';
+        nameInput.setAttribute('aria-label', 'File name');
+        const folderSelect = document.createElement('select');
+        folderSelect.className = 'form-select';
+        folderSelect.setAttribute('aria-label', 'Folder');
+        info.folders.forEach(folder => {
+          const option = document.createElement('option');
+          option.value = folder;
+          option.textContent = folder;
+          folderSelect.appendChild(option);
+        });
+        folderSelect.value = currentPath
+          ? currentPath.slice(0, Math.max(currentPath.lastIndexOf('\\'), currentPath.lastIndexOf('/')))
+          : info.default_folder;
+        if (!folderSelect.value) folderSelect.value = info.default_folder;
+        const error = document.createElement('p');
+        error.className = 'text-danger small';
+        const actions = document.createElement('div');
+        actions.className = 'question-dialog-actions';
+        const cancel = button('Cancel');
+        const save = button('Save', 'btn btn-primary');
+        actions.append(cancel, save);
+        modal.append(nameInput, folderSelect, error, actions);
+        nameInput.focus();
+        cancel.addEventListener('click', () => { close(); resolve(null); });
+        const submit = async () => {
+          if (!nameInput.value.trim()) { error.textContent = 'Enter a file name.'; return; }
+          save.disabled = true;
+          try {
+            const result = await writeFile(folderSelect.value, nameInput.value);
+            if (result) { close(); resolve(result); }
+          } catch (err) {
+            error.textContent = err.message;
+          }
+          save.disabled = false;
+        };
+        save.addEventListener('click', submit);
+        nameInput.addEventListener('keydown', event => { if (event.key === 'Enter') submit(); });
+      });
+    }).catch(err => { status.textContent = err.message; resolve(null); });
+  });
+
+  const save = async () => {
+    if (managedPath) {
+      try {
+        await Api.writeManagedFile(managedPath, editor.getValue());
+        markSaved(managedPath);
+        status.textContent = `Saved ${managedPath}`;
+        window.dispatchEvent(new CustomEvent('novous:fs-changed'));
+        return { saved: true, path: managedPath };
+      } catch (err) {
+        status.textContent = `Save failed: ${err.message}`;
+        return null;
+      }
+    }
+    if (!currentPath) return saveAs();
+    const folder = currentPath.slice(0, Math.max(currentPath.lastIndexOf('\\'), currentPath.lastIndexOf('/')));
+    try {
+      return await writeFile(folder, nameOf(currentPath), true);
+    } catch (err) {
+      status.textContent = `Save failed: ${err.message}`;
+      return null;
+    }
+  };
+
+  const open = async () => {
+    if (isDirty() && !confirm('Discard unsaved changes in the editor?')) return;
+    dialog('Open from file manager', (modal, close) => {
+      modal.classList.add('is-resizable');
+      const treeHost = document.createElement('div');
+      treeHost.className = 'codebuilder-open-tree';
+      const actions = document.createElement('div');
+      actions.className = 'question-dialog-actions';
+      const cancel = button('Cancel');
+      cancel.addEventListener('click', close);
+      actions.appendChild(cancel);
+      modal.append(treeHost, actions);
+
+      renderTree(treeHost, {
+        manageRoots: true,
+        onSelect: async (path, type) => {
+          if (type !== 'file') return;
+          try {
+            const opened = await Api.readManagedFile(path);
+            editor.setValue(opened.content);
+            managedPath = opened.path;
+            markSaved(opened.path);
+            status.textContent = `Opened ${opened.path}`;
+            close();
+          } catch (err) {
+            status.textContent = `Could not open ${path}: ${err.message}`;
+          }
+        }
+      });
+    });
+  };
+
+  const runInTerminal = async () => {
+    const saved = await save();
+    if (!saved && !currentPath) return;
+    try {
+      const { command } = await Files.runCommand(currentPath, editor.getValue());
+      openTerminalWith?.(command);
+      status.textContent = 'Press Enter in the terminal to run';
+    } catch (err) {
+      status.textContent = err.message;
+    }
+  };
+
+  buttons.save?.addEventListener('click', save);
+  buttons.saveAs?.addEventListener('click', saveAs);
+  buttons.open?.addEventListener('click', open);
+  buttons.runTerminal?.addEventListener('click', runInTerminal);
+  editor.setSaveHandler?.(save);
+  refreshLabel();
+
+  return { refreshLabel, save, saveAs, open };
+}
+
+```
+
 ## `library/agent-01.md`
-```md
+```markdown
 ---
 id: agent-01
 name: Test Agent
@@ -16412,7 +16524,7 @@ Read, write, list a tree, or delete a path through the editor pillar.
 ```
 
 ## `library/chat-assitant.md`
-```md
+```markdown
 ---
 id: chat-assitant
 name: Assistant
@@ -16497,7 +16609,7 @@ Return a directory tree and save a copy in the shared agent-memory scratchpad.
 ```
 
 ## `library/code-planer.md`
-```md
+```markdown
 ---
 id: code-planer
 name: Coding Planner
@@ -16582,7 +16694,7 @@ Keep the plan simple, organized, and easy to translate into Python code. Do not 
 ```
 
 ## `library/codingagent.md`
-```md
+```markdown
 ---
 id: codingagent
 name: CodingAgent
@@ -16837,19 +16949,26 @@ Follow this priority order:
 Return reliable Python code without inventing missing information or verification results.
 ```
 
-## `scripts/gen_app_snapshot.py`
-```py
-﻿"""Generate a comprehensive, AI-agent-readable snapshot of the Novous application."""
+## `scripts/doc_scope.py`
+```python
+"""Shared file-scope rules for the generated Novous application documents.
+
+``gen_app_snapshot.py`` and ``gen_master_copy.py`` both import these rules so the
+two documents always describe exactly the same set of files.
+
+The scope deliberately omits local, user-owned content: the agent scratchpad and
+RAG database, the configuration files that record the author's private folder
+paths, and everything the author keeps inside ``workspace/`` other than the
+package source itself. The rules are expressed as patterns rather than as lists
+of personal file names, so the generated documents never disclose them.
+"""
+
+from __future__ import annotations
+
 import os
 from pathlib import Path
-from datetime import datetime
 
 ROOT = Path(__file__).resolve().parent.parent
-TODAY = datetime.now().strftime("%Y%m%d")
-try:
-    COMMIT = os.popen("git rev-parse --short HEAD").read().strip()
-except Exception:
-    COMMIT = "unknown"
 
 EXCLUDE_DIRS = {
     "venv",
@@ -16864,15 +16983,196 @@ EXCLUDE_DIRS = {
     "test_reports",
     "model_logs",
 }
-INCLUDE_EXT = {".py", ".js", ".css", ".html", ".json", ".md", ".txt", ".bat", ".sh", ".yaml", ".yml", ".cfg", ".ini"}
-SKIP_FILES = {"MASTER_COPY.md", "novous2-ai-builder-prompt-v2.md", "rag_config.json"}
-SNAPSHOT_PREFIXES = ("NOVOUS_APP_SNAPSHOT", "NOVOUS2_APP_SNAPSHOT")
+
+INCLUDE_EXT = {
+    ".py",
+    ".js",
+    ".css",
+    ".html",
+    ".json",
+    ".md",
+    ".txt",
+    ".bat",
+    ".sh",
+    ".yaml",
+    ".yml",
+    ".cfg",
+    ".ini",
+}
+
+EXTENSIONLESS_INCLUDE = {"Dockerfile", "Procfile"}
+
+# Local runtime state, regenerated on demand.
+PRIVATE_DIRS = ("agentMemory/data",)
+
+# Configuration files whose values point at the author's private folders.
+PRIVATE_CONTENT_FILES = (
+    "agentMemory/rag_config.json",
+    "tools/allowed_paths.json",
+)
+
+# The workspace package holds the canonical project state next to locally
+# authored content. Only its Python modules and ``project.json`` are documented;
+# every subdirectory and every other file type is treated as private content.
+WORKSPACE_PACKAGE = "workspace"
+WORKSPACE_SOURCE_EXT = {".py"}
+WORKSPACE_SOURCE_FILES = {"project.json"}
+
+SKIP_FILES = {"novous2-ai-builder-prompt-v2.md", "rag_config.json"}
+SKIP_PREFIXES = ("NOVOUS_APP_SNAPSHOT", "NOVOUS2_APP_SNAPSHOT", "MASTER_COPY")
+
+
+def _norm(rel: str) -> str:
+    return rel.replace("\\", "/")
+
+
+def is_private_dir(rel: str) -> bool:
+    """True for directories that hold local, user-owned content."""
+    rel = _norm(rel)
+    if any(rel == prefix or rel.startswith(prefix + "/") for prefix in PRIVATE_DIRS):
+        return True
+    return rel.startswith(WORKSPACE_PACKAGE + "/")
+
+
+def is_private_file(rel: str) -> bool:
+    """True for files that must not appear in the documented file structure."""
+    rel = _norm(rel)
+    if any(rel.startswith(prefix + "/") for prefix in PRIVATE_DIRS):
+        return True
+    if not rel.startswith(WORKSPACE_PACKAGE + "/"):
+        return False
+    name = rel[len(WORKSPACE_PACKAGE) + 1:]
+    if "/" in name:
+        return True
+    if Path(name).suffix.lower() in WORKSPACE_SOURCE_EXT:
+        return False
+    return name not in WORKSPACE_SOURCE_FILES
+
+
+def is_private_content(rel: str) -> bool:
+    """True for files whose contents must not be embedded in the documents."""
+    rel = _norm(rel)
+    if rel in PRIVATE_CONTENT_FILES:
+        return True
+    return is_private_file(rel)
+
+
+def is_skipped_name(name: str) -> bool:
+    return name in SKIP_FILES or name.startswith(SKIP_PREFIXES)
+
+
+def is_included_file(path: Path) -> bool:
+    if path.suffix.lower() in INCLUDE_EXT:
+        return True
+    return path.name in EXTENSIONLESS_INCLUDE
+
+
+def _relative_dir(root: Path, dirpath: str) -> str:
+    rel = Path(dirpath).relative_to(root).as_posix()
+    return "" if rel == "." else rel
+
+
+def iter_source_files(root: Path = ROOT):
+    """Yield ``(relative_posix_path, path)`` for every file inside the documented scope."""
+    for dirpath, dirnames, filenames in os.walk(root):
+        rel_dir = _relative_dir(root, dirpath)
+        kept_dirs = []
+        for name in sorted(dirnames):
+            child = f"{rel_dir}/{name}" if rel_dir else name
+            if name in EXCLUDE_DIRS or is_private_dir(child):
+                continue
+            kept_dirs.append(name)
+        dirnames[:] = kept_dirs
+        for name in sorted(filenames):
+            if name in EXCLUDE_DIRS or is_skipped_name(name):
+                continue
+            child = f"{rel_dir}/{name}" if rel_dir else name
+            if is_private_content(child):
+                continue
+            path = Path(dirpath) / name
+            if not is_included_file(path):
+                continue
+            yield child, path
+
+
+def iter_tree(root: Path = ROOT):
+    """Return ``(relative_posix_path, is_dir)`` entries for the documented file structure."""
+    entries = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        rel_dir = _relative_dir(root, dirpath)
+        kept_dirs = []
+        for name in sorted(dirnames):
+            child = f"{rel_dir}/{name}" if rel_dir else name
+            if name in EXCLUDE_DIRS or is_private_dir(child):
+                continue
+            kept_dirs.append(name)
+            entries.append((child, True))
+        dirnames[:] = kept_dirs
+        for name in sorted(filenames):
+            if name in EXCLUDE_DIRS or is_skipped_name(name):
+                continue
+            child = f"{rel_dir}/{name}" if rel_dir else name
+            if is_private_file(child):
+                continue
+            entries.append((child, False))
+    entries.sort(key=lambda item: item[0])
+    return entries
+
+
+def fence_for(text: str, minimum: int = 3) -> str:
+    """Return a backtick fence long enough to wrap ``text`` without being closed by it."""
+    longest = 0
+    run = 0
+    for char in text:
+        if char == "`":
+            run += 1
+            longest = max(longest, run)
+        else:
+            run = 0
+    return "`" * max(minimum, longest + 1)
+
+```
+
+## `scripts/gen_app_snapshot.py`
+```python
+﻿"""Generate a comprehensive, AI-agent-readable snapshot of the Novous application."""
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from doc_scope import ROOT, fence_for, iter_source_files, iter_tree
+
+TODAY = datetime.now().strftime("%Y%m%d")
+try:
+    COMMIT = os.popen("git rev-parse --short HEAD").read().strip()
+except Exception:
+    COMMIT = "unknown"
+
+MAX_FILE_BYTES = 200_000
 
 OUT = ROOT / "app_documentation" / f"NOVOUS_APP_SNAPSHOT_{TODAY}_new.md"
 
+KEY_COMPONENTS = """- server.py: FastAPI app entrypoint serving static UI and API routes
+- core_engine/: agent factory, runtime, tool catalog, langgraph tools
+- editor/: editor session, operations, schemas, interface
+- agentMemory/: shared agent scratchpad plus a SQL-backed RAG knowledge base
+- codebuilder/: code plan and execution pillar with terminal and file tools
+- file_manager/: sandboxed file CRUD service, schemas, and API
+- tools/: agent-facing tools (read, write, edit, delete, map, memory, editor)
+- frontend/: static assets and HTML pages (index, chat, editor, code builder, testing, terminal)
+- library/: centralized single-file agent definitions
+- workspace/: project configuration and workflow utilities
+- test_environment/: prompt builder, test runner, tool workbench, test agents
+- about/: app identity source synced to the index page and app documentation
+- scripts/: documentation and migration generators
+- app_documentation/: generated snapshot and master copy documents"""
+
 
 def get_lang(ext: str) -> str:
-    ext = ext.lower().lstrip('.')
+    ext = ext.lower().lstrip(".")
     return {
         "py": "python",
         "js": "javascript",
@@ -16890,62 +17190,48 @@ def get_lang(ext: str) -> str:
     }.get(ext, ext)
 
 
-def collect_files():
-    files = []
-    for path in sorted(ROOT.rglob("*")):
-        if not path.is_file():
-            continue
-        if any(part in EXCLUDE_DIRS for part in path.parts):
-            continue
-        if path.name in SKIP_FILES or path.name.startswith(SNAPSHOT_PREFIXES) or path.name.startswith("MASTER_COPY"):
-            continue
-        if path.suffix.lower() not in INCLUDE_EXT and path.name in {"Dockerfile", "Procfile"}:
-            pass
-        elif path.suffix.lower() not in INCLUDE_EXT:
-            continue
-        files.append(path)
-    return files
+def read_source(path: Path) -> str:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        return f"<unreadable: {exc}>"
+    if len(text.encode("utf-8")) > MAX_FILE_BYTES:
+        text = text[:MAX_FILE_BYTES] + "\n... <truncated> ..."
+    return text
 
 
 def write_tree(f):
     f.write("## 3) File Structure Snapshot\n\n")
-    for path in sorted(ROOT.rglob("*")):
-        if any(part in EXCLUDE_DIRS for part in path.parts):
-            continue
-        rel = path.relative_to(ROOT).as_posix()
-        if path.name in SKIP_FILES or path.name.startswith(SNAPSHOT_PREFIXES) or path.name.startswith("MASTER_COPY"):
-            continue
-        f.write(f"- {rel}{'/' if path.is_dir() else ''}\n")
+    for rel, is_dir in iter_tree(ROOT):
+        f.write(f"- {rel}{'/' if is_dir else ''}\n")
     f.write("\n")
 
 
 def main():
-    files = collect_files()
+    files = list(iter_source_files(ROOT))
     with OUT.open("w", encoding="utf-8") as f:
         f.write(f"Date: {datetime.now().strftime('%Y-%m-%d')}\n")
-        f.write(f"Name: Novous Application Snapshot\n")
+        f.write("Name: Novous Application Snapshot\n")
         f.write(f"Filename: {OUT.name}\n")
         f.write(f"Commit: {COMMIT}\n")
-        f.write(f"Description: Self-contained reference for an AI agent. Captures Novous app purpose, architecture, file structure, and complete source code. Designed for grounding/understanding without repo access.\n\n")
+        f.write("Description: Self-contained reference for an AI agent. Captures Novous app purpose, architecture, file structure, and complete source code. Designed for grounding/understanding without repo access.\n\n")
         f.write("# NOVOUS APPLICATION SNAPSHOT\n\n")
         f.write("## 1) Overview\n\n")
-        f.write("Novous is an agent orchestration/workspace system with FastAPI backend, static frontend, core engine for agents/tools, editor integration, a repository-root agent library, and test environment.\n\n")
-        f.write("Key components:\n- server.py: FastAPI app entrypoint serving static UI and API routes\n- core_engine/: agent factory, runtime, tool catalog, langgraph tools\n- editor/: editor session/operations/schemas/interface\n- frontend/: static assets and HTML pages (chat, editor, index, testing)\n- library/: centralized single-file agent definitions\n- workspace/: project configuration and workflow utilities\n- test_environment/: prompt builder, test runner, test agents\n\n")
+        f.write("Novous is an agent orchestration/workspace system with a FastAPI backend, a static frontend, a core engine for agents and tools, editor integration, shared agent memory, a code builder, a sandboxed file manager, a repository-root agent library, and a test environment.\n\n")
+        f.write(f"Key components:\n{KEY_COMPONENTS}\n\n")
         f.write("## 2) Table of Contents\n\n")
         f.write("1. Overview\n")
-        f.write("2. File Structure Snapshot\n")
-        f.write("3. Complete Source Code (by file)\n\n")
+        f.write("2. Table of Contents\n")
+        f.write("3. File Structure Snapshot\n")
+        f.write("4. Complete Source Code (by file)\n\n")
         write_tree(f)
         f.write("## 4) Complete Source Code (by file)\n\n")
-        for path in files:
-            rel = path.relative_to(ROOT).as_posix()
+        for rel, path in files:
             lang = get_lang(path.suffix)
+            text = read_source(path)
+            fence = fence_for(text)
             f.write(f"### {rel}\n\n")
-            try:
-                text = path.read_text(encoding="utf-8", errors="replace")
-            except Exception as e:
-                text = f"<unreadable: {e}>"
-            f.write(f"`{lang}\n{text}\n`\n\n")
+            f.write(f"{fence}{lang}\n{text}\n{fence}\n\n")
 
     print(f"Wrote {OUT} ({OUT.stat().st_size:,} bytes, {len(files)} files)")
 
@@ -16955,63 +17241,115 @@ if __name__ == "__main__":
 
 ```
 
-## `scripts/gen_master_copy.py`
-```py
-"""Generate a single markdown master copy of the entire Novous source tree."""
+## `scripts/gen_listings.py`
+```python
+"""Regenerate the repository listing files for the tools and file_manager packages."""
 
-from datetime import datetime
+import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-TODAY = datetime.now().strftime("%Y%m%d")
-OUT = ROOT / "app_documentation" / f"MASTER_COPY_{TODAY}.md"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-INCLUDE = {".py", ".js", ".css", ".html", ".json", ".md", ".bat", ".sh"}
-EXCLUDE_DIRS = {
-    "venv",
-    "__pycache__",
-    ".git",
-    ".pytest_cache",
-    "node_modules",
-    "test_agents",
-    "test_reports",
-    "model_logs",
-    "app_documentation",
+from doc_scope import ROOT
+
+LISTINGS = {
+    "tools_listing.txt": "tools",
+    "file_manager_listing.txt": "file_manager",
 }
-MAX_FILE_BYTES = 200_000
 
 
-def collect() -> list[Path]:
-    files = []
-    for path in sorted(ROOT.rglob("*")):
+def collect(package: str) -> list[str]:
+    entries = []
+    for path in (ROOT / package).rglob("*"):
         if not path.is_file():
             continue
-        if path.name.startswith("MASTER_COPY") or path.name in {"novous2-ai-builder-prompt-v2.md", "rag_config.json"}:
+        if "__pycache__" in path.parts or path.suffix.lower() == ".pyc":
             continue
-        if path.suffix not in INCLUDE:
-            continue
-        if any(part in EXCLUDE_DIRS for part in path.parts):
-            continue
-        files.append(path)
-    return files
+        entries.append(path.relative_to(ROOT).as_posix())
+    return sorted(entries)
 
 
 def main() -> None:
-    files = collect()
-    chunks = ["# Novous Agent Factory — Master Copy", "",
-              f"Generated from `{ROOT}` — {len(files)} files.", ""]
-    for path in files:
-        rel = path.relative_to(ROOT).as_posix()
+    for filename, package in LISTINGS.items():
+        entries = collect(package)
+        target = ROOT / filename
+        with open(target, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write("\n".join(entries))
+            handle.write("\n")
+        print(f"Wrote {target} ({len(entries)} entries)")
+
+
+if __name__ == "__main__":
+    main()
+
+```
+
+## `scripts/gen_master_copy.py`
+```python
+"""Generate a single markdown master copy of the entire Novous source tree."""
+
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from doc_scope import ROOT, fence_for, iter_source_files
+
+TODAY = datetime.now().strftime("%Y%m%d")
+OUT = ROOT / "app_documentation" / f"MASTER_COPY_{TODAY}.md"
+
+MAX_FILE_BYTES = 200_000
+
+try:
+    COMMIT = os.popen("git rev-parse --short HEAD").read().strip()
+except Exception:
+    COMMIT = "unknown"
+
+
+def get_lang(ext: str) -> str:
+    ext = ext.lower().lstrip(".")
+    return {
+        "py": "python",
+        "js": "javascript",
+        "json": "json",
+        "html": "html",
+        "css": "css",
+        "md": "markdown",
+        "txt": "text",
+        "bat": "batch",
+        "sh": "bash",
+        "yaml": "yaml",
+        "yml": "yaml",
+        "cfg": "ini",
+        "ini": "ini",
+    }.get(ext, ext)
+
+
+def read_source(path: Path) -> str:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        return f"<unreadable: {exc}>"
+    if len(text.encode("utf-8")) > MAX_FILE_BYTES:
+        text = text[:MAX_FILE_BYTES] + "\n... <truncated> ..."
+    return text
+
+
+def main() -> None:
+    files = list(iter_source_files(ROOT))
+    chunks = ["# Novous — Master Copy", "",
+              f"Complete source copy of the Novous repository — {len(files)} files.",
+              f"Date: {datetime.now().strftime('%Y-%m-%d')}",
+              f"Commit: {COMMIT}", ""]
+    for rel, path in files:
+        text = read_source(path)
+        fence = fence_for(text)
         chunks.append(f"## `{rel}`")
-        chunks.append("```" + path.suffix.lstrip("."))
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except Exception as exc:
-            text = f"<unreadable: {exc}>"
-        if len(text.encode("utf-8")) > MAX_FILE_BYTES:
-            text = text[:MAX_FILE_BYTES] + "\n... <truncated> ..."
+        chunks.append(f"{fence}{get_lang(path.suffix)}")
         chunks.append(text)
-        chunks.append("```")
+        chunks.append(fence)
         chunks.append("")
     OUT.write_text("\n".join(chunks), encoding="utf-8")
     print(f"Wrote {OUT} ({OUT.stat().st_size:,} bytes, {len(files)} files)")
@@ -17023,7 +17361,7 @@ if __name__ == "__main__":
 ```
 
 ## `scripts/migrate_to_central_library.py`
-```py
+```python
 #!/usr/bin/env python3
 """Migrate legacy split agents into library/{agent_id}.md."""
 
@@ -17108,7 +17446,7 @@ print(f"Migrated legacy agent definitions into {LIBRARY_ROOT}.")
 ```
 
 ## `scripts/venv.bat`
-```bat
+```batch
 @echo off
 REM Virtualenv bootstrap for Novous Agent Factory (Windows)
 if not exist "venv" (
@@ -17123,7 +17461,7 @@ echo Virtualenv ready. Run: python server.py
 ```
 
 ## `scripts/venv.sh`
-```sh
+```bash
 #!/usr/bin/env sh
 # Virtualenv bootstrap for Novous Agent Factory (macOS/Linux)
 set -e
@@ -17138,87 +17476,13 @@ echo "Virtualenv ready. Run: python server.py"
 
 ```
 
-## `server.py`
-```py
-import os
-from pathlib import Path
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-
-from core_engine.interface import router as core_router
-from editor.interface import router as editor_router
-from workspace.interface import router as workspace_router
-from test_environment.interface import router as test_router
-from codebuilder.interface import router as codebuilder_router
-from file_manager.interface import router as file_manager_router
-from tools.interface import router as tools_router
-
-app = FastAPI(title="Novous AGENT FACTORY", version="4.0.0")
-
-
-@app.on_event("startup")
-def migrate_sandbox_environment():
-    """Move packages from the old in-repo sandbox venv to the configured sandbox folder."""
-    import threading
-    from agentMemory.interface import start_document_scanner
-    from test_environment import sandbox_env
-
-    threading.Thread(target=sandbox_env.migrate_legacy, daemon=True).start()
-    start_document_scanner()
-
-# Mount Component Backend Routers
-app.include_router(tools_router)
-app.include_router(core_router)
-app.include_router(editor_router)
-app.include_router(workspace_router)
-app.include_router(test_router)
-app.include_router(codebuilder_router)
-app.include_router(file_manager_router)
-
-# Serve Static Assets (CSS, JS)
-app.mount("/static", StaticFiles(directory=Path("frontend") / "static"), name="static")
-
-# Mount Page Routes
-@app.get("/")
-def index_page():
-    return FileResponse("frontend/pages/index.html")
-
-@app.get("/editor")
-def editor_page():
-    return FileResponse("frontend/pages/editor.html")
-
-@app.get("/codebuilder")
-def codebuilder_page():
-    return FileResponse("frontend/pages/codeBuilder.html")
-
-@app.get("/chat")
-def chat_page():
-    return FileResponse("frontend/pages/chat.html")
-
-@app.get("/terminal")
-def terminal_page():
-    return FileResponse("frontend/pages/terminal.html")
-
-@app.api_route("/test", methods=["GET", "POST"])
-def test_page():
-    return FileResponse("frontend/pages/testing.html")
-
-if __name__ == "__main__":
-    import uvicorn
-    host = os.getenv("PROJECT_MANAGER_HOST", "127.0.0.1")
-    port = int(os.getenv("PROJECT_MANAGER_PORT", "8000"))
-    uvicorn.run("server:app", host=host, port=port, reload=True)
-
-```
-
 ## `test_environment/__init__.py`
-```py
+```python
 
 ```
 
 ## `test_environment/behavior_probe.py`
-```py
+```python
 """Behavioral probes: run the assembled prompt as a system prompt and check how the model behaves.
 
 Checks are deterministic (keyword overlap, exact fact match, refusal markers), so no judge model is needed.
@@ -17368,7 +17632,7 @@ def run_probes(model: str, prompt: str, title: str, description: str,
 ```
 
 ## `test_environment/interface.py`
-```py
+```python
 """Test Environment Doorway: Python API & FastAPI Router
 (/api/testing/*, /api/prompt-builder/*)."""
 
@@ -17900,7 +18164,7 @@ def api_fixtures():
 ```
 
 ## `test_environment/model_log.py`
-```py
+```python
 """One small log file per LLM: running totals plus the most recent test runs."""
 
 import json
@@ -17956,7 +18220,7 @@ def record_run(model: str, title: str, passed: bool, components: list[dict],
 ```
 
 ## `test_environment/prompt_builder.py`
-```py
+```python
 """Prompt Part Assembler & Category Manifest for the prompt builder."""
 
 import json
@@ -18152,7 +18416,7 @@ def assemble_prompt(selected_ids: list[str], extra_instructions: str = "") -> di
 ```
 
 ## `test_environment/prompt_judge.py`
-```py
+```python
 """LLM-as-judge review of a prompt, one rubric per section type.
 
 The judge returns the same component/check shape as test_runner so the UI and
@@ -18251,167 +18515,8 @@ def judge_prompt(model: str, title: str, description: str, sections: list[dict],
 
 ```
 
-## `test_environment/PromptBuilderFiles/categories.json`
-```json
-{
-  "categories": [
-    {
-      "id": "test-agent-prompt",
-      "name": "Test Agent Prompt",
-      "description": ""
-    },
-    {
-      "id": "chatbot-design-prompt-for-file-manager-crud-operations",
-      "name": "Chatbot Design Prompt for File Manager CRUD Operations",
-      "description": "This prompt designs a persona for a highly capable assistant specialized in performing file management operations and answering related queries."
-    }
-  ]
-}
-
-```
-
-## `test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/available-tools.md`
-```md
----
-title: Available Tools
----
-
-### read_agent_memory
-- Provider: agentMemory
-- Signature: (memory_type: str = 'all') -> str
-Read the latest file content copied by read_file and/or the latest directory map copied by map_files.
-Call this tool when the user asks for the latest file content or directory map.
-
-### search_knowledge_base
-- Provider: agentMemory
-- Signature: (query: str, top_k: int = 5) -> str
-Search documents in workspace/Knowledge Base using semantic Ollama embeddings; returns passages with source paths and similarity scores.
-Call this tool when the user asks a question that requires information from the workspace knowledge base.
-
-### list_knowledge_documents
-- Provider: agentMemory
-- Signature: () -> str
-List documents currently indexed in the semantic Knowledge Base.
-Call this tool when the user asks to list the available documents in the Knowledge Base.
-
-### delete_file
-- Provider: tools
-- Signature: (path: str) -> str
-Delete a file or directory from the workspace by relative path.
-Call this tool when the user requests to delete a file or directory.
-
-### read_file
-- Provider: tools
-- Signature: (path: str, request: str = '') -> str
-Read a UTF-8 text or Docling-supported document from the configured file-manager root. PDF, DOCX, PPTX, and ODT documents are text-extracted with Docling; OCR is enabled for PDFs to support scanned pages. Text files are limited to 1 MB; documents to 25 MB and 1 MB of extracted text. Successful reads are mirrored to agent memory. Returns JSON with the request, path, content, and scratchpad context.
-Call this tool when the user asks to read the content of a file.
-
-### write_file
-- Provider: tools
-- Signature: (path: str, content: str) -> str
-Write UTF-8 content to a workspace file by relative path (bare filenames go in the root). Overwrites existing files and creates missing parent directories. Supports formats such as .txt, .md, .py, .json, .html, .css, and .js. Returns JSON with the resolved path and bytes written.
-Call this tool when the user asks to create or write content to a file.
-
-### editor
-- Provider: editor
-- Signature: (action: str, path: str = '', content: str = '') -> str
-Read, write, list a tree, or delete a path through the editor pillar.
-Call this tool when the user requests complex file path manipulation, reading/writing specific file contents, or listing the directory tree.
-
-### map_files
-- Provider: file_manager
-- Signature: (path: str = '') -> str
-Return a directory tree and save a copy in the shared agent-memory scratchpad.
-Call this tool when the user requests to view the directory structure of a location.
-
-```
-
-## `test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/hallucination-control.md`
-```md
----
-title: Hallucination Control
----
-
-You must strictly adhere to the information present in the provided context or the results returned by the tool calls. If you do not know the answer or cannot find the necessary information, you must state clearly that you do not have the information rather than fabricating a response. Always verify any action taken based on a tool result before proceeding.
-
-```
-
-## `test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/role.md`
-```md
----
-title: Role
----
-
-You are an expert Workspace Agent specializing in file system operations (CRUD: Create, Read, Update, Delete) and general knowledge retrieval from the workspace. Your primary function is to guide the user through file management tasks using the provided tools while maintaining high accuracy and helpfulness.
-
-```
-
-## `test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/scratchpad.md`
-```md
----
-title: Scratchpad
----
-
-You must utilize a dedicated scratchpad to plan complex multi-step operations, intermediate calculations, or complex file paths before attempting to execute external tools. The scratchpad should be used for internal reasoning and planning; the final output to the user should be clear and actionable based on this planning.
-
-```
-
-## `test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/tool-usage.md`
-```md
----
-title: Tool Usage
----
-
-You are authorized to use the provided tools, specifically `read_file`, `write_file`, `list_knowledge_documents`, `search_knowledge_base`, and `project_status`, to interact with the workspace file manager and knowledge base. Before executing any tool, you must analyze the user's request to determine the correct tool and parameters. If a request requires multiple steps, use the scratchpad to plan the sequence of actions before executing the final commands.
-
-```
-
-## `test_environment/PromptBuilderFiles/parts/test-agent-prompt/description.md`
-```md
----
-title: Description
----
-
-Prompt the Test Agent to answer questions, utilize the provided tools, and avoid hallucinating the use of tools they haven't been explicitly told to use.
-
-```
-
-## `test_environment/PromptBuilderFiles/parts/test-agent-prompt/hallucination-prevention.md`
-```md
----
-title: Hallucination Prevention
----
-
-The Test Agent must not claim that it has read, written, tested, or modified files unless the tool result confirms it. The Test Agent should only use the tools listed above and avoid inventing files, classes, functions, dependencies, or existing functionality.
-
-```
-
-## `test_environment/PromptBuilderFiles/parts/test-agent-prompt/instructions.md`
-```md
----
-title: Instructions
----
-
-1. The user will ask a question.
-2. The Test Agent should provide an answer based on the information available and the provided tools.
-3. If the Test Agent is unsure about something, it should ask for clarification.
-4. The Test Agent should avoid using tools unless explicitly told to do so.
-5. The Test Agent should always be truthful about its actions and limitations.
-
-```
-
-## `test_environment/PromptBuilderFiles/parts/test-agent-prompt/role.md`
-```md
----
-title: Role
----
-
-The Test Agent is a skilled software architect who plans software using modules, functions, and classes. It follows the design principles of separation of concerns, object-oriented programming, simplicity, documentation, and error handling. The Test Agent is provided with a set of tools to assist with file operations and should only use these tools when explicitly told to do so.
-
-```
-
 ## `test_environment/report_store.py`
-```py
+```python
 """Saved test reports (JSON files) so results can be reviewed and learned from later."""
 
 import json
@@ -18474,7 +18579,7 @@ def get_report(report_id: str) -> dict:
 ```
 
 ## `test_environment/sandbox_env.py`
-```py
+```python
 """Isolated virtualenv used to run untrusted test code (Tool Workbench and Code Builder)."""
 
 import ast
@@ -18738,7 +18843,7 @@ def add_to_requirements(source: str) -> list[str]:
 ```
 
 ## `test_environment/sandbox_paths.py`
-```py
+```python
 """Allowed folders for the sandbox terminal and the Code Builder file save/open.
 
 The list lives under ``sandbox_roots`` in tools/allowed_paths.json. The scripts folder is always allowed.
@@ -18830,7 +18935,7 @@ def clear_roots() -> None:
 ```
 
 ## `test_environment/test_agent_memory.py`
-```py
+```python
 import tempfile
 import unittest
 from pathlib import Path
@@ -19003,7 +19108,7 @@ if __name__ == "__main__":
 ```
 
 ## `test_environment/test_behavior_probe.py`
-```py
+```python
 import tempfile
 import unittest
 from pathlib import Path
@@ -19085,7 +19190,7 @@ if __name__ == "__main__":
 ```
 
 ## `test_environment/test_prompt_evaluation.py`
-```py
+```python
 from test_environment.test_runner import run_prompt_component_tests
 
 
@@ -19153,7 +19258,7 @@ def test_prompt_evaluation_marks_missing_title_and_vague_tool_language():
 ```
 
 ## `test_environment/test_prompt_judge.py`
-```py
+```python
 import tempfile
 import unittest
 from pathlib import Path
@@ -19204,7 +19309,7 @@ if __name__ == "__main__":
 ```
 
 ## `test_environment/test_publish_tools.py`
-```py
+```python
 import json
 import tempfile
 import unittest
@@ -19298,7 +19403,7 @@ if __name__ == "__main__":
 ```
 
 ## `test_environment/test_read_tool.py`
-```py
+```python
 import json
 import sys
 import types
@@ -19434,7 +19539,7 @@ if __name__ == "__main__":
 ```
 
 ## `test_environment/test_runner.py`
-```py
+```python
 """4-Question Section Header Tests & Lexical Evaluator.
 
 For each of the four required agent.md headers (role, purpose, boundaries,
@@ -19782,7 +19887,7 @@ def run_tests_for_agent(agent_id: str, environment: str = "workspace") -> dict:
 ```
 
 ## `test_environment/test_sandbox_env.py`
-```py
+```python
 import tempfile
 import unittest
 from pathlib import Path
@@ -19835,7 +19940,7 @@ if __name__ == "__main__":
 ```
 
 ## `test_environment/test_tool_catalog.py`
-```py
+```python
 import tempfile
 import unittest
 from pathlib import Path
@@ -19959,7 +20064,7 @@ if __name__ == "__main__":
 ```
 
 ## `test_environment/test_tool_workbench.py`
-```py
+````python
 import sys
 import tempfile
 import unittest
@@ -20279,10 +20384,10 @@ class ToolWorkbenchTests(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
-```
+````
 
 ## `test_environment/test_tools_interface.py`
-```py
+```python
 import json
 import tempfile
 import unittest
@@ -20660,7 +20765,7 @@ if __name__ == "__main__":
 ```
 
 ## `test_environment/tool_workbench.py`
-```py
+````python
 """Local Python execution and promotion for user-authored Python tools."""
 
 import ast
@@ -21029,16 +21134,175 @@ def delete_custom_tool(name: str) -> dict:
     return tools_interface.remove_tool(name)
 
 
+````
+
+## `test_environment/PromptBuilderFiles/categories.json`
+```json
+{
+  "categories": [
+    {
+      "id": "test-agent-prompt",
+      "name": "Test Agent Prompt",
+      "description": ""
+    },
+    {
+      "id": "chatbot-design-prompt-for-file-manager-crud-operations",
+      "name": "Chatbot Design Prompt for File Manager CRUD Operations",
+      "description": "This prompt designs a persona for a highly capable assistant specialized in performing file management operations and answering related queries."
+    }
+  ]
+}
+
+```
+
+## `test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/available-tools.md`
+```markdown
+---
+title: Available Tools
+---
+
+### read_agent_memory
+- Provider: agentMemory
+- Signature: (memory_type: str = 'all') -> str
+Read the latest file content copied by read_file and/or the latest directory map copied by map_files.
+Call this tool when the user asks for the latest file content or directory map.
+
+### search_knowledge_base
+- Provider: agentMemory
+- Signature: (query: str, top_k: int = 5) -> str
+Search documents in workspace/Knowledge Base using semantic Ollama embeddings; returns passages with source paths and similarity scores.
+Call this tool when the user asks a question that requires information from the workspace knowledge base.
+
+### list_knowledge_documents
+- Provider: agentMemory
+- Signature: () -> str
+List documents currently indexed in the semantic Knowledge Base.
+Call this tool when the user asks to list the available documents in the Knowledge Base.
+
+### delete_file
+- Provider: tools
+- Signature: (path: str) -> str
+Delete a file or directory from the workspace by relative path.
+Call this tool when the user requests to delete a file or directory.
+
+### read_file
+- Provider: tools
+- Signature: (path: str, request: str = '') -> str
+Read a UTF-8 text or Docling-supported document from the configured file-manager root. PDF, DOCX, PPTX, and ODT documents are text-extracted with Docling; OCR is enabled for PDFs to support scanned pages. Text files are limited to 1 MB; documents to 25 MB and 1 MB of extracted text. Successful reads are mirrored to agent memory. Returns JSON with the request, path, content, and scratchpad context.
+Call this tool when the user asks to read the content of a file.
+
+### write_file
+- Provider: tools
+- Signature: (path: str, content: str) -> str
+Write UTF-8 content to a workspace file by relative path (bare filenames go in the root). Overwrites existing files and creates missing parent directories. Supports formats such as .txt, .md, .py, .json, .html, .css, and .js. Returns JSON with the resolved path and bytes written.
+Call this tool when the user asks to create or write content to a file.
+
+### editor
+- Provider: editor
+- Signature: (action: str, path: str = '', content: str = '') -> str
+Read, write, list a tree, or delete a path through the editor pillar.
+Call this tool when the user requests complex file path manipulation, reading/writing specific file contents, or listing the directory tree.
+
+### map_files
+- Provider: file_manager
+- Signature: (path: str = '') -> str
+Return a directory tree and save a copy in the shared agent-memory scratchpad.
+Call this tool when the user requests to view the directory structure of a location.
+
+```
+
+## `test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/hallucination-control.md`
+```markdown
+---
+title: Hallucination Control
+---
+
+You must strictly adhere to the information present in the provided context or the results returned by the tool calls. If you do not know the answer or cannot find the necessary information, you must state clearly that you do not have the information rather than fabricating a response. Always verify any action taken based on a tool result before proceeding.
+
+```
+
+## `test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/role.md`
+```markdown
+---
+title: Role
+---
+
+You are an expert Workspace Agent specializing in file system operations (CRUD: Create, Read, Update, Delete) and general knowledge retrieval from the workspace. Your primary function is to guide the user through file management tasks using the provided tools while maintaining high accuracy and helpfulness.
+
+```
+
+## `test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/scratchpad.md`
+```markdown
+---
+title: Scratchpad
+---
+
+You must utilize a dedicated scratchpad to plan complex multi-step operations, intermediate calculations, or complex file paths before attempting to execute external tools. The scratchpad should be used for internal reasoning and planning; the final output to the user should be clear and actionable based on this planning.
+
+```
+
+## `test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/tool-usage.md`
+```markdown
+---
+title: Tool Usage
+---
+
+You are authorized to use the provided tools, specifically `read_file`, `write_file`, `list_knowledge_documents`, `search_knowledge_base`, and `project_status`, to interact with the workspace file manager and knowledge base. Before executing any tool, you must analyze the user's request to determine the correct tool and parameters. If a request requires multiple steps, use the scratchpad to plan the sequence of actions before executing the final commands.
+
+```
+
+## `test_environment/PromptBuilderFiles/parts/test-agent-prompt/description.md`
+```markdown
+---
+title: Description
+---
+
+Prompt the Test Agent to answer questions, utilize the provided tools, and avoid hallucinating the use of tools they haven't been explicitly told to use.
+
+```
+
+## `test_environment/PromptBuilderFiles/parts/test-agent-prompt/hallucination-prevention.md`
+```markdown
+---
+title: Hallucination Prevention
+---
+
+The Test Agent must not claim that it has read, written, tested, or modified files unless the tool result confirms it. The Test Agent should only use the tools listed above and avoid inventing files, classes, functions, dependencies, or existing functionality.
+
+```
+
+## `test_environment/PromptBuilderFiles/parts/test-agent-prompt/instructions.md`
+```markdown
+---
+title: Instructions
+---
+
+1. The user will ask a question.
+2. The Test Agent should provide an answer based on the information available and the provided tools.
+3. If the Test Agent is unsure about something, it should ask for clarification.
+4. The Test Agent should avoid using tools unless explicitly told to do so.
+5. The Test Agent should always be truthful about its actions and limitations.
+
+```
+
+## `test_environment/PromptBuilderFiles/parts/test-agent-prompt/role.md`
+```markdown
+---
+title: Role
+---
+
+The Test Agent is a skilled software architect who plans software using modules, functions, and classes. It follows the design principles of separation of concerns, object-oriented programming, simplicity, documentation, and error handling. The Test Agent is provided with a set of tools to assist with file operations and should only use these tools when explicitly told to do so.
+
 ```
 
 ## `tools/__init__.py`
-```py
+```python
 """Tools package."""
 
 ```
 
 ## `tools/agent_memory_tool.py`
-```py
+```python
 """Agent-facing tools for shared memory and semantic document retrieval."""
 
 import json
@@ -21066,34 +21330,8 @@ def list_knowledge_documents() -> str:
 
 ```
 
-## `tools/allowed_paths.json`
-```json
-{
-  "map_roots": [
-    "E:\\Novous_notes"
-  ],
-  "file_manager_root": "E:\\Novous_notes",
-  "file_manager_roots": [
-    {
-      "name": "Novous Notes",
-      "path": "E:\\Novous_notes"
-    },
-    {
-      "name": "Prompts AI",
-      "path": "C:\\Users\\43319\\OneDrive\\Prompts AI"
-    }
-  ],
-  "active_file_manager_root": "E:\\Novous_notes",
-  "sandbox_root": "E:\\Novous_notes",
-  "sandbox_roots": [
-    "E:\\Novous_notes"
-  ]
-}
-
-```
-
 ## `tools/delete_file_tool.py`
-```py
+```python
 """Workspace file deletion tool backed by the shared tools interface."""
 
 import json
@@ -21113,7 +21351,7 @@ def delete_file(path: str) -> str:
 ```
 
 ## `tools/editor_tool.py`
-```py
+```python
 """Editor operations tool backed by the shared tools interface."""
 
 import json
@@ -21131,7 +21369,7 @@ def editor(action: str, path: str = "", content: str = "") -> str:
 ```
 
 ## `tools/interface.py`
-```py
+```python
 ﻿"""Tools interface: FastAPI router and Python doorway for tool registry."""
 
 import ast
@@ -21719,7 +21957,7 @@ def api_delete_tool(name: str):
 ```
 
 ## `tools/map_files_tool.py`
-```py
+```python
 """Workspace mapping tool backed by the shared tools interface."""
 
 import json
@@ -21742,7 +21980,7 @@ map_files.display_output = True
 ```
 
 ## `tools/promoted_tools.py`
-```py
+```python
 """Permanent storage for custom tools promoted from the Prompt Testing Workbench.
 
 Promoted tools are appended below the PROMOTION_MARKER by tools/interface.py,
@@ -21756,7 +21994,7 @@ from core_engine.tool_catalog import tool
 ```
 
 ## `tools/read_tool.py`
-```py
+```python
 """Verb-oriented file reading backed by the shared tools interface.
 
 The tools interface delegates to file_manager_service, the single access
@@ -21892,7 +22130,7 @@ def read_file(path: str, request: str = "") -> str:
 ```
 
 ## `tools/write_tool.py`
-```py
+```python
 """Verb-oriented file overwrite tool backed by the shared tools interface.
 
 The tools interface delegates to file_manager_service, the single access
@@ -21925,12 +22163,12 @@ def write_file(path: str, content: str) -> str:
 ```
 
 ## `workspace/__init__.py`
-```py
+```python
 
 ```
 
 ## `workspace/interface.py`
-```py
+```python
 """Workspace Doorway: Python API & FastAPI Router (/api/project, /api/health, squads)."""
 
 import json
@@ -22122,7 +22360,7 @@ def api_delete_squad(req: SquadRequest):
 ```
 
 ## `workspace/squad_manager.py`
-```py
+```python
 """Folder Hierarchy Engine: squad folders under workspace/squads/."""
 
 import json
@@ -22219,7 +22457,7 @@ def delete_squad(name: str) -> dict:
 ```
 
 ## `workspace/workspace_workflow.py`
-```py
+```python
 """Agent Scaffolding & Squad Routing."""
 
 import re
