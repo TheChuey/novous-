@@ -20,6 +20,10 @@ STUCK_CANCELLED = "cancelled"      # stopped on request (cancel endpoint / clien
 class CodeExecutionRequest(BaseModel):
     code: str = Field(..., description="Python source code to execute")
     timeout_seconds: float = Field(default=10.0, description="Hard wall-clock limit in seconds")
+    keep_running: bool = Field(
+        default=False,
+        description="Server mode: no time limit; runs until cancelled or the stream closes (streaming endpoint only).",
+    )
     mode: str = Field(
         default="safe",
         description="'safe': buffered result, stdout/stderr kept apart. "

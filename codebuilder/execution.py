@@ -57,7 +57,7 @@ from .schemas import (
 MAX_OUTPUT_BYTES = 64 * 1024
 DEFAULT_TIMEOUT_SECONDS = 10.0
 MIN_TIMEOUT_SECONDS = 0.1
-MAX_TIMEOUT_SECONDS = 120.0
+MAX_TIMEOUT_SECONDS = 480.0
 WATCHDOG_GRACE_SECONDS = 1.0   # watchdog fires this long after the deadline
 DRAIN_SECONDS = 0.5            # keep collecting output printed just before a kill
 _STDERR_LINE = re.compile(r"[Ll]ine (\d+)(?:,| )")
@@ -81,7 +81,8 @@ try:
     with open(script, encoding="utf-8") as fh:
         source = fh.read()
     code = compile(source, "<codebuilder>", "exec")
-    faulthandler.dump_traceback_later(dump_after, file=stack_file)
+    if dump_after > 0:
+        faulthandler.dump_traceback_later(dump_after, file=stack_file)
     exec(code, {"__name__": "__main__", "__file__": script})
 except SystemExit:
     raise
@@ -299,7 +300,8 @@ def run_stream(
     for consumers). Closing the generator (client disconnect) kills the process tree.
     """
     run_id = run_id or _new_run_id()
-    timeout = _clamp_timeout(req.timeout_seconds)
+    keep_running = bool(getattr(req, "keep_running", False)) and merge_output
+    timeout = float("inf") if keep_running else _clamp_timeout(req.timeout_seconds)
     interpreter = resolve_python()
 
     try:
@@ -323,7 +325,8 @@ def run_stream(
         "run_id": run_id,
         "mode": "risky" if merge_output else "safe",
         "python": interpreter,
-        "timeout_seconds": timeout,
+        "timeout_seconds": None if keep_running else timeout,
+        "keep_running": keep_running,
     }
 
     cancel_flag = _REGISTRY.register(run_id)
@@ -342,7 +345,10 @@ def run_stream(
             script_path.write_text(req.code, encoding="utf-8")
             harness_path.write_text(_HARNESS, encoding="utf-8")
 
-            dump_after = timeout * 0.8 if timeout < 4 else timeout - 0.8
+            if keep_running:
+                dump_after = 0.0
+            else:
+                dump_after = timeout * 0.8 if timeout < 4 else timeout - 0.8
             root = Path.cwd()
             proc = subprocess.Popen(
                 [interpreter, "-u", str(harness_path), str(script_path), str(diag_path),
@@ -359,9 +365,10 @@ def run_stream(
                 abandoned.set()
                 _kill_tree(proc)
 
-            watchdog = threading.Timer(timeout + WATCHDOG_GRACE_SECONDS, _watchdog_fire)
-            watchdog.daemon = True
-            watchdog.start()
+            if not keep_running:
+                watchdog = threading.Timer(timeout + WATCHDOG_GRACE_SECONDS, _watchdog_fire)
+                watchdog.daemon = True
+                watchdog.start()
 
             channels = [("stdout", proc.stdout)] + ([] if merge_output else [("stderr", proc.stderr)])
             chunks: "queue.Queue" = queue.Queue()

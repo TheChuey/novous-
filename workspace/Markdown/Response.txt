@@ -1,3 +1,0 @@
-Jesus asked to check if there is a folder named Markdown. If none exists, create a folder.
-
-The directory 'Markdown' does not exist in the workspace. A folder named 'Markdown' should be created.

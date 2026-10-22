@@ -1,6 +1,0 @@
-file_manager/__init__.py
-file_manager/backend.py
-file_manager/interface.py
-file_manager/schemas.py
-file_manager/service.py
-file_manager/test_file_manager.py

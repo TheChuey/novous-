@@ -147,6 +147,23 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
   const diagnostics = document.getElementById('diagnostics');
   const runButton = document.getElementById('run-code');
   const runMode = document.getElementById('codebuilder-run-mode');
+  const runTimeout = document.getElementById('codebuilder-run-timeout');
+  const currentTimeout = () => Number(runTimeout && runTimeout.value) || 10;
+  const SERVER_CODE_PATTERN = /\b(?:app|application|server|socketio)\.run\s*\(|\bserve_forever\s*\(|\buvicorn\.run\s*\(|\bwaitress\.serve\s*\(|\bhttp\.server\b/;
+  const serverMode = () => (!!runTimeout && runTimeout.value === 'server') ||
+    SERVER_CODE_PATTERN.test(editor.getValue());
+  const stopButton = document.getElementById('stop-run');
+  let activeRunId = null;
+  stopButton.addEventListener('click', async () => {
+    if (!activeRunId) return;
+    stopButton.disabled = true;
+    try { await fetch(`/api/codebuilder/execute/${activeRunId}/cancel`, { method: 'POST' }); } catch { /* stream end reports it */ }
+  });
+  if (runTimeout) {
+    const saved = readPref('codebuilder.runTimeout');
+    if (saved && [...runTimeout.options].some(o => o.value === saved)) runTimeout.value = saved;
+    runTimeout.addEventListener('change', () => writePref('codebuilder.runTimeout', runTimeout.value));
+  }
   const demoButton = document.getElementById('load-demo');
   const clearButton = document.getElementById('clear-console');
   const status = document.getElementById('codebuilder-status');
@@ -380,11 +397,16 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
   });
 
   const streamRiskyRun = async () => {
-    const timeoutSeconds = 10;
+    const timeoutSeconds = currentTimeout();
     const response = await fetch('/api/codebuilder/execute/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: editor.getValue(), timeout_seconds: timeoutSeconds, mode: 'risky' })
+      body: JSON.stringify({
+        code: editor.getValue(),
+        timeout_seconds: timeoutSeconds,
+        keep_running: serverMode(),
+        mode: 'risky'
+      })
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
@@ -401,16 +423,37 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     let runStatus = 'SUCCESS';
     let streamedText = '';
     let syntaxError = null;
+    let servingUrl = null;
+    let stoppedByUser = false;
 
     const ingest = (event) => {
       switch (event.type) {
+        case 'start':
+          activeRunId = event.run_id;
+          stopButton.hidden = false;
+          stopButton.disabled = false;
+          break;
         case 'stdout':
           output.textContent += event.text;
           streamedText += event.text;
+          if (!servingUrl) {
+            const match = streamedText.match(/https?:\/\/(?:127\.0\.0\.1|localhost|0\.0\.0\.0):\d+/);
+            if (match) {
+              servingUrl = match[0].replace('0.0.0.0', '127.0.0.1');
+              status.textContent = `Serving at ${servingUrl} — press Stop to end`;
+            }
+          }
           break;
         case 'stderr':
           output.textContent += event.text;
           streamedText += event.text;
+          if (!servingUrl) {
+            const match = streamedText.match(/https?:\/\/(?:127\.0\.0\.1|localhost|0\.0\.0\.0):\d+/);
+            if (match) {
+              servingUrl = match[0].replace('0.0.0.0', '127.0.0.1');
+              status.textContent = `Serving at ${servingUrl} — press Stop to end`;
+            }
+          }
           break;
         case 'truncated':
           output.textContent += '\n[Earlier output truncated]\n';
@@ -419,6 +462,7 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
           syntaxError = { line: event.line, message: event.message };
           break;
         case 'done':
+          stoppedByUser = stoppedByUser || /Cancelled: run stopped/.test(streamedText);
           returnCode = event.return_code ?? returnCode;
           runStatus = event.status || runStatus;
           break;
@@ -453,6 +497,11 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
       renderDiagnostics([{ severity: 'error', line: syntaxError.line, message: syntaxError.message }]);
       editor.setDiagnostics([{ severity: 'error', line: syntaxError.line, message: syntaxError.message }]);
       status.textContent = 'Finished with errors';
+    } else if (stoppedByUser) {
+      renderDiagnostics([]);
+      editor.setDiagnostics([]);
+      status.textContent = 'Stopped';
+      runStatus = 'SUCCESS';
     } else if (runStatus === 'ERROR') {
       const lastLine = [...streamedText.trim().split('\n')].filter(Boolean).pop() || '';
       const message = lastLine || `Process exited with code ${returnCode}.`;
@@ -473,7 +522,7 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
   };
 
   const runCodeOnce = async () => {
-    const mode = currentRunMode();
+    const mode = serverMode() ? 'risky' : currentRunMode();
     lastRunCode = editor.getValue();
     runButton.disabled = true;
     runButton.textContent = mode === 'risky' ? 'Running… (stream)' : 'Running…';
@@ -494,7 +543,7 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
       const response = await fetch('/api/codebuilder/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: editor.getValue(), timeout_seconds: 10, mode: 'safe' })
+        body: JSON.stringify({ code: editor.getValue(), timeout_seconds: currentTimeout(), mode: 'safe' })
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -516,6 +565,8 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
       status.textContent = 'Request failed';
       return null;
     } finally {
+      activeRunId = null;
+      stopButton.hidden = true;
       runButton.disabled = false;
       runButton.textContent = '▶ Run Python';
       editor.focus();
@@ -1395,6 +1446,15 @@ export function renderCodeBuilderView(container) {
               <option value="risky">Risky (isolated, streams)</option>
             </select>
           </label>
+          <label class="codebuilder-run-mode">
+            <select id="codebuilder-run-timeout" aria-label="Time limit for a run">
+              <option value="10">Limit: 10 sec</option>
+              <option value="120">Limit: 2 min</option>
+              <option value="240">Limit: 4 min</option>
+              <option value="480">Limit: 8 min</option>
+              <option value="server">Server: no limit (Stop)</option>
+            </select>
+          </label>
           <button id="load-demo" class="btn btn-sm" type="button" title="Load the sample Python program">Sample</button>
           <button id="open-file" class="btn btn-sm" type="button" title="Open a file from the file manager">Open…</button>
           <button id="save-file" class="btn btn-sm" type="button" title="Save (Ctrl+S)">Save</button>
@@ -1402,6 +1462,7 @@ export function renderCodeBuilderView(container) {
           <button id="run-in-terminal" class="btn btn-sm" type="button" title="Save, then prepare the command in the Terminal tab">Run in Terminal</button>
           <button id="clear-console" class="btn btn-sm" type="button" title="Clear console and diagnostics">Clear Output</button>
           <button id="reset-sandbox" class="btn btn-sm" type="button" title="Remove all packages installed for testing">Reset Environment</button>
+          <button id="stop-run" class="btn btn-sm" type="button" title="Stop the running program" hidden>■ Stop</button>
           <button id="run-code" class="btn btn-sm btn-primary" type="button" title="Run Python (Ctrl+Enter)">▶ Run Python</button>
         </div>
       </div>
