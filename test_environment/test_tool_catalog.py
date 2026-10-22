@@ -22,7 +22,6 @@ class TestToolCatalog(unittest.TestCase):
         expected = {
             # core_engine/core_tools.py
             "calculator",
-            "docling_parse",
             "rag_agent_tool",
             "agent_info",
             "extract_docstrings",
@@ -37,10 +36,13 @@ class TestToolCatalog(unittest.TestCase):
             "editor",
             "delete_file",
             "map_files",
+            "read_agent_memory",
+            "search_knowledge_base",
+            "list_knowledge_documents",
         }
         for exp in expected:
             self.assertIn(exp, names)
-        self.assertEqual(len(tools), 16)
+        self.assertEqual(len(tools), 18)
 
     def test_tools_directory_contains_only_the_file_tools_and_promoted_module(self):
         files = {path.name for path in tool_catalog.TOOLS_DIR.iterdir() if path.is_file()}
@@ -53,7 +55,9 @@ class TestToolCatalog(unittest.TestCase):
                 "editor_tool.py",
                 "interface.py",
                 "map_files_tool.py",
-                "promoted_tools.py",                "read_tool.py",
+                "agent_memory_tool.py",
+                "promoted_tools.py",
+                "read_tool.py",
                 "write_tool.py",
             },
         )

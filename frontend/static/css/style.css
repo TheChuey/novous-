@@ -239,6 +239,15 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .dash-agent-card { grid-column: 1; grid-row: 1; }
 .dash-squad-card { grid-column: 1; grid-row: 2; }
 .dash-health-card { grid-column: 1; grid-row: 3; }
+.root-management { margin-top: 0.85rem; border-top: 1px solid var(--border-color); padding-top: 0.75rem; }
+.root-management h4 { margin: 0 0 0.35rem; font-size: 0.9rem; }
+.root-management > p { margin: 0 0 0.5rem; }
+.root-path-input { width: 100%; min-height: 4.5rem; margin: 0.3rem 0; resize: vertical; font-family: Consolas, monospace; font-size: 0.78rem; }
+.root-management-actions { display: flex; gap: 0.4rem; }
+#dash-root-status { min-height: 1.2em; margin: 0.4rem 0; }
+.root-path-list { display: grid; gap: 0.35rem; margin: 0; padding: 0; list-style: none; }
+.root-path-list li { display: grid; gap: 0.1rem; min-width: 0; font-size: 0.75rem; }
+.root-path-list code { overflow-wrap: anywhere; color: var(--text-muted); }
 .dash-tree-card { grid-column: 2; grid-row: 1 / span 3; min-height: 0; }
 .dash-tree-card .tree-pane { height: min(62vh, 560px); display: flex; flex-direction: column; }
 .dash-tree-card .tree-toolbar { padding: 0.4rem 0; }
@@ -396,6 +405,33 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .chat-input-bar { display: flex; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color); }
 .chat-input-bar input { flex: 1; }
 .chat-quick-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; padding-top: 0.6rem; flex-shrink: 0; }
+.scratchpad-dialog {
+  width: min(900px, calc(100vw - 2rem));
+  max-height: min(85vh, 900px);
+  padding: 1rem;
+  color: var(--text-main);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+}
+.scratchpad-dialog::backdrop { background: rgba(0, 0, 0, 0.7); }
+.scratchpad-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.scratchpad-dialog-head h2 { margin: 0; font-size: 1.1rem; }
+.scratchpad-dialog-head p { margin: 0.3rem 0 0.8rem; }
+.scratchpad-content { display: grid; gap: 1rem; max-height: calc(85vh - 90px); overflow: auto; }
+.scratchpad-section { min-width: 0; }
+.scratchpad-section h3 { margin: 0 0 0.5rem; font-size: 0.92rem; }
+.scratchpad-read { padding: 0.65rem; margin-bottom: 0.5rem; background: var(--bg-elev); border: 1px solid var(--border-color); border-radius: 6px; }
+.scratchpad-read summary { cursor: pointer; font-weight: 600; }
+.scratchpad-read pre,
+.scratchpad-section > pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 0.7rem; background: var(--bg-dark); border-radius: 5px; font: 0.8rem/1.5 Consolas, 'Cascadia Mono', monospace; }
+.scratchpad-read p { margin: 0.5rem 0; }
+.scratchpad-tree { max-height: 360px; overflow: auto; padding: 0.65rem; background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: 5px; }
+.scratchpad-tree-list { list-style: none; padding-left: 1.15rem; margin: 0.2rem 0; }
+.scratchpad-tree > details > .scratchpad-tree-list { padding-left: 0; }
+.scratchpad-tree details > summary { cursor: pointer; padding: 0.15rem 0; }
+.scratchpad-file-link { padding: 0.15rem 0; color: var(--primary); background: transparent; border: 0; cursor: pointer; text-align: left; font: inherit; }
+.scratchpad-file-link:hover { color: var(--text-main); text-decoration: underline; }
 
 .tool-badge {
   font-size: 0.85rem;

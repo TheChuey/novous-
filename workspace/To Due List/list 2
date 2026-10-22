@@ -1,5 +1,4 @@
-Name all the states in the USA
-Write a text file called states.txt 
-Place that file in E:\Novous2\workspace\documentation
-Verify that the file is created
-and read back the contents of that file 
+- [x] What is role?
+- [x] Can yo tell me about the folders and file that you can see with your tools
+- [x] display the files and folders
+- [x] do you see a text file says helloAbout.txt tell me abou that one 

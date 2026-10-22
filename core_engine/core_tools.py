@@ -45,14 +45,6 @@ def calculator(expression: str) -> str:
 
 
 @tool(provider="core_engine")
-def docling_parse(path: str, output_format: str = "markdown") -> str:
-    """Parse PDF, DOCX, PPTX, or HTML files into structured Markdown/JSON via Docling."""
-    return langgraph_tools.docling_parse_tool.invoke(
-        {"relative_path": path, "output_format": output_format}
-    )
-
-
-@tool(provider="core_engine")
 def rag_agent_tool(query: str, relative_path: str = "", top_k: int = 3) -> str:
     """Query workspace knowledge base or parse a document via Docling for relevant passages."""
     return langgraph_tools.rag_agent_tool.invoke(

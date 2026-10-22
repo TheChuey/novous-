@@ -121,6 +121,19 @@ function renderDashboardView(container) {
         <section class="card dash-health-card">
           <div class="card-head"><h3>System Health</h3></div>
           <div id="dash-health" class="health-panel">Checking…</div>
+          <div class="root-management">
+            <h4>Workspace folders</h4>
+            <p class="text-muted small">Paste one absolute folder path per line. Add folders to the Workspace picker or remove configured folders.</p>
+            <label class="small" for="dash-root-paths">Folder paths</label>
+            <textarea id="dash-root-paths" class="form-input root-path-input" rows="3"
+              placeholder="E:\\Novous_notes&#10;E:\\Projects"></textarea>
+            <div class="root-management-actions">
+              <button class="btn btn-sm btn-primary" type="button" data-root-action="add">Add folders</button>
+              <button class="btn btn-sm btn-danger" type="button" data-root-action="remove">Remove folders</button>
+            </div>
+            <p class="small" id="dash-root-status" role="status" aria-live="polite"></p>
+            <ul class="root-path-list" id="dash-root-list" aria-label="Configured Workspace folders"></ul>
+          </div>
         </section>
       </div>
     </div>
@@ -221,6 +234,7 @@ function renderDashboardView(container) {
         <p class="text-muted">${esc(agent.description || 'No description.')}</p>
         <div class="agent-card-actions">
           <a class="btn btn-sm" href="/codebuilder">Open CodeBuilder</a>
+          <button class="btn btn-sm" data-codebuilder-edit="${esc(agent.id)}">Edit</button>
           <button class="btn btn-sm btn-danger" data-codebuilder-delete="${esc(agent.id)}">Delete</button>
         </div>`;
       codeBuilderCards.appendChild(el);
@@ -234,6 +248,12 @@ function renderDashboardView(container) {
   });
 
   codeBuilderCards.addEventListener('click', async e => {
+    const editButton = e.target.closest('[data-codebuilder-edit]');
+    if (editButton) {
+      switchTab('editor', `library/${editButton.dataset.codebuilderEdit}.md`);
+      return;
+    }
+
     const button = e.target.closest('[data-codebuilder-delete]');
     if (!button) return;
     const agentId = button.dataset.codebuilderDelete;
@@ -284,9 +304,57 @@ function renderDashboardView(container) {
     catch (err) { alert(err.message); }
   });
 
-  renderTree(container.querySelector('#dash-tree'), {
+  const dashboardTree = renderTree(container.querySelector('#dash-tree'), {
     manageRoots: true,
     onSelect: path => switchTab('editor', { path, managedFile: true })
+  });
+
+  const rootPathInput = container.querySelector('#dash-root-paths');
+  const rootStatus = container.querySelector('#dash-root-status');
+  const rootList = container.querySelector('#dash-root-list');
+  const rootActionButtons = [...container.querySelectorAll('[data-root-action]')];
+  async function refreshConfiguredRoots() {
+    const config = await Api.getFileManagerRoots();
+    rootList.replaceChildren(...config.roots.map(root => {
+      const item = document.createElement('li');
+      const name = document.createElement('strong');
+      const path = document.createElement('code');
+      name.textContent = root.name;
+      path.textContent = root.path;
+      item.append(name, path);
+      return item;
+    }));
+  }
+  refreshConfiguredRoots().catch(err => {
+    rootStatus.textContent = `Could not load Workspace folders: ${err.message}`;
+    rootStatus.className = 'small text-danger';
+  });
+  rootActionButtons.forEach(button => {
+    button.addEventListener('click', async () => {
+      const paths = rootPathInput.value.split(/\r?\n/).map(path => path.trim()).filter(Boolean);
+      if (!paths.length) {
+        rootStatus.textContent = 'Paste at least one absolute folder path.';
+        rootStatus.className = 'small text-danger';
+        rootPathInput.focus();
+        return;
+      }
+      rootActionButtons.forEach(actionButton => { actionButton.disabled = true; });
+      rootStatus.textContent = 'Updating Workspace folders…';
+      rootStatus.className = 'small text-muted';
+      try {
+        const result = await Api.manageFileManagerRoots(button.dataset.rootAction, paths);
+        const changed = button.dataset.rootAction === 'add' ? result.added : result.removed;
+        rootStatus.textContent = `${button.dataset.rootAction === 'add' ? 'Added' : 'Removed'} ${changed.length} folder(s).`;
+        rootStatus.className = 'small text-success';
+        await refreshConfiguredRoots();
+        await dashboardTree.reload();
+      } catch (err) {
+        rootStatus.textContent = `Could not update Workspace folders: ${err.message}`;
+        rootStatus.className = 'small text-danger';
+      } finally {
+        rootActionButtons.forEach(actionButton => { actionButton.disabled = false; });
+      }
+    });
   });
 
   const healthBox = container.querySelector('#dash-health');

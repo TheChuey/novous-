@@ -1,7 +1,7 @@
 {
   "model": "gemma4:e2b",
-  "runs": 9,
-  "passes": 1,
+  "runs": 10,
+  "passes": 2,
   "probe_failures": {
     "fact_correct": 7,
     "no_invention": 1,
@@ -154,6 +154,19 @@
         "Make the description state the main task in plain words and repeat those words in the Role and Purpose sections.",
         "The model failed a basic fact. If the role is intentionally narrow, change the fact question in the test; otherwise add 'Answer general factual questions accurately' to the prompt, or try a larger model."
       ]
+    },
+    {
+      "at": "2026-10-22T03:34:07+00:00",
+      "title": "Chatbot Design Prompt for File Manager CRUD Operations",
+      "passed": true,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [],
+      "improvements": []
     }
   ]
 }

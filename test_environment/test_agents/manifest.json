@@ -214,5 +214,12 @@
     "label": "snapshot",
     "snapshot": "agent-01__snapshot__20261021-083555",
     "published_at": "2026-10-21T08:35:55.671895+00:00"
+  },
+  {
+    "agent_id": "chat-assitant",
+    "environment": "workspace",
+    "label": "snapshot",
+    "snapshot": "chat-assitant__snapshot__20261022-033350",
+    "published_at": "2026-10-22T03:33:50.408372+00:00"
   }
 ]

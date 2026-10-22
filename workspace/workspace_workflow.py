@@ -14,6 +14,9 @@ DEFAULT_TOOLS = [
     "create_file",
     "list_directory",
     "project_status",
+    "read_agent_memory",
+    "search_knowledge_base",
+    "list_knowledge_documents",
 ]
 
 CODEBUILDER_DEFAULT_TOOLS = [
@@ -25,6 +28,9 @@ CODEBUILDER_DEFAULT_TOOLS = [
     "run_python_code",
     "send_code_to_editor",
     "run_code_in_editor",
+    "read_agent_memory",
+    "search_knowledge_base",
+    "list_knowledge_documents",
 ]
 
 

@@ -8,7 +8,10 @@ const TEST_FUNCTIONS = [
   { id: 'benchmark', label: 'Benchmark', icon: 'gauge', action: null },
   { id: 'apiLogs', label: 'API Logs', icon: 'file-code', action: null },
   { id: 'diagnostics', label: 'Diagnostics', icon: 'activity', action: null },
-  { id: 'wipeChat', label: 'Wipe Chat', icon: 'trash-2', action: null }
+  { id: 'wipeChat', label: 'Wipe Chat', icon: 'trash-2', action: null },
+  { id: 'viewScratchpad', label: 'View Scratchpad', icon: 'file-code', action: null },
+  { id: 'saveScratchpad', label: 'Save Scratchpad', icon: 'save', action: null },
+  { id: 'clearScratchpad', label: 'Clear Scratchpad', icon: 'trash-2', action: null }
 ];
 
 export function buildTestPanel(containerId, actions = {}) {

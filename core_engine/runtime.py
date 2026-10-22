@@ -76,6 +76,12 @@ class Agent:
             stats["successes"] += 1
             stats["success_rate"] = stats["successes"] / stats["calls"]
             event = {"tool": name, "args": args, "status": "success", "origin": origin}
+            result_text = result if isinstance(result, str) else json.dumps(
+                result, ensure_ascii=False, default=str
+            )
+            event["result"] = result_text[:3000]
+            if len(result_text) > 3000:
+                event["result_truncated"] = True
             if getattr(tool_func, "display_output", False) and isinstance(result, str):
                 event["display"] = result
             self.tool_events.append(event)

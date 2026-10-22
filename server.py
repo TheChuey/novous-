@@ -19,8 +19,11 @@ app = FastAPI(title="Novous AGENT FACTORY", version="4.0.0")
 def migrate_sandbox_environment():
     """Move packages from the old in-repo sandbox venv to the configured sandbox folder."""
     import threading
+    from agentMemory.interface import start_document_scanner
     from test_environment import sandbox_env
+
     threading.Thread(target=sandbox_env.migrate_legacy, daemon=True).start()
+    start_document_scanner()
 
 # Mount Component Backend Routers
 app.include_router(tools_router)

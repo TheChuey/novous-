@@ -4,9 +4,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from agentMemory import interface as agent_memory
 from fastapi.testclient import TestClient
 
 from core_engine import tool_catalog
+from core_engine.runtime import Agent, AgentProfile
 from server import app
 from tools import interface
 
@@ -17,6 +19,68 @@ class TestToolsInterface(unittest.TestCase):
 
     def tearDown(self):
         tool_catalog.load_tools(reload=True)
+
+    def test_agent_tool_events_include_bounded_return_results(self):
+        def successful_tool():
+            return {"path": "notes/result.txt", "written": True}
+
+        def failing_tool():
+            raise ValueError("write failed")
+
+        agent = Agent(
+            model="test-model",
+            tools=[successful_tool, failing_tool],
+            profile=AgentProfile(mode="agent"),
+        )
+        agent.act(
+            {"function": {"name": "successful_tool", "arguments": {}}},
+            "native",
+        )
+        agent.act(
+            {"function": {"name": "failing_tool", "arguments": {}}},
+            "native",
+        )
+
+        success, failure = agent.tool_events
+        self.assertEqual(success["status"], "success")
+        self.assertEqual(
+            json.loads(success["result"]),
+            {"path": "notes/result.txt", "written": True},
+        )
+        self.assertEqual(failure["status"], "error")
+        self.assertEqual(failure["error"], "write failed")
+
+    def test_scratchpad_api_reads_and_clears_saved_memory(self):
+        from agentMemory import scratchpad
+
+        client = TestClient(app)
+        with patch.object(scratchpad, "read_memory", return_value={"latest_read": {"path": "a.txt"}}):
+            response = client.get("/api/agent-memory/scratchpad")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"latest_read": {"path": "a.txt"}})
+
+        with patch.object(scratchpad, "clear_memory", return_value={"cleared": True}):
+            response = client.delete("/api/agent-memory/scratchpad")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"cleared": True})
+
+    def test_agent_tool_event_truncates_large_return_results(self):
+        def large_tool():
+            return "x" * 4000
+
+        agent = Agent(
+            model="test-model",
+            tools=[large_tool],
+            profile=AgentProfile(mode="agent"),
+        )
+        agent.act(
+            {"function": {"name": "large_tool", "arguments": {}}},
+            "native",
+        )
+
+        event = agent.tool_events[0]
+        self.assertEqual(len(event["result"]), 3000)
+        self.assertTrue(event["result_truncated"])
 
     def test_python_doorway_delegates_to_file_and_editor_services(self):
         with (
@@ -129,17 +193,28 @@ class TestToolsInterface(unittest.TestCase):
         }
         with (
             patch.object(interface, "map_files", return_value={"name": "root"}) as map_files,
-            patch.object(interface, "list_directory", return_value={"entries": []}),
             patch.object(
                 interface,
-                "read_file",
-                return_value={"path": "docs/readme.md", "content": "hello"},
-            ) as read_file,
+                "read_file_bytes",
+                return_value={
+                    "path": "docs/readme.md",
+                    "resolved_path": Path("docs/readme.md"),
+                    "size_bytes": 5,
+                    "content": b"hello",
+                },
+            ) as read_file_bytes,
+            patch.object(agent_memory, "store_read", return_value={
+                "path": "agentMemory/data/scratchpad.json",
+                "updated_at": "2026-10-21T00:00:00+00:00",
+            }),
+            patch.object(agent_memory, "store_map", return_value={
+                "path": "agentMemory/data/scratchpad.json",
+                "updated_at": "2026-10-21T00:00:00+00:00",
+            }),
             patch.object(
                 interface,
                 "write_file",
                 side_effect=[
-                    {"path": "scratchpad/latest_read.txt"},
                     {"path": "docs/readme.md", "bytes_written": 5},
                 ],
             ) as write_file,
@@ -157,6 +232,9 @@ class TestToolsInterface(unittest.TestCase):
                 json.loads(functions["read_file"]("docs/readme.md"))["content"],
                 "hello",
             )
+            read_file_bytes.assert_called_once_with(
+                "docs/readme.md", 1_000_000
+            )
             self.assertEqual(
                 json.loads(functions["write_file"]("docs/readme.md", "hello"))[
                     "bytes_written"
@@ -171,8 +249,7 @@ class TestToolsInterface(unittest.TestCase):
             )
 
         map_files.assert_called_once_with("docs")
-        read_file.assert_called_once_with("docs/readme.md")
-        self.assertEqual(write_file.call_count, 2)
+        self.assertEqual(write_file.call_count, 1)
         editor.assert_called_once_with("tree", path="", content="")
         delete_file.assert_called_once_with("docs/old.txt")
 
@@ -253,7 +330,16 @@ class TestToolsInterface(unittest.TestCase):
         names = {tool["name"] for tool in response.json()["tools"]}
         self.assertEqual(
             names,
-            {"map_files", "read_file", "write_file", "editor", "delete_file"},
+            {
+                "map_files",
+                "read_file",
+                "write_file",
+                "editor",
+                "delete_file",
+                "read_agent_memory",
+                "search_knowledge_base",
+                "list_knowledge_documents",
+            },
         )
         self.assertGreater(len(tool_catalog.list_tools()), len(names))
 

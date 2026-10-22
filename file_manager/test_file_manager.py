@@ -109,6 +109,58 @@ def test_select_root_only_accepts_configured_directories(tmp_path, monkeypatch):
     assert client.get("/api/file-manager/tree").json()["name"] == "alternate"
 
 
+def test_manage_file_manager_roots_adds_and_removes_paths(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    root.mkdir()
+    added_root = tmp_path / "added"
+    added_root.mkdir()
+    config = tmp_path / "allowed_paths.json"
+    original_config = {
+        "map_roots": ["keep-map-root"],
+        "file_manager_roots": [{"name": "Root", "path": str(root)}],
+        "active_file_manager_root": str(root),
+        "sandbox_roots": ["keep-sandbox-root"],
+    }
+    config.write_text(json.dumps(original_config), encoding="utf-8")
+    monkeypatch.setattr(backend, "CONFIG_PATH", config)
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    added = client.post(
+        "/api/file-manager/roots/manage",
+        json={"action": "add", "paths": [str(added_root), str(root)]},
+    )
+    assert added.status_code == 200
+    assert added.json()["added"] == [str(added_root)]
+    assert added.json()["unchanged"] == [str(root)]
+    saved_config = json.loads(config.read_text(encoding="utf-8"))
+    assert saved_config["map_roots"] == original_config["map_roots"]
+    assert saved_config["sandbox_roots"] == original_config["sandbox_roots"]
+    assert len(saved_config["file_manager_roots"]) == 2
+
+    removed = client.post(
+        "/api/file-manager/roots/manage",
+        json={"action": "remove", "paths": [str(root)]},
+    )
+    assert removed.status_code == 200
+    assert removed.json()["active_path"] == str(added_root)
+    assert removed.json()["removed"] == [str(root)]
+
+    last_root = client.post(
+        "/api/file-manager/roots/manage",
+        json={"action": "remove", "paths": [str(added_root)]},
+    )
+    assert last_root.status_code == 400
+    assert backend.configured_roots() == [{"name": "added", "path": str(added_root)}]
+
+    invalid_path = client.post(
+        "/api/file-manager/roots/manage",
+        json={"action": "add", "paths": [str(tmp_path / "missing")]},
+    )
+    assert invalid_path.status_code == 400
+
+
 def test_elfinder_open_and_put_use_the_shared_workspace_service(tmp_path, monkeypatch):
     monkeypatch.setattr(backend, "workspace_root", lambda: tmp_path)
     app = FastAPI()

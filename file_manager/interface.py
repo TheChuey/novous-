@@ -10,6 +10,7 @@ from file_manager import backend
 from file_manager.schemas import (
     CreateRequest,
     FileContentRequest,
+    ManageRootsRequest,
     MoveRequest,
     PathRequest,
     SelectRootRequest,
@@ -34,6 +35,14 @@ def api_file_manager_roots():
 def api_select_file_manager_root(request: SelectRootRequest):
     try:
         return backend.select_root(request.path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/file-manager/roots/manage")
+def api_manage_file_manager_roots(request: ManageRootsRequest):
+    try:
+        return backend.manage_roots(request.action, request.paths)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

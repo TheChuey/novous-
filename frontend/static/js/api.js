@@ -85,6 +85,71 @@ export const Api = {
     });
   },
 
+  async getAgentScratchpad() {
+    return get('/api/agent-memory/scratchpad');
+  },
+
+  async clearAgentScratchpad() {
+    return send('DELETE', '/api/agent-memory/scratchpad');
+  },
+
+  async streamMessage(
+    message,
+    agentId,
+    model = 'qwen2.5-coder:latest',
+    sessionId = null,
+    environment = 'workspace',
+    onEvent = () => {},
+    signal
+  ) {
+    const response = await fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message, agent_id: agentId, model, session_id: sessionId, environment
+      }),
+      signal
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      const detail = payload.detail || payload.message || response.statusText;
+      throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+    }
+    if (!response.body) throw new Error('The chat stream returned no response body.');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let completed = null;
+    const consume = async frame => {
+      const data = frame.split(/\r?\n/)
+        .filter(line => line.startsWith('data:'))
+        .map(line => line.slice(5).trimStart())
+        .join('\n');
+      if (!data) return;
+      const event = JSON.parse(data);
+      await onEvent(event);
+      if (event.type === 'error') throw new Error(event.detail || 'The agent request failed.');
+      if (event.type === 'done') completed = event;
+    };
+
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+        const frames = buffer.split(/\r?\n\r?\n/);
+        buffer = frames.pop() || '';
+        for (const frame of frames) await consume(frame);
+        if (done) break;
+      }
+      if (buffer.trim()) await consume(buffer);
+    } finally {
+      reader.releaseLock();
+    }
+    if (!completed) throw new Error('The agent stream ended before returning a completed response.');
+    return completed;
+  },
+
   async mapFolderPage(path, maxDepth, includeFiles, offset) {
     return send('POST', '/api/tools/map-page', {
       path, max_depth: maxDepth, include_files: includeFiles, offset
@@ -189,6 +254,10 @@ export const Api = {
 
   async selectFileManagerRoot(path) {
     return send('POST', '/api/file-manager/roots/select', { path });
+  },
+
+  async manageFileManagerRoots(action, paths) {
+    return send('POST', '/api/file-manager/roots/manage', { action, paths });
   },
 
   async writeManagedFile(path, content) {

@@ -4,6 +4,11 @@
       "id": "test-agent-prompt",
       "name": "Test Agent Prompt",
       "description": ""
+    },
+    {
+      "id": "chatbot-design-prompt-for-file-manager-crud-operations",
+      "name": "Chatbot Design Prompt for File Manager CRUD Operations",
+      "description": "This prompt designs a persona for a highly capable assistant specialized in performing file management operations and answering related queries."
     }
   ]
 }

@@ -82,19 +82,7 @@ def workspace_root() -> Path:
     return active_root_path()
 
 
-def select_root(path: str) -> dict:
-    roots = configured_roots()
-    selected = next(
-        (root for root in roots if os.path.normcase(root["path"]) == os.path.normcase(path)),
-        None,
-    )
-    if selected is None:
-        raise ValueError("Choose a configured file-manager root.")
-
-    config = _read_config()
-    config["file_manager_roots"] = roots
-    config["active_file_manager_root"] = selected["path"]
-    config["file_manager_root"] = selected["path"]
+def _write_config(config: dict) -> None:
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     temp_path = None
     try:
@@ -114,7 +102,100 @@ def select_root(path: str) -> dict:
     finally:
         if temp_path is not None and temp_path.exists():
             temp_path.unlink()
+
+
+def select_root(path: str) -> dict:
+    roots = configured_roots()
+    selected = next(
+        (root for root in roots if os.path.normcase(root["path"]) == os.path.normcase(path)),
+        None,
+    )
+    if selected is None:
+        raise ValueError("Choose a configured file-manager root.")
+
+    config = _read_config()
+    config["file_manager_roots"] = roots
+    config["active_file_manager_root"] = selected["path"]
+    config["file_manager_root"] = selected["path"]
+    _write_config(config)
     return {"roots": roots, "active_path": selected["path"]}
+
+
+def manage_roots(action: str, paths: list[str]) -> dict:
+    """Add or remove configured file-manager directories."""
+    if action not in {"add", "remove"}:
+        raise ValueError("Action must be 'add' or 'remove'.")
+    if not paths:
+        raise ValueError("Provide at least one directory path.")
+
+    roots = configured_roots()
+    config = _read_config()
+    current_active = str(
+        config.get("active_file_manager_root", config.get("file_manager_root", roots[0]["path"]))
+    )
+    normalized_paths = []
+    for raw_path in paths:
+        value = os.path.expandvars(str(raw_path)).strip()
+        if not value:
+            raise ValueError("Directory paths cannot be empty.")
+        candidate = Path(value).expanduser()
+        if not candidate.is_absolute():
+            raise ValueError(f"Directory path must be absolute: {value}")
+        resolved = candidate.resolve()
+        if action == "add" and not resolved.is_dir():
+            raise ValueError(f"Directory does not exist: {resolved}")
+        normalized_paths.append(str(resolved))
+
+    path_keys = {os.path.normcase(path) for path in normalized_paths}
+    added = []
+    removed = []
+    unchanged = []
+    if action == "add":
+        existing_paths = {os.path.normcase(root["path"]) for root in roots}
+        existing_names = {root["name"].casefold() for root in roots}
+        for path in normalized_paths:
+            path_key = os.path.normcase(path)
+            if path_key in existing_paths:
+                unchanged.append(path)
+                continue
+            folder_name = Path(path).name or path
+            name = folder_name
+            suffix = 2
+            while name.casefold() in existing_names:
+                name = f"{folder_name} ({suffix})"
+                suffix += 1
+            roots.append({"name": name, "path": path})
+            existing_paths.add(path_key)
+            existing_names.add(name.casefold())
+            added.append(path)
+    else:
+        configured_paths = {os.path.normcase(root["path"]) for root in roots}
+        removed = [root["path"] for root in roots if os.path.normcase(root["path"]) in path_keys]
+        unchanged = [
+            path for path in normalized_paths
+            if os.path.normcase(path) not in configured_paths
+        ]
+        roots = [root for root in roots if os.path.normcase(root["path"]) not in path_keys]
+        if not removed:
+            raise ValueError("None of the provided paths are configured file-manager roots.")
+        if not roots:
+            raise ValueError("At least one file-manager root must remain configured.")
+
+    active_path = next(
+        (root["path"] for root in roots if os.path.normcase(root["path"]) == os.path.normcase(current_active)),
+        roots[0]["path"],
+    )
+    config["file_manager_roots"] = roots
+    config["active_file_manager_root"] = active_path
+    config["file_manager_root"] = active_path
+    _write_config(config)
+    return {
+        "roots": roots,
+        "active_path": active_path,
+        "added": added,
+        "removed": removed,
+        "unchanged": unchanged,
+    }
 
 
 def resolve_workspace_path(relative_path: str = "") -> Path:

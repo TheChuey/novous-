@@ -1,32 +1,21 @@
 {
   "map_roots": [
-    "E:\\Novous2\\workspace",
-    "E:\\Novous2_Note\\test",
-    "C:\\Users\\43319\\OneDrive\\D\\Documents"
+    "E:\\Novous_notes"
   ],
-  "file_manager_root": "C:\\Users\\43319\\OneDrive\\D\\Documents",
+  "file_manager_root": "E:\\Novous_notes",
   "file_manager_roots": [
     {
-      "name": "Workspace",
-      "path": "E:\\Novous2\\workspace"
+      "name": "Novous Notes",
+      "path": "E:\\Novous_notes"
     },
     {
-      "name": "Documents",
-      "path": "C:\\Users\\43319\\OneDrive\\D\\Documents"
-    },
-    {
-      "name": "Scripts",
-      "path": "E:\\Novous2_Note\\scripts"
-    },
-    {
-      "name": "Test",
-      "path": "E:\\Novous2_Note\\test"
+      "name": "Prompts AI",
+      "path": "C:\\Users\\43319\\OneDrive\\Prompts AI"
     }
   ],
-  "active_file_manager_root": "C:\\Users\\43319\\OneDrive\\D\\Documents",
-  "sandbox_root": "E:\\Novous2_Note",
+  "active_file_manager_root": "E:\\Novous_notes",
+  "sandbox_root": "E:\\Novous_notes",
   "sandbox_roots": [
-    "E:\\Novous2_Note\\scripts",
-    "C:\\Users\\43319\\OneDrive\\D\\Documents"
+    "E:\\Novous_notes"
   ]
 }

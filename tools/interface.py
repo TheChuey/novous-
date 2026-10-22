@@ -25,6 +25,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 _FUNCTION_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+class FileReadLimitError(ValueError):
+    """Raised when a bounded file read exceeds its configured byte limit."""
+
+
 def map_files(path: str = "") -> dict:
     """Return the file-manager directory tree for a workspace-relative path."""
     return file_manager_service.directory_tree(_workspace_relative(path))
@@ -54,6 +58,27 @@ def list_directory(path: str = "") -> dict:
 def read_file(path: str) -> dict:
     """Read a file through the configured file-manager root."""
     return file_manager_service.read_file(path)
+
+
+def read_file_bytes(path: str, max_bytes: int) -> dict:
+    """Read bounded binary contents through the configured file-manager root."""
+    from file_manager import backend
+
+    resolved = backend.resolve_workspace_path(path)
+    if not resolved.is_file():
+        raise FileNotFoundError(f"File not found: {path}")
+    with resolved.open("rb") as source:
+        content = source.read(max_bytes + 1)
+    if len(content) > max_bytes:
+        raise FileReadLimitError(
+            f"File exceeds the {max_bytes}-byte read limit: {path}"
+        )
+    return {
+        "path": resolved.relative_to(backend.workspace_root()).as_posix(),
+        "resolved_path": resolved,
+        "size_bytes": len(content),
+        "content": content,
+    }
 
 
 def write_file(path: str, content: str) -> dict:
@@ -391,6 +416,22 @@ def provider_bindings() -> dict[str, str]:
 def catalog_report() -> dict:
     """Return catalog diagnostic report."""
     return tool_catalog.get_catalog_report()
+
+
+@router.get("/api/agent-memory/scratchpad")
+def api_read_agent_scratchpad():
+    """Return scratchpad data for the Chat Console."""
+    from agentMemory import scratchpad
+
+    return scratchpad.read_memory()
+
+
+@router.delete("/api/agent-memory/scratchpad")
+def api_clear_agent_scratchpad():
+    """Clear saved agent reads and workspace maps."""
+    from agentMemory import scratchpad
+
+    return scratchpad.clear_memory()
 
 
 @router.get("/api/tools")

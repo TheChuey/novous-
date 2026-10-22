@@ -1,6 +1,7 @@
 import { Api } from './api.js';
 import { createIcon } from './icons.js';
 import { buildTestPanel } from './test_panel.js';
+import { openTestSuiteRunner } from './test_suite_runner.js';
 import { renderTree } from './tree.js';
 
 function esc(value) {
@@ -8,8 +9,6 @@ function esc(value) {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
 }
-
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Interactive Chat Console Component: agent selection, message history,
@@ -36,9 +35,6 @@ export function renderChatView(container) {
         </form>
         <div class="chat-quick-actions">
           <button type="button" class="btn btn-sm" id="chat-reset-quick" disabled>Reset session</button>
-          <button type="button" class="btn btn-sm" disabled title="Coming soon">Action 2</button>
-          <button type="button" class="btn btn-sm" disabled title="Coming soon">Action 3</button>
-          <button type="button" class="btn btn-sm" disabled title="Coming soon">Action 4</button>
         </div>
       </section>
 
@@ -73,7 +69,17 @@ export function renderChatView(container) {
           </section>
         </div>
       </aside>
-    </div>`;
+    </div>
+    <dialog id="chat-scratchpad-dialog" class="scratchpad-dialog">
+      <div class="scratchpad-dialog-head">
+        <div>
+          <h2>Agent Scratchpad</h2>
+          <p class="text-muted small">Recent file reads and the latest workspace map.</p>
+        </div>
+        <button type="button" class="btn btn-sm" data-scratchpad-close aria-label="Close">Close</button>
+      </div>
+      <div id="chat-scratchpad-content" class="scratchpad-content"></div>
+    </dialog>`;
 
   const agentSelect = container.querySelector('#chat-agent-select');
   const metaCard = container.querySelector('#agent-meta-card');
@@ -88,6 +94,188 @@ export function renderChatView(container) {
   const sessionInfo = container.querySelector('#chat-session-info');
   const modelSelect = container.querySelector('#chat-model-select');
   const modelCount = container.querySelector('#model-count');
+  const scratchpadDialog = container.querySelector('#chat-scratchpad-dialog');
+  const scratchpadContent = container.querySelector('#chat-scratchpad-content');
+
+  function renderScratchpad(memory) {
+    scratchpadContent.replaceChildren();
+    const reads = Array.isArray(memory.read_history)
+      ? memory.read_history
+      : (memory.latest_read ? [memory.latest_read] : []);
+
+    const readsSection = document.createElement('section');
+    readsSection.className = 'scratchpad-section';
+    const readsTitle = document.createElement('h3');
+    readsTitle.textContent = `Recent reads (${reads.length})`;
+    readsSection.appendChild(readsTitle);
+    if (!reads.length) {
+      const empty = document.createElement('p');
+      empty.className = 'text-muted';
+      empty.textContent = 'No file reads are saved.';
+      readsSection.appendChild(empty);
+    }
+    [...reads].reverse().forEach((entry, index) => {
+      const details = document.createElement('details');
+      details.className = 'scratchpad-read';
+      if (index === 0) details.open = true;
+      const summary = document.createElement('summary');
+      const timestamp = entry.updated_at ? new Date(entry.updated_at).toLocaleString() : '';
+      summary.textContent = [entry.path || 'Unknown file', timestamp].filter(Boolean).join(' · ');
+      const request = document.createElement('p');
+      request.className = 'text-muted small';
+      request.textContent = entry.request ? `Request: ${entry.request}` : 'No request context.';
+      const content = document.createElement('pre');
+      content.textContent = entry.content || '';
+      details.append(summary, request, content);
+      readsSection.appendChild(details);
+    });
+    scratchpadContent.appendChild(readsSection);
+
+    const mapSection = document.createElement('section');
+    mapSection.className = 'scratchpad-section';
+    const mapTitle = document.createElement('h3');
+    mapTitle.textContent = 'Latest workspace map';
+    mapSection.appendChild(mapTitle);
+    if (memory.latest_map?.tree) {
+      const path = document.createElement('p');
+      path.className = 'text-muted small';
+      path.textContent = memory.latest_map.requested_path || 'Workspace root';
+      const tree = document.createElement('div');
+      tree.className = 'scratchpad-tree';
+      tree.appendChild(createScratchpadTreeNode(memory.latest_map.tree, true));
+      mapSection.append(path, tree);
+    } else {
+      const empty = document.createElement('p');
+      empty.className = 'text-muted';
+      empty.textContent = 'No workspace map is saved.';
+      mapSection.appendChild(empty);
+    }
+    scratchpadContent.appendChild(mapSection);
+  }
+
+  function createScratchpadTreeNode(node, isRoot = false) {
+    const list = document.createElement('ul');
+    list.className = 'scratchpad-tree-list';
+    (node.children || []).forEach(child => {
+      const item = document.createElement('li');
+      if (child.type === 'directory') {
+        const details = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.textContent = `📁 ${child.name}`;
+        details.append(summary, createScratchpadTreeNode(child));
+        item.appendChild(details);
+      } else {
+        const openFile = document.createElement('button');
+        openFile.type = 'button';
+        openFile.className = 'scratchpad-file-link';
+        openFile.textContent = `📄 ${child.name}`;
+        openFile.title = child.path;
+        openFile.addEventListener('click', () => {
+          if (document.getElementById('app')) {
+            window.dispatchEvent(new CustomEvent('novous:open-editor', {
+              detail: { path: child.path, managedFile: true }
+            }));
+          } else {
+            const params = new URLSearchParams({ path: child.path, managed: '1' });
+            window.location.assign(`/editor?${params}`);
+          }
+          scratchpadDialog.close();
+        });
+        item.appendChild(openFile);
+      }
+      list.appendChild(item);
+    });
+    if (isRoot) {
+      const root = document.createElement('details');
+      root.open = true;
+      const summary = document.createElement('summary');
+      summary.textContent = `📁 ${node.name || 'Workspace'}`;
+      root.append(summary, list);
+      return root;
+    }
+    return list;
+  }
+
+  async function loadScratchpad() {
+    scratchpadContent.textContent = 'Loading scratchpad…';
+    try {
+      renderScratchpad(await Api.getAgentScratchpad());
+    } catch (error) {
+      scratchpadContent.textContent = `Could not load scratchpad: ${error.message}`;
+    }
+  }
+
+  async function openScratchpad() {
+    scratchpadDialog.showModal();
+    await loadScratchpad();
+  }
+
+  container.querySelector('[data-scratchpad-close]').addEventListener('click', () => {
+    scratchpadDialog.close();
+  });
+
+  function formatScratchpadReads(memory) {
+    const reads = Array.isArray(memory.read_history)
+      ? memory.read_history
+      : (memory.latest_read ? [memory.latest_read] : []);
+    const lines = ['# Agent File Reads', '', `Exported: ${new Date().toLocaleString()}`, ''];
+
+    if (!reads.length) {
+      lines.push('No file reads are currently saved.', '');
+      return lines.join('\n');
+    }
+
+    reads.forEach((entry, index) => {
+      if (index > 0) lines.push('---', '');
+      lines.push(`## ${entry.path || 'Unknown file'}`, '');
+      if (entry.updated_at) lines.push(`- **Read at:** ${entry.updated_at}`);
+      if (entry.request) lines.push(`- **Request:** ${entry.request.replace(/\r?\n/g, ' ')}`);
+      lines.push('', '### Contents', '');
+
+      const content = String(entry.content || '');
+      const longestFence = Math.max(
+        0,
+        ...Array.from(content.matchAll(/`+/g), match => match[0].length)
+      );
+      const fence = '`'.repeat(Math.max(3, longestFence + 1));
+      lines.push(fence, content, fence, '');
+    });
+
+    return lines.join('\n');
+  }
+
+  async function saveScratchpad(event) {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const memory = await Api.getAgentScratchpad();
+      const date = new Date().toISOString().slice(0, 10);
+      await Api.saveMarkdown(
+        formatScratchpadReads(memory),
+        `novous-agent-reads-${date}.md`
+      );
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      appendMessage('system', `Could not save scratchpad: ${error.message}`);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function clearScratchpad(event) {
+    if (!window.confirm('Clear all saved agent reads and workspace maps? This cannot be undone.')) return;
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      await Api.clearAgentScratchpad();
+      if (scratchpadDialog.open) renderScratchpad({});
+      appendMessage('system', 'Agent scratchpad cleared.');
+    } catch (error) {
+      appendMessage('system', `Could not clear scratchpad: ${error.message}`);
+    } finally {
+      button.disabled = false;
+    }
+  }
 
   let agents = [];
   let installedModels = [];
@@ -116,12 +304,13 @@ export function renderChatView(container) {
 
   function syncActionButtons() {
     const hasAgent = agents.some(agent => agent.id === agentSelect.value);
-    saveLogButton.disabled = !hasAgent || isSavingLog;
-    resetButton.disabled = !hasAgent || isResetting;
+    saveLogButton.disabled = !hasAgent || isSavingLog || todoRunInProgress;
+    resetButton.disabled = !hasAgent || isResetting || todoRunInProgress;
     quickResetButton.disabled = resetButton.disabled;
     const wipeButton = container.querySelector('[data-test-function="wipeChat"]');
-    if (wipeButton) wipeButton.disabled = !hasAgent || isResetting;
-    sendButton.disabled = !hasAgent || modelSelect.disabled || !chatInput.value.trim() || isSending;
+    if (wipeButton) wipeButton.disabled = !hasAgent || isResetting || todoRunInProgress;
+    sendButton.disabled = !hasAgent || modelSelect.disabled || !chatInput.value.trim() ||
+      isSending || todoRunInProgress;
   }
 
   Api.getModels().then(data => {
@@ -248,11 +437,10 @@ export function renderChatView(container) {
 
   function syncTodoRunButton() {
     const button = container.querySelector('[data-test-function="runTestSuite"]');
-    const select = container.querySelector('#todo-file-select');
     if (!button) return;
     const hasAgent = agents.some(agent => agent.id === agentSelect.value);
     button.disabled = todoFilesLoading || todoRunInProgress || !hasAgent ||
-      modelSelect.disabled || !select?.value;
+      modelSelect.disabled || isSending || isResetting;
   }
 
   async function loadTodoFiles(silent = false) {
@@ -327,64 +515,26 @@ export function renderChatView(container) {
     }
   }
 
-  async function runTodoSequence() {
-    const select = container.querySelector('#todo-file-select');
-    const selectedPath = select?.value;
-    const agentId = agentSelect.value;
-
-    if (!selectedPath) {
-      appendMessage('system', 'Please select a file from the To-Do dropdown first.');
-      return;
-    }
-    if (!agentId) {
-      appendMessage('system', 'Please select an agent before running To-Do items.');
-      return;
-    }
-
-    todoRunInProgress = true;
-    syncTodoRunButton();
-
-    try {
-      const fileData = await Api.readFile(selectedPath);
-      const lines = String(fileData.content ?? '')
-        .split(/\r?\n/)
-        .map(line => line.trim())
-        .filter(Boolean);
-
-      appendMessage('user', `Starting execution of To-Do items from: ${selectedPath.split('/').pop()}`);
-      if (!lines.length) {
-        appendMessage('system', 'The selected file contains no nonblank task lines.');
-        return;
-      }
-
-      const sessionId = `chat-${agentId}`;
-      const model = currentModel;
-      await delay(1500);
-
-      for (let index = 0; index < lines.length; index += 1) {
-        const line = lines[index];
-        appendMessage('user', `Task ${index + 1}: ${line}`);
-        const thinkingId = appendMessage('assistant', 'Thinking...', true);
-        try {
-          const response = await Api.sendMessage(line, agentId, model, sessionId);
-          removeMessage(thinkingId);
-          (response.tool_events || []).forEach(event =>
-            appendToolBadge(event.tool, event.status, event.args, event.display)
-          );
-          appendMessage('assistant', response.reply);
-        } catch (err) {
-          removeMessage(thinkingId);
-          throw err;
-        }
-
-        if (index < lines.length - 1) await delay(1000);
-      }
-    } catch (err) {
-      appendMessage('system', `Error reading or running To-Do file: ${err.message}`);
-    } finally {
-      todoRunInProgress = false;
-      syncTodoRunButton();
-    }
+  function openTodoSuite() {
+    openTestSuiteRunner({
+      filePath: container.querySelector('#todo-file-select')?.value || '',
+      agentId: agentSelect.value,
+      model: currentModel,
+      agents,
+      models: installedModels,
+      onRunningChange: running => {
+        todoRunInProgress = running;
+        syncActionButtons();
+        syncTodoRunButton();
+      },
+      onChatMessage: (role, text) => appendMessage(role, text),
+      onToolEvent: event => appendToolBadge(
+        event.tool,
+        event.status,
+        event.args,
+        event.display
+      )
+    });
   }
 
   container.querySelector('#chat-reset').addEventListener('click', () => resetSession());
@@ -414,7 +564,10 @@ export function renderChatView(container) {
   buildTestPanel('testPanelButtons', {
     diagnostics: openDiagnostics,
     wipeChat,
-    runTestSuite: runTodoSequence
+    runTestSuite: openTodoSuite,
+    viewScratchpad: openScratchpad,
+    saveScratchpad,
+    clearScratchpad
   });
   loadTodoFiles();
   container.querySelector('#todo-file-refresh')
