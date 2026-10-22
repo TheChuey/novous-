@@ -372,6 +372,8 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
   min-height: 0;
 }
 
+.chat-font-controls { display: flex; align-items: center; justify-content: flex-end; gap: 0.35rem; padding-bottom: 0.55rem; }
+.chat-font-controls .btn { min-width: 36px; }
 .messages-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; padding-bottom: 0.75rem; }
 
 .message {
@@ -387,6 +389,9 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
   font-size: 0.92rem;
   line-height: 1.5;
 }
+.chat-main .message,
+.chat-main .tool-badge { font-size: var(--chat-console-font-size, 14px); }
+.chat-main #chat-input { font-size: var(--chat-console-font-size, 14px); }
 .msg-copy-btn {
   align-self: flex-end;
   font-size: 0.72rem;

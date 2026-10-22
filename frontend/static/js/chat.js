@@ -26,6 +26,13 @@ export function renderChatView(container) {
       </aside>
 
       <section class="chat-main">
+        <div class="chat-font-controls" role="group" aria-label="Chat text size">
+          <span class="text-muted small">Text size</span>
+          <button type="button" class="btn btn-sm" id="chat-font-smaller"
+            title="Smaller text" aria-label="Decrease chat text size">A−</button>
+          <button type="button" class="btn btn-sm" id="chat-font-larger"
+            title="Larger text" aria-label="Increase chat text size">A+</button>
+        </div>
         <div id="chat-messages" class="messages-scroll">
           <div class="message system-msg">Select an agent and send a message to start reasoning.</div>
         </div>
@@ -96,6 +103,7 @@ export function renderChatView(container) {
   const modelCount = container.querySelector('#model-count');
   const scratchpadDialog = container.querySelector('#chat-scratchpad-dialog');
   const scratchpadContent = container.querySelector('#chat-scratchpad-content');
+  const chatMain = container.querySelector('.chat-main');
 
   function renderScratchpad(memory) {
     scratchpadContent.replaceChildren();
@@ -283,6 +291,33 @@ export function renderChatView(container) {
   let isSending = false;
   let isResetting = false;
   let isSavingLog = false;
+  const chatFontKey = 'novous2.chat-console.font-size';
+  let chatFontSize = 14;
+
+  try {
+    const storedSize = Number(localStorage.getItem(chatFontKey));
+    if (Number.isFinite(storedSize) && storedSize >= 11 && storedSize <= 32) {
+      chatFontSize = storedSize;
+    }
+  } catch (error) {
+    console.warn('Could not load saved Chat Console text size.', error);
+  }
+
+  function setChatFontSize(size) {
+    chatFontSize = Math.min(32, Math.max(11, size));
+    chatMain.style.setProperty('--chat-console-font-size', `${chatFontSize}px`);
+    try {
+      localStorage.setItem(chatFontKey, String(chatFontSize));
+    } catch (error) {
+      console.warn('Could not save Chat Console text size.', error);
+    }
+  }
+
+  setChatFontSize(chatFontSize);
+  container.querySelector('#chat-font-smaller')
+    .addEventListener('click', () => setChatFontSize(chatFontSize - 1));
+  container.querySelector('#chat-font-larger')
+    .addEventListener('click', () => setChatFontSize(chatFontSize + 2));
 
   container.querySelector('#chat-save-log').prepend(createIcon('save'));
   container.querySelector('#chat-reset').prepend(createIcon('reset'));
