@@ -5,3 +5,4 @@ __pycache__/
 .DS_Store
 Thumbs.db
 agentMemory/data/
+agentMemory/rag_config.json

@@ -93,6 +93,18 @@ export const Api = {
     return send('DELETE', '/api/agent-memory/scratchpad');
   },
 
+  async getRagDocuments() {
+    return get('/api/rag/documents');
+  },
+
+  async addRagText(title, text) {
+    return send('POST', '/api/rag/documents', { title, text });
+  },
+
+  async deleteRagDocument(path) {
+    return send('POST', '/api/rag/documents/delete', { path });
+  },
+
   async getRagConfig() {
     return get('/api/rag/config');
   },

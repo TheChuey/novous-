@@ -86,6 +86,26 @@ export function renderChatView(container) {
         <button type="button" class="btn btn-sm" data-scratchpad-close aria-label="Close">Close</button>
       </div>
       <div id="chat-scratchpad-content" class="scratchpad-content"></div>
+    </dialog>
+    <dialog id="chat-rag-dialog" class="scratchpad-dialog">
+      <div class="scratchpad-dialog-head">
+        <div>
+          <h2>RAG Index</h2>
+          <p class="text-muted small">Documents embedded in the knowledge base, and manual text you add.</p>
+        </div>
+        <button type="button" class="btn btn-sm" data-rag-close aria-label="Close">Close</button>
+      </div>
+      <div id="chat-rag-content" class="scratchpad-content"></div>
+      <form id="chat-rag-form" class="rag-add-form">
+        <h3>Add text to the vector database</h3>
+        <input id="chat-rag-title" class="form-input" type="text" placeholder="Title (adding the same title replaces it)" required>
+        <textarea id="chat-rag-text" class="form-input" rows="4" placeholder="Text to embed" required></textarea>
+        <div class="root-management-actions">
+          <button type="submit" class="btn btn-sm btn-primary">Add to RAG</button>
+          <button type="button" class="btn btn-sm" data-rag-refresh>Refresh</button>
+        </div>
+        <p class="small" id="chat-rag-status" role="status" aria-live="polite"></p>
+      </form>
     </dialog>`;
 
   const agentSelect = container.querySelector('#chat-agent-select');
@@ -220,6 +240,104 @@ export function renderChatView(container) {
 
   container.querySelector('[data-scratchpad-close]').addEventListener('click', () => {
     scratchpadDialog.close();
+  });
+
+  const ragDialog = container.querySelector('#chat-rag-dialog');
+  const ragContent = container.querySelector('#chat-rag-content');
+  const ragStatus = container.querySelector('#chat-rag-status');
+  const ragForm = container.querySelector('#chat-rag-form');
+
+  function showRagStatus(message, kind = 'muted') {
+    ragStatus.textContent = message;
+    ragStatus.className = `small text-${kind}`;
+  }
+
+  function renderRag(overview) {
+    ragContent.replaceChildren();
+    const summary = document.createElement('p');
+    const typeText = Object.entries(overview.types || {})
+      .sort((a, b) => b[1] - a[1])
+      .map(([type, count]) => `${type}: ${count}`).join(', ') || 'none';
+    summary.textContent = `${overview.documents} document(s), ${overview.chunks} chunk(s). Types — ${typeText}.`;
+    const folder = document.createElement('p');
+    folder.className = 'text-muted small';
+    folder.textContent = `Folder: ${overview.path}${overview.exists ? '' : ' (missing)'}`;
+    ragContent.append(summary, folder);
+
+    const files = overview.files || [];
+    if (!files.length) {
+      const empty = document.createElement('p');
+      empty.className = 'text-muted';
+      empty.textContent = 'Nothing is indexed yet.';
+      ragContent.appendChild(empty);
+      return;
+    }
+    const list = document.createElement('ul');
+    list.className = 'rag-file-list';
+    files.forEach(file => {
+      const item = document.createElement('li');
+      const name = document.createElement('span');
+      name.className = 'rag-file-name';
+      name.textContent = file.name;
+      name.title = file.path;
+      const meta = document.createElement('span');
+      meta.className = file.chunks ? 'text-muted small' : 'text-danger small';
+      meta.textContent = `${file.type} · ${file.chunks} chunk(s)`;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn btn-sm btn-danger';
+      remove.textContent = 'Delete';
+      remove.addEventListener('click', async () => {
+        if (!confirm(`Remove "${file.name}" from the RAG index? Files on disk are not touched.`)) return;
+        try {
+          await Api.deleteRagDocument(file.path);
+          showRagStatus(`Removed ${file.name}.`, 'success');
+          await loadRag();
+        } catch (error) {
+          showRagStatus(`Could not delete: ${error.message}`, 'danger');
+        }
+      });
+      item.append(name, meta, remove);
+      list.appendChild(item);
+    });
+    ragContent.appendChild(list);
+  }
+
+  async function loadRag() {
+    try {
+      renderRag(await Api.getRagDocuments());
+    } catch (error) {
+      ragContent.textContent = `Could not load the RAG index: ${error.message}`;
+    }
+  }
+
+  async function openRag() {
+    ragDialog.showModal();
+    ragContent.textContent = 'Loading RAG index…';
+    showRagStatus('');
+    await loadRag();
+  }
+
+  container.querySelector('[data-rag-close]').addEventListener('click', () => ragDialog.close());
+  container.querySelector('[data-rag-refresh]').addEventListener('click', loadRag);
+  ragForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const submit = ragForm.querySelector('[type="submit"]');
+    submit.disabled = true;
+    showRagStatus('Embedding…');
+    try {
+      const title = container.querySelector('#chat-rag-title');
+      const text = container.querySelector('#chat-rag-text');
+      const result = await Api.addRagText(title.value, text.value);
+      showRagStatus(`Added "${title.value.trim()}" (${result.chunks} chunk(s)).`, 'success');
+      title.value = '';
+      text.value = '';
+      await loadRag();
+    } catch (error) {
+      showRagStatus(`Could not add text: ${error.message}`, 'danger');
+    } finally {
+      submit.disabled = false;
+    }
   });
 
   function formatScratchpadReads(memory) {
@@ -602,7 +720,8 @@ export function renderChatView(container) {
     runTestSuite: openTodoSuite,
     viewScratchpad: openScratchpad,
     saveScratchpad,
-    clearScratchpad
+    clearScratchpad,
+    viewRag: openRag
   });
   loadTodoFiles();
   container.querySelector('#todo-file-refresh')

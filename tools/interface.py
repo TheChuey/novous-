@@ -441,6 +441,37 @@ def api_get_rag_config():
     return memory.get_rag_status()
 
 
+@router.get("/api/rag/documents")
+def api_list_rag_documents():
+    from agentMemory import interface as memory
+
+    return memory.get_rag_overview()
+
+
+@router.post("/api/rag/documents")
+def api_add_rag_text(payload: dict):
+    from agentMemory import interface as memory
+
+    try:
+        return memory.add_text_document(str(payload.get("title", "")), str(payload.get("text", "")))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Embedding failed: {exc}") from exc
+
+
+@router.post("/api/rag/documents/delete")
+def api_delete_rag_document(payload: dict):
+    from agentMemory import interface as memory
+
+    try:
+        return memory.delete_document(str(payload.get("path", "")))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.put("/api/rag/config")
 def api_set_rag_config(payload: dict):
     from agentMemory import interface as memory

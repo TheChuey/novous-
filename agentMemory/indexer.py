@@ -16,6 +16,7 @@ LOGGER = logging.getLogger(__name__)
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 LEGACY_PREFIX = "workspace/Knowledge Base"
 ROOT_META_KEY = "knowledge_root"
+MANUAL_PREFIX = "manual:"
 EMBEDDING_MODEL = os.environ.get("NOVOUS_EMBEDDING_MODEL", "nomic-embed-text:latest")
 MAX_DOCUMENT_BYTES = 100_000_000
 CHUNK_CHARACTERS = 1400
@@ -108,6 +109,27 @@ def index_file(path: Path, relative_path: str | None = None, force: bool = False
         path_key,
         stat.st_mtime_ns,
         stat.st_size,
+        datetime.now(timezone.utc).isoformat(),
+        zip(chunks, embeddings),
+    )
+    return {"path": path_key, "status": "indexed", "chunks": len(chunks)}
+
+
+def index_text(title: str, text: str) -> dict:
+    """Embed and store pasted text under a manual:<title> key, replacing any entry with that title."""
+    clean_title = " ".join(str(title or "").split())
+    if not clean_title:
+        raise ValueError("A title is required.")
+    chunks = _chunk_text(str(text or ""))
+    if not chunks:
+        raise ValueError("Text is required.")
+    path_key = f"{MANUAL_PREFIX}{clean_title}"
+    embeddings = _embed(chunks)
+    rag_database.initialize()
+    rag_database.replace_document(
+        path_key,
+        0,
+        len(text.encode("utf-8")),
         datetime.now(timezone.utc).isoformat(),
         zip(chunks, embeddings),
     )

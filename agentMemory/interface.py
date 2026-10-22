@@ -69,6 +69,25 @@ def get_rag_status() -> dict[str, Any]:
     }
 
 
+def get_rag_overview() -> dict[str, Any]:
+    """Status plus every indexed document with its type, for the Chat Console dialog."""
+    status = get_rag_status()
+    documents = []
+    types: dict[str, int] = {}
+    for item in rag_database.list_documents():
+        manual = item["path"].startswith(indexer.MANUAL_PREFIX)
+        kind = "manual" if manual else (Path(item["path"]).suffix.lower().lstrip(".") or "none")
+        types[kind] = types.get(kind, 0) + 1
+        documents.append({**item, "type": kind, "name": item["path"] if manual else Path(item["path"]).name})
+    return {**status, "types": types, "files": documents}
+
+
+def add_text_document(title: str, text: str) -> dict:
+    """Embed pasted text into the vector database."""
+    with indexer._SCAN_LOCK:
+        return indexer.index_text(title, text)
+
+
 def set_rag_folder(path: str) -> dict[str, Any]:
     """Point the Knowledge Base at a folder; empty restores the default."""
     rag_config.set_knowledge_base_path(path)

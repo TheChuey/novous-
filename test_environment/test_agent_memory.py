@@ -137,6 +137,20 @@ class TestAgentMemory(unittest.TestCase):
             self.assertEqual(cleared["removed"], 1)
             self.assertEqual(cleared["documents"], 0)
 
+    def test_manual_text_is_added_listed_and_deleted(self):
+        with patch("agentMemory.indexer.ollama.embed", return_value={"embeddings": [[0.1, 0.2]]}):
+            result = interface.add_text_document("  My   note ", "some knowledge")
+        self.assertEqual(result["path"], "manual:My note")
+        overview = interface.get_rag_overview()
+        self.assertEqual(overview["types"], {"manual": 1})
+        self.assertEqual(overview["files"][0]["chunks"], 1)
+        with self.assertRaises(ValueError):
+            interface.add_text_document("", "text")
+        with self.assertRaises(ValueError):
+            interface.add_text_document("title", "   ")
+        interface.delete_document("manual:My note")
+        self.assertEqual(interface.get_rag_overview()["documents"], 0)
+
     def test_invalid_rag_folder_is_rejected_and_empty_restores_default(self):
         from agentMemory import rag_config
 
