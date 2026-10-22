@@ -9,12 +9,13 @@ from pathlib import Path
 
 import ollama
 
-from agentMemory import rag_database
+from agentMemory import rag_config, rag_database
 
 
 LOGGER = logging.getLogger(__name__)
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
-KNOWLEDGE_BASE = REPOSITORY_ROOT / "workspace" / "Knowledge Base"
+LEGACY_PREFIX = "workspace/Knowledge Base"
+ROOT_META_KEY = "knowledge_root"
 EMBEDDING_MODEL = os.environ.get("NOVOUS_EMBEDDING_MODEL", "nomic-embed-text:latest")
 MAX_DOCUMENT_BYTES = 25_000_000
 CHUNK_CHARACTERS = 1400
@@ -27,6 +28,7 @@ TEXT_EXTENSIONS = {
 }
 DOCLING_EXTENSIONS = {".pdf", ".docx", ".pptx", ".odt"}
 _SCANNER_LOCK = threading.Lock()
+_SCAN_LOCK = threading.RLock()
 _SCANNER_THREAD: threading.Thread | None = None
 _STOP_SCANNER = threading.Event()
 _DOC_CONVERTER = None
@@ -92,7 +94,7 @@ def index_file(path: Path, relative_path: str | None = None, force: bool = False
     stat = resolved.stat()
     if stat.st_size > MAX_DOCUMENT_BYTES:
         raise ValueError(f"Document exceeds the {MAX_DOCUMENT_BYTES}-byte indexing limit: {resolved}")
-    path_key = relative_path or resolved.relative_to(REPOSITORY_ROOT).as_posix()
+    path_key = relative_path or resolved.as_posix()
     existing = rag_database.document_metadata(path_key)
     if not force and existing and (
         existing["modified_ns"] == stat.st_mtime_ns and existing["size_bytes"] == stat.st_size
@@ -111,13 +113,41 @@ def index_file(path: Path, relative_path: str | None = None, force: bool = False
     return {"path": path_key, "status": "indexed", "chunks": len(chunks)}
 
 
+def knowledge_base_folder() -> Path:
+    """The currently configured Knowledge Base folder."""
+    return rag_config.knowledge_base_path()
+
+
+def _purge_previous_folder(root: Path) -> list[str]:
+    """Remove documents indexed from a different folder than the current one."""
+    root_key = root.as_posix()
+    previous = rag_database.get_meta(ROOT_META_KEY)
+    removed: list[str] = []
+    if previous != root_key:
+        if previous:
+            removed += rag_database.delete_documents_under(previous, set())
+        removed += rag_database.delete_documents_under(LEGACY_PREFIX, set())
+        rag_database.set_meta(ROOT_META_KEY, root_key)
+    return removed
+
+
 def scan_knowledge_base(force: bool = False) -> dict:
     """Index supported files in the configured folder and remove stale records."""
-    KNOWLEDGE_BASE.mkdir(parents=True, exist_ok=True)
+    with _SCAN_LOCK:
+        return _scan_knowledge_base(force)
+
+
+def _scan_knowledge_base(force: bool) -> dict:
+    root = knowledge_base_folder()
+    if root == rag_config.DEFAULT_KNOWLEDGE_BASE:
+        root.mkdir(parents=True, exist_ok=True)
+    if not root.is_dir():
+        raise FileNotFoundError(f"The RAG folder does not exist: {root}")
     rag_database.initialize()
+    removed = _purge_previous_folder(root)
     files = []
-    for path in KNOWLEDGE_BASE.rglob("*"):
-        if not path.is_file() or path.is_symlink() or any(part.startswith(".") for part in path.relative_to(KNOWLEDGE_BASE).parts):
+    for path in root.rglob("*"):
+        if not path.is_file() or path.is_symlink() or any(part.startswith(".") for part in path.relative_to(root).parts):
             continue
         if path.suffix.lower() not in TEXT_EXTENSIONS | DOCLING_EXTENSIONS:
             continue
@@ -125,22 +155,22 @@ def scan_knowledge_base(force: bool = False) -> dict:
 
     results = []
     for path in files:
-        relative = path.relative_to(REPOSITORY_ROOT).as_posix()
+        key = path.resolve().as_posix()
         try:
-            results.append(index_file(path, relative, force=force))
+            results.append(index_file(path, key, force=force))
         except Exception as exc:
             LOGGER.exception("Could not index knowledge-base document %s", path)
-            results.append({"path": relative, "status": "error", "error": str(exc)})
+            results.append({"path": key, "status": "error", "error": str(exc)})
 
-    keep = {path.relative_to(REPOSITORY_ROOT).as_posix() for path in files}
-    stale = rag_database.delete_documents_under("workspace/Knowledge Base", keep)
+    keep = {path.resolve().as_posix() for path in files}
+    stale = rag_database.delete_documents_under(root.as_posix(), keep)
     return {
-        "folder": str(KNOWLEDGE_BASE),
+        "folder": str(root),
         "discovered": len(files),
         "indexed": sum(result["status"] == "indexed" for result in results),
         "unchanged": sum(result["status"] == "unchanged" for result in results),
         "errors": [result for result in results if result["status"] == "error"],
-        "removed": stale,
+        "removed": removed + stale,
     }
 
 

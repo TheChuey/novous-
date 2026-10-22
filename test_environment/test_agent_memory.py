@@ -103,6 +103,52 @@ class TestAgentMemory(unittest.TestCase):
         self.assertTrue(all(len(chunk) <= 1400 for chunk in chunks))
         self.assertTrue(all(chunk in text for chunk in chunks))
 
+    def test_configured_folder_is_scanned_and_root_change_purges_old_entries(self):
+        from agentMemory import indexer, rag_config
+
+        first = self.temp_path / "first"
+        second = self.temp_path / "second"
+        first.mkdir()
+        second.mkdir()
+        (first / "a.md").write_text("alpha", encoding="utf-8")
+        (second / "b.md").write_text("beta", encoding="utf-8")
+        embed = {"embeddings": [[0.1, 0.2]]}
+        with patch.object(rag_config, "CONFIG_PATH", self.temp_path / "rag_config.json"), \
+                patch("agentMemory.indexer.ollama.embed", return_value=embed):
+            self.assertEqual(
+                interface.set_rag_folder(str(first))["path"], str(first.resolve())
+            )
+            result = indexer.scan_knowledge_base()
+            self.assertEqual(result["indexed"], 1)
+            self.assertEqual(
+                [d["path"] for d in interface.list_documents()],
+                [(first / "a.md").resolve().as_posix()],
+            )
+
+            interface.set_rag_folder(str(second))
+            result = indexer.scan_knowledge_base()
+            self.assertEqual(len(result["removed"]), 1)
+            self.assertEqual(
+                [d["path"] for d in interface.list_documents()],
+                [(second / "b.md").resolve().as_posix()],
+            )
+
+            cleared = interface.clear_rag_index()
+            self.assertEqual(cleared["removed"], 1)
+            self.assertEqual(cleared["documents"], 0)
+
+    def test_invalid_rag_folder_is_rejected_and_empty_restores_default(self):
+        from agentMemory import rag_config
+
+        with patch.object(rag_config, "CONFIG_PATH", self.temp_path / "rag_config.json"):
+            with self.assertRaises(ValueError):
+                interface.set_rag_folder(str(self.temp_path / "missing"))
+            with self.assertRaises(ValueError):
+                interface.set_rag_folder("relative/path")
+            self.assertEqual(
+                interface.set_rag_folder("")["path"], str(rag_config.DEFAULT_KNOWLEDGE_BASE)
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

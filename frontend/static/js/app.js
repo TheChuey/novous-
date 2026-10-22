@@ -134,6 +134,18 @@ function renderDashboardView(container) {
             <p class="small" id="dash-root-status" role="status" aria-live="polite"></p>
             <ul class="root-path-list" id="dash-root-list" aria-label="Configured Workspace folders"></ul>
           </div>
+          <div class="root-management">
+            <h4>RAG Knowledge Base</h4>
+            <p class="text-muted small">Folder scanned and indexed for agent search. Leave empty to use the default workspace folder.</p>
+            <label class="small" for="dash-rag-path">RAG folder path</label>
+            <input id="dash-rag-path" class="form-input" type="text" placeholder="E:\\Novous_notes\\Knowledge Base">
+            <div class="root-management-actions">
+              <button class="btn btn-sm btn-primary" type="button" data-rag-action="save">Save path</button>
+              <button class="btn btn-sm" type="button" data-rag-action="read">Read / Re-index</button>
+              <button class="btn btn-sm btn-danger" type="button" data-rag-action="clear">Clear RAG data</button>
+            </div>
+            <p class="small" id="dash-rag-status" role="status" aria-live="polite"></p>
+          </div>
         </section>
       </div>
     </div>
@@ -353,6 +365,48 @@ function renderDashboardView(container) {
         rootStatus.className = 'small text-danger';
       } finally {
         rootActionButtons.forEach(actionButton => { actionButton.disabled = false; });
+      }
+    });
+  });
+
+  const ragPathInput = container.querySelector('#dash-rag-path');
+  const ragStatus = container.querySelector('#dash-rag-status');
+  const ragButtons = [...container.querySelectorAll('[data-rag-action]')];
+  function showRagStatus(message, kind = 'muted') {
+    ragStatus.textContent = message;
+    ragStatus.className = `small text-${kind}`;
+  }
+  function describeRag(status) {
+    return `Folder: ${status.path}${status.exists ? '' : ' (missing)'} — ${status.documents} document(s), ${status.chunks} chunk(s).`;
+  }
+  Api.getRagConfig().then(status => {
+    ragPathInput.value = status.configured_path;
+    ragPathInput.placeholder = status.default_path;
+    showRagStatus(describeRag(status));
+  }).catch(err => showRagStatus(`Could not load RAG settings: ${err.message}`, 'danger'));
+  ragButtons.forEach(button => {
+    button.addEventListener('click', async () => {
+      const action = button.dataset.ragAction;
+      if (action === 'clear' && !confirm('Delete all indexed RAG data? Your files are not touched.')) return;
+      ragButtons.forEach(item => { item.disabled = true; });
+      showRagStatus(action === 'read' ? 'Indexing… this can take a while.' : 'Working…');
+      try {
+        if (action === 'save') {
+          const status = await Api.setRagConfig(ragPathInput.value);
+          showRagStatus(`Saved. ${describeRag(status)} Use Read / Re-index to index it now.`, 'success');
+        } else if (action === 'read') {
+          const result = await Api.reindexRag();
+          const errors = result.errors?.length ? ` ${result.errors.length} error(s).` : '';
+          showRagStatus(`Indexed ${result.indexed}, unchanged ${result.unchanged}, removed ${result.removed.length}.${errors} ${describeRag(result)}`,
+            errors ? 'warning' : 'success');
+        } else {
+          const result = await Api.clearRagIndex();
+          showRagStatus(`Cleared ${result.removed} document(s). The next scan re-indexes the folder.`, 'success');
+        }
+      } catch (err) {
+        showRagStatus(err.message, 'danger');
+      } finally {
+        ragButtons.forEach(item => { item.disabled = false; });
       }
     });
   });

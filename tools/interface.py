@@ -434,6 +434,41 @@ def api_clear_agent_scratchpad():
     return scratchpad.clear_memory()
 
 
+@router.get("/api/rag/config")
+def api_get_rag_config():
+    from agentMemory import interface as memory
+
+    return memory.get_rag_status()
+
+
+@router.put("/api/rag/config")
+def api_set_rag_config(payload: dict):
+    from agentMemory import interface as memory
+
+    try:
+        return memory.set_rag_folder(str(payload.get("path", "")))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/rag/reindex")
+def api_reindex_rag():
+    from agentMemory import interface as memory
+
+    try:
+        result = memory.refresh_knowledge_base()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {**result, **memory.get_rag_status()}
+
+
+@router.delete("/api/rag/index")
+def api_clear_rag_index():
+    from agentMemory import interface as memory
+
+    return memory.clear_rag_index()
+
+
 @router.get("/api/tools")
 def api_list_tools():
     rep = catalog_report()

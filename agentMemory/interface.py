@@ -6,7 +6,7 @@ from typing import Any
 
 import ollama
 
-from agentMemory import indexer, rag_database, scratchpad
+from agentMemory import indexer, rag_config, rag_database, scratchpad
 
 
 def store_read(path: str, content: str, request: str = "") -> dict[str, str]:
@@ -42,15 +42,45 @@ def get_document(path: str) -> dict[str, Any]:
 
 def index_document(relative_path: str, force: bool = False) -> dict:
     """Index one file inside the Knowledge Base folder."""
-    requested_path = indexer.KNOWLEDGE_BASE / relative_path
+    root = indexer.knowledge_base_folder()
+    requested_path = root / relative_path
     if requested_path.is_symlink():
         raise ValueError("Symbolic links cannot be indexed.")
     candidate = requested_path.resolve()
     try:
-        candidate.relative_to(indexer.KNOWLEDGE_BASE.resolve())
+        candidate.relative_to(root.resolve())
     except ValueError:
         raise ValueError("Document path must stay inside the Knowledge Base folder.") from None
     return indexer.index_file(candidate, force=force)
+
+
+def get_rag_status() -> dict[str, Any]:
+    """Describe the configured folder and what is currently indexed."""
+    rag_database.initialize()
+    folder = indexer.knowledge_base_folder()
+    documents = rag_database.list_documents()
+    return {
+        "path": str(folder),
+        "configured_path": rag_config.configured_path(),
+        "default_path": str(rag_config.DEFAULT_KNOWLEDGE_BASE),
+        "exists": folder.is_dir(),
+        "documents": len(documents),
+        "chunks": sum(item["chunks"] for item in documents),
+    }
+
+
+def set_rag_folder(path: str) -> dict[str, Any]:
+    """Point the Knowledge Base at a folder; empty restores the default."""
+    rag_config.set_knowledge_base_path(path)
+    return get_rag_status()
+
+
+def clear_rag_index() -> dict[str, Any]:
+    """Delete all indexed RAG data; source files are untouched."""
+    with indexer._SCAN_LOCK:
+        rag_database.initialize()
+        removed = rag_database.clear_all()
+    return {"removed": removed, **get_rag_status()}
 
 
 def delete_document(path: str) -> dict[str, Any]:
@@ -96,7 +126,7 @@ def search_knowledge_base(
         source_path = resolve_project_path(relative_path)
         if not source_path.is_file():
             raise FileNotFoundError(f"Knowledge-base document not found: {source_path}")
-        selected_path = source_path.relative_to(indexer.REPOSITORY_ROOT).as_posix()
+        selected_path = source_path.resolve().as_posix()
         indexer.index_file(source_path, selected_path)
 
     chunks = rag_database.list_chunks()
@@ -108,7 +138,7 @@ def search_knowledge_base(
             "results": [],
             "message": (
                 "No documents are indexed yet. Place supported files in "
-                f"'{indexer.KNOWLEDGE_BASE}' and wait for the automatic scan."
+                f"'{indexer.knowledge_base_folder()}' and wait for the automatic scan."
             ),
         }
 

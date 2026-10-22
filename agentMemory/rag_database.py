@@ -45,6 +45,10 @@ def initialize() -> None:
                 PRIMARY KEY (path, chunk_index)
             );
             CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path);
+            CREATE TABLE IF NOT EXISTS meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             """
         )
 
@@ -113,6 +117,30 @@ def delete_documents_under(prefix: str, keep_paths: set[str]) -> list[str]:
         ]
         connection.executemany("DELETE FROM documents WHERE path = ?", [(path,) for path in stale])
     return stale
+
+
+def clear_all() -> int:
+    """Delete every indexed document and chunk; returns the document count removed."""
+    with connect() as connection:
+        count = connection.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+        connection.execute("DELETE FROM chunks")
+        connection.execute("DELETE FROM documents")
+    return count
+
+
+def get_meta(key: str) -> str | None:
+    with connect() as connection:
+        row = connection.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def set_meta(key: str, value: str) -> None:
+    with connect() as connection:
+        connection.execute(
+            "INSERT INTO meta(key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
 
 
 def list_chunks() -> list[dict[str, Any]]:

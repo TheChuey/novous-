@@ -93,6 +93,22 @@ export const Api = {
     return send('DELETE', '/api/agent-memory/scratchpad');
   },
 
+  async getRagConfig() {
+    return get('/api/rag/config');
+  },
+
+  async setRagConfig(path) {
+    return send('PUT', '/api/rag/config', { path });
+  },
+
+  async reindexRag() {
+    return send('POST', '/api/rag/reindex');
+  },
+
+  async clearRagIndex() {
+    return send('DELETE', '/api/rag/index');
+  },
+
   async streamMessage(
     message,
     agentId,
