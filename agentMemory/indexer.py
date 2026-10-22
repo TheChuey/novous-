@@ -17,7 +17,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 LEGACY_PREFIX = "workspace/Knowledge Base"
 ROOT_META_KEY = "knowledge_root"
 EMBEDDING_MODEL = os.environ.get("NOVOUS_EMBEDDING_MODEL", "nomic-embed-text:latest")
-MAX_DOCUMENT_BYTES = 25_000_000
+MAX_DOCUMENT_BYTES = 100_000_000
 CHUNK_CHARACTERS = 1400
 CHUNK_OVERLAP = 200
 EMBEDDING_BATCH_SIZE = 16
@@ -25,6 +25,7 @@ SCAN_INTERVAL_SECONDS = 60
 TEXT_EXTENSIONS = {
     ".txt", ".md", ".markdown", ".rst", ".html", ".htm", ".csv",
     ".json", ".xml", ".yaml", ".yml", ".log",
+    ".py", ".js", ".ts", ".css", ".toml", ".ini", ".sql", ".sh", ".ps1",
 }
 DOCLING_EXTENSIONS = {".pdf", ".docx", ".pptx", ".odt"}
 _SCANNER_LOCK = threading.Lock()
