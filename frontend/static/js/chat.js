@@ -680,9 +680,107 @@ export function renderChatView(container) {
     const argText = args ? JSON.stringify(args) : '';
     badgeDiv.innerHTML = `🛠️ <strong>${esc(toolName)}</strong> executed (${esc(status)})
       ${argText ? `<span class="text-muted small"> ${esc(argText.slice(0, 120))}</span>` : ''}`;
-    if (display) appendTreeView(badgeDiv, args || {}, display);
+    if (display && toolName === 'map_files') {
+      try {
+        appendMapTree(badgeDiv, JSON.parse(display));
+      } catch {
+        appendTreeView(badgeDiv, args || {}, display);
+      }
+    } else if (display) {
+      appendTreeView(badgeDiv, args || {}, display);
+    }
     messagesBox.appendChild(badgeDiv);
     messagesBox.scrollTop = messagesBox.scrollHeight;
+  }
+
+  function appendMapTree(badgeDiv, tree) {
+    badgeDiv.classList.add('has-tree');
+    const panel = document.createElement('div');
+    panel.className = 'chat-map-tree';
+    const heading = document.createElement('div');
+    heading.className = 'chat-map-heading';
+    const title = document.createElement('strong');
+    title.textContent = tree.name || 'Workspace';
+    const count = countTreeEntries(tree);
+    const meta = document.createElement('span');
+    meta.className = 'text-muted small';
+    meta.textContent = `${count.folders} folders · ${count.files} files`;
+    heading.append(title, meta);
+    panel.append(heading, createMapTreeNode(tree, true));
+    badgeDiv.appendChild(panel);
+  }
+
+  function countTreeEntries(node) {
+    return (node.children || []).reduce((total, child) => {
+      if (child.type === 'directory') {
+        total.folders += 1;
+        const nested = countTreeEntries(child);
+        total.folders += nested.folders;
+        total.files += nested.files;
+      } else {
+        total.files += 1;
+      }
+      return total;
+    }, { folders: 0, files: 0 });
+  }
+
+  function createMapTreeNode(node, isRoot = false) {
+    const list = document.createElement('ul');
+    list.className = 'chat-map-tree-list';
+    (node.children || []).forEach(child => {
+      const item = document.createElement('li');
+      if (child.type === 'directory') {
+        const folder = document.createElement('details');
+        const summary = document.createElement('summary');
+        const icon = document.createElement('span');
+        icon.className = 'chat-map-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = '📁';
+        const name = document.createElement('span');
+        name.textContent = child.name;
+        summary.append(icon, name);
+        folder.append(summary, createMapTreeNode(child));
+        item.appendChild(folder);
+      } else {
+        const openFile = document.createElement('button');
+        openFile.type = 'button';
+        openFile.className = 'chat-map-file';
+        openFile.title = child.path || child.name;
+        const icon = document.createElement('span');
+        icon.className = 'chat-map-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = '📄';
+        const name = document.createElement('span');
+        name.textContent = child.name;
+        openFile.append(icon, name);
+        openFile.addEventListener('click', () => {
+          if (document.getElementById('app')) {
+            window.dispatchEvent(new CustomEvent('novous:open-editor', {
+              detail: { path: child.path, managedFile: true }
+            }));
+          } else {
+            const params = new URLSearchParams({ path: child.path, managed: '1' });
+            window.location.assign(`/editor?${params}`);
+          }
+        });
+        item.appendChild(openFile);
+      }
+      list.appendChild(item);
+    });
+    if (!isRoot) return list;
+
+    const root = document.createElement('details');
+    root.open = true;
+    const summary = document.createElement('summary');
+    const icon = document.createElement('span');
+    icon.className = 'chat-map-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '📂';
+    const name = document.createElement('span');
+    name.textContent = node.name || 'Workspace';
+    summary.append(icon, name);
+    root.append(summary, list);
+    return root;
   }
 
   const MORE_NOTE = /\n… (\d+) more lines \(next offset (\d+)\)\s*$/;

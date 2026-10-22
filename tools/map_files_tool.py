@@ -13,3 +13,6 @@ def map_files(path: str = "") -> str:
     tree = interface.map_files(path)
     agent_memory.store_map(tree, path)
     return json.dumps(tree, ensure_ascii=False, indent=2)
+
+
+map_files.display_output = True
