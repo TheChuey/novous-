@@ -24,7 +24,7 @@ EXCLUDE_DIRS = {
     "model_logs",
 }
 INCLUDE_EXT = {".py", ".js", ".css", ".html", ".json", ".md", ".txt", ".bat", ".sh", ".yaml", ".yml", ".cfg", ".ini"}
-SKIP_FILES = {"MASTER_COPY.md", "novous2-ai-builder-prompt-v2.md"}
+SKIP_FILES = {"MASTER_COPY.md", "novous2-ai-builder-prompt-v2.md", "rag_config.json"}
 SNAPSHOT_PREFIXES = ("NOVOUS_APP_SNAPSHOT", "NOVOUS2_APP_SNAPSHOT")
 
 OUT = ROOT / "app_documentation" / f"NOVOUS_APP_SNAPSHOT_{TODAY}_new.md"

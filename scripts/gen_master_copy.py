@@ -27,7 +27,7 @@ def collect() -> list[Path]:
     for path in sorted(ROOT.rglob("*")):
         if not path.is_file():
             continue
-        if path.name.startswith("MASTER_COPY") or path.name == "novous2-ai-builder-prompt-v2.md":
+        if path.name.startswith("MASTER_COPY") or path.name in {"novous2-ai-builder-prompt-v2.md", "rag_config.json"}:
             continue
         if path.suffix not in INCLUDE:
             continue

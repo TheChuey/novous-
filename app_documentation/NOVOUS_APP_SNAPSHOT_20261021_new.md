@@ -1,7 +1,7 @@
 Date: 2026-10-21
 Name: Novous Application Snapshot
 Filename: NOVOUS_APP_SNAPSHOT_20261021_new.md
-Commit: cd08d81
+Commit: f75cb04
 Description: Self-contained reference for an AI agent. Captures Novous app purpose, architecture, file structure, and complete source code. Designed for grounding/understanding without repo access.
 
 # NOVOUS APPLICATION SNAPSHOT
@@ -28,6 +28,19 @@ Key components:
 ## 3) File Structure Snapshot
 
 - .gitignore
+- about/
+- about/about.md
+- about/about.py
+- agentMemory/
+- agentMemory/__init__.py
+- agentMemory/data/
+- agentMemory/data/knowledge.sqlite3
+- agentMemory/data/scratchpad.json
+- agentMemory/indexer.py
+- agentMemory/interface.py
+- agentMemory/rag_config.py
+- agentMemory/rag_database.py
+- agentMemory/scratchpad.py
 - codebuilder/
 - codebuilder/__init__.py
 - codebuilder/execution.py
@@ -97,11 +110,12 @@ Key components:
 - frontend/static/js/sandbox_ui.js
 - frontend/static/js/terminal.js
 - frontend/static/js/test_panel.js
+- frontend/static/js/test_suite_runner.js
 - frontend/static/js/testing.js
 - frontend/static/js/tree.js
 - library/
 - library/agent-01.md
-- library/agent-02.md
+- library/chat-assitant.md
 - library/code-planer.md
 - library/codingagent.md
 - requirements.txt
@@ -122,6 +136,12 @@ Key components:
 - test_environment/PromptBuilderFiles/
 - test_environment/PromptBuilderFiles/categories.json
 - test_environment/PromptBuilderFiles/parts/
+- test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/
+- test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/available-tools.md
+- test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/hallucination-control.md
+- test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/role.md
+- test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/scratchpad.md
+- test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/tool-usage.md
 - test_environment/PromptBuilderFiles/parts/test-agent-prompt/
 - test_environment/PromptBuilderFiles/parts/test-agent-prompt/description.md
 - test_environment/PromptBuilderFiles/parts/test-agent-prompt/hallucination-prevention.md
@@ -130,10 +150,12 @@ Key components:
 - test_environment/report_store.py
 - test_environment/sandbox_env.py
 - test_environment/sandbox_paths.py
+- test_environment/test_agent_memory.py
 - test_environment/test_behavior_probe.py
 - test_environment/test_prompt_evaluation.py
 - test_environment/test_prompt_judge.py
 - test_environment/test_publish_tools.py
+- test_environment/test_read_tool.py
 - test_environment/test_runner.py
 - test_environment/test_sandbox_env.py
 - test_environment/test_tool_catalog.py
@@ -142,6 +164,7 @@ Key components:
 - test_environment/tool_workbench.py
 - tools/
 - tools/__init__.py
+- tools/agent_memory_tool.py
 - tools/allowed_paths.json
 - tools/delete_file_tool.py
 - tools/editor_tool.py
@@ -156,15 +179,17 @@ Key components:
 - workspace/documentation/
 - workspace/documentation/about.txt
 - workspace/example.txt
+- workspace/helloAbout.txt
 - workspace/interface.py
 - workspace/jesus_blue.txt
+- workspace/Knowledge Base/
+- workspace/Knowledge Base/.gitkeep
 - workspace/Markdown/
 - workspace/Markdown/Response.txt
 - workspace/Notes/
 - workspace/Notes/Notes.txt
 - workspace/project.json
 - workspace/sandbox/
-- workspace/sandbox/scripts/
 - workspace/scratchpad/
 - workspace/scratchpad/latest_read.txt
 - workspace/squad_manager.py
@@ -178,6 +203,1010 @@ Key components:
 - workspace/workspace_workflow.py
 
 ## 4) Complete Source Code (by file)
+
+### about/about.md
+
+`markdown
+Date: 2026-10-21
+Name: Novous Application Snapshot
+Filename: NOVOUS_APP_SNAPSHOT_20261021_new.md
+
+
+
+## Created 
+by Jesus Rodriguez
+
+## Code and excuted
+various AI Tools 
+
+## Name
+Name of the Application: Novous
+
+## Browser Tab
+Novous V1
+
+## Version 
+V1
+
+## header
+Novous
+
+## Description 
+Self-contained reference for an AI agent. Captures Novous app purpose, architecture, file structure, and complete source code. Designed for grounding/understanding without repo access.
+
+`
+
+### about/about.py
+
+`python
+"""Sync app identity from about.md to the index page and app documentation."""
+
+import argparse
+import html
+import re
+import sys
+import time
+from pathlib import Path
+
+
+ABOUT_DIR = Path(__file__).resolve().parent
+ROOT = ABOUT_DIR.parent
+SOURCE = ABOUT_DIR / "about.md"
+INDEX = ROOT / "frontend" / "pages" / "index.html"
+DOCUMENTATION = ROOT / "app_documentation" / "ABOUT.md"
+LOGO_PATTERN = re.compile(
+    r'<(?:span|h1)\s+class="logo-text"[^>]*>.*?</(?:span|h1)>',
+    re.DOTALL,
+)
+TITLE_PATTERN = re.compile(r"<title>.*?</title>", re.DOTALL | re.IGNORECASE)
+SECTION_PATTERN = re.compile(r"^##\s+(.+?)\s*$")
+
+
+def parse_about(markdown: str) -> dict[str, str]:
+    sections: dict[str, list[str]] = {}
+    current_section = None
+    for line in markdown.splitlines():
+        match = SECTION_PATTERN.match(line)
+        if match:
+            current_section = match.group(1).strip().casefold()
+            if current_section in sections:
+                raise ValueError(f"Duplicate section in about.md: {match.group(1)}")
+            sections[current_section] = []
+        elif current_section is not None:
+            sections[current_section].append(line)
+
+    def value_for(section: str) -> str:
+        lines = [line.strip() for line in sections.get(section, []) if line.strip()]
+        value = " ".join(lines).strip()
+        if section == "name":
+            value = re.sub(r"^Name of the Application:\s*", "", value, flags=re.IGNORECASE)
+        return value
+
+    heading_section = "h1" if "h1" in sections else "header"
+    values = {
+        "name": value_for("name"),
+        "browser_title": value_for("browser tab"),
+        "h1": value_for(heading_section),
+        "description": value_for("description"),
+    }
+    missing = [key for key, value in values.items() if not value]
+    if missing:
+        raise ValueError(
+            "about.md must include non-empty ## Name, ## Browser Tab, "
+            "## h1 (or ## header), "
+            "and ## Description sections; "
+            f"missing: {', '.join(missing)}"
+        )
+    return values
+
+
+def replace_file(path: Path, content: str) -> None:
+    if path.is_file() and path.read_text(encoding="utf-8") == content:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp")
+    try:
+        temporary.write_text(content, encoding="utf-8", newline="\n")
+        temporary.replace(path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def sync(markdown: str) -> None:
+    values = parse_about(markdown)
+    index_html = INDEX.read_text(encoding="utf-8")
+    if len(LOGO_PATTERN.findall(index_html)) != 1:
+        raise RuntimeError(f"Expected exactly one app logo heading in {INDEX}.")
+    if len(TITLE_PATTERN.findall(index_html)) != 1:
+        raise RuntimeError(f"Expected exactly one browser tab title in {INDEX}.")
+    heading = (
+        '<h1 class="logo-text" data-about-managed="true" '
+        'style="font-size: inherit; font-weight: inherit; line-height: inherit; margin: 0;">'
+        f'{html.escape(values["h1"])}</h1>'
+    )
+    updated_index = LOGO_PATTERN.sub(heading, index_html, count=1)
+    title = f"<title>{html.escape(values['browser_title'])}</title>"
+    updated_index = TITLE_PATTERN.sub(title, updated_index, count=1)
+
+    documentation = markdown.rstrip() + "\n"
+    replace_file(INDEX, updated_index)
+    replace_file(DOCUMENTATION, documentation)
+    print(f"Synced app heading, browser tab title, and documentation for {values['name']}.")
+
+
+def watch() -> None:
+    sync(SOURCE.read_text(encoding="utf-8-sig"))
+    last_content = SOURCE.read_bytes()
+    candidate = None
+    changed_at = 0.0
+    print(f"Watching {SOURCE} for changes. Press Ctrl+C to stop.")
+    try:
+        while True:
+            time.sleep(0.5)
+            try:
+                content = SOURCE.read_bytes()
+            except OSError as exc:
+                print(f"Could not read {SOURCE}: {exc}", file=sys.stderr)
+                continue
+            if content == last_content:
+                candidate = None
+                continue
+            if content != candidate:
+                candidate = content
+                changed_at = time.monotonic()
+                continue
+            if time.monotonic() - changed_at < 0.75:
+                continue
+            try:
+                sync(content.decode("utf-8-sig"))
+            except (OSError, UnicodeError, ValueError, RuntimeError) as exc:
+                print(f"Could not sync about.md: {exc}", file=sys.stderr)
+            else:
+                last_content = content
+            candidate = None
+    except KeyboardInterrupt:
+        print("\nStopped watching about.md.")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Sync about/about.md to the app heading and app documentation."
+    )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="keep running and sync whenever about.md changes",
+    )
+    args = parser.parse_args()
+    if args.watch:
+        watch()
+    else:
+        sync(SOURCE.read_text(encoding="utf-8-sig"))
+
+
+if __name__ == "__main__":
+    main()
+
+`
+
+### agentMemory/__init__.py
+
+`python
+"""Shared scratchpad and SQL-backed semantic memory for Novous agents."""
+
+`
+
+### agentMemory/data/scratchpad.json
+
+`json
+{}
+
+`
+
+### agentMemory/indexer.py
+
+`python
+"""Document discovery, parsing, chunking, and local Ollama embedding generation."""
+
+import logging
+import os
+import threading
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import ollama
+
+from agentMemory import rag_config, rag_database
+
+
+LOGGER = logging.getLogger(__name__)
+REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
+LEGACY_PREFIX = "workspace/Knowledge Base"
+ROOT_META_KEY = "knowledge_root"
+MANUAL_PREFIX = "manual:"
+EMBEDDING_MODEL = os.environ.get("NOVOUS_EMBEDDING_MODEL", "nomic-embed-text:latest")
+MAX_DOCUMENT_BYTES = 100_000_000
+CHUNK_CHARACTERS = 1400
+CHUNK_OVERLAP = 200
+EMBEDDING_BATCH_SIZE = 16
+SCAN_INTERVAL_SECONDS = 60
+TEXT_EXTENSIONS = {
+    ".txt", ".md", ".markdown", ".rst", ".html", ".htm", ".csv",
+    ".json", ".xml", ".yaml", ".yml", ".log",
+    ".py", ".js", ".ts", ".css", ".toml", ".ini", ".sql", ".sh", ".ps1",
+}
+DOCLING_EXTENSIONS = {".pdf", ".docx", ".pptx", ".odt"}
+_SCANNER_LOCK = threading.Lock()
+_SCAN_LOCK = threading.RLock()
+_SCANNER_THREAD: threading.Thread | None = None
+_STOP_SCANNER = threading.Event()
+_DOC_CONVERTER = None
+
+
+def _document_text(path: Path) -> str:
+    if path.suffix.lower() in TEXT_EXTENSIONS:
+        return path.read_text(encoding="utf-8", errors="replace")
+    if path.suffix.lower() in DOCLING_EXTENSIONS:
+        global _DOC_CONVERTER
+        if _DOC_CONVERTER is None:
+            try:
+                from docling.document_converter import DocumentConverter
+            except ImportError as exc:
+                raise RuntimeError(
+                    "Docling is required to index PDF, DOCX, PPTX, and ODT files."
+                ) from exc
+            _DOC_CONVERTER = DocumentConverter()
+        result = _DOC_CONVERTER.convert(str(path))
+        return result.document.export_to_markdown()
+    raise ValueError(f"Unsupported knowledge-base file type: {path.suffix or '(no extension)'}")
+
+
+def _chunk_text(text: str) -> list[str]:
+    clean = text.strip()
+    if not clean:
+        return []
+    chunks = []
+    start = 0
+    while start < len(clean):
+        end = min(start + CHUNK_CHARACTERS, len(clean))
+        if end < len(clean):
+            boundary = clean.rfind("\n\n", start, end)
+            if boundary > start + CHUNK_CHARACTERS // 2:
+                end = boundary
+        chunk = clean[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        if end >= len(clean):
+            break
+        start = max(start + 1, end - CHUNK_OVERLAP)
+    return chunks
+
+
+def _embed(texts: list[str]) -> list[list[float]]:
+    vectors = []
+    for offset in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+        response = ollama.embed(model=EMBEDDING_MODEL, input=texts[offset:offset + EMBEDDING_BATCH_SIZE])
+        batch = response.get("embeddings") if isinstance(response, dict) else response.embeddings
+        if len(batch) != len(texts[offset:offset + EMBEDDING_BATCH_SIZE]):
+            raise RuntimeError("Embedding model returned a different number of vectors than requested.")
+        vectors.extend([[float(value) for value in vector] for vector in batch])
+    if vectors and any(len(vector) != len(vectors[0]) for vector in vectors):
+        raise RuntimeError("Embedding model returned vectors with inconsistent dimensions.")
+    return vectors
+
+
+def index_file(path: Path, relative_path: str | None = None, force: bool = False) -> dict:
+    """Extract, embed, and persist one supported document."""
+    resolved = path.resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"Knowledge-base document not found: {resolved}")
+    stat = resolved.stat()
+    if stat.st_size > MAX_DOCUMENT_BYTES:
+        raise ValueError(f"Document exceeds the {MAX_DOCUMENT_BYTES}-byte indexing limit: {resolved}")
+    path_key = relative_path or resolved.as_posix()
+    existing = rag_database.document_metadata(path_key)
+    if not force and existing and (
+        existing["modified_ns"] == stat.st_mtime_ns and existing["size_bytes"] == stat.st_size
+    ):
+        return {"path": path_key, "status": "unchanged", "chunks": 0}
+
+    chunks = _chunk_text(_document_text(resolved))
+    embeddings = _embed(chunks)
+    rag_database.replace_document(
+        path_key,
+        stat.st_mtime_ns,
+        stat.st_size,
+        datetime.now(timezone.utc).isoformat(),
+        zip(chunks, embeddings),
+    )
+    return {"path": path_key, "status": "indexed", "chunks": len(chunks)}
+
+
+def index_text(title: str, text: str) -> dict:
+    """Embed and store pasted text under a manual:<title> key, replacing any entry with that title."""
+    clean_title = " ".join(str(title or "").split())
+    if not clean_title:
+        raise ValueError("A title is required.")
+    chunks = _chunk_text(str(text or ""))
+    if not chunks:
+        raise ValueError("Text is required.")
+    path_key = f"{MANUAL_PREFIX}{clean_title}"
+    embeddings = _embed(chunks)
+    rag_database.initialize()
+    rag_database.replace_document(
+        path_key,
+        0,
+        len(text.encode("utf-8")),
+        datetime.now(timezone.utc).isoformat(),
+        zip(chunks, embeddings),
+    )
+    return {"path": path_key, "status": "indexed", "chunks": len(chunks)}
+
+
+def knowledge_base_folder() -> Path:
+    """The currently configured Knowledge Base folder."""
+    return rag_config.knowledge_base_path()
+
+
+def _purge_previous_folder(root: Path) -> list[str]:
+    """Remove documents indexed from a different folder than the current one."""
+    root_key = root.as_posix()
+    previous = rag_database.get_meta(ROOT_META_KEY)
+    removed: list[str] = []
+    if previous != root_key:
+        if previous:
+            removed += rag_database.delete_documents_under(previous, set())
+        removed += rag_database.delete_documents_under(LEGACY_PREFIX, set())
+        rag_database.set_meta(ROOT_META_KEY, root_key)
+    return removed
+
+
+def scan_knowledge_base(force: bool = False) -> dict:
+    """Index supported files in the configured folder and remove stale records."""
+    with _SCAN_LOCK:
+        return _scan_knowledge_base(force)
+
+
+def _scan_knowledge_base(force: bool) -> dict:
+    root = knowledge_base_folder()
+    if root == rag_config.DEFAULT_KNOWLEDGE_BASE:
+        root.mkdir(parents=True, exist_ok=True)
+    if not root.is_dir():
+        raise FileNotFoundError(f"The RAG folder does not exist: {root}")
+    rag_database.initialize()
+    removed = _purge_previous_folder(root)
+    files = []
+    for path in root.rglob("*"):
+        if not path.is_file() or path.is_symlink() or any(part.startswith(".") for part in path.relative_to(root).parts):
+            continue
+        if path.suffix.lower() not in TEXT_EXTENSIONS | DOCLING_EXTENSIONS:
+            continue
+        files.append(path)
+
+    results = []
+    for path in files:
+        key = path.resolve().as_posix()
+        try:
+            results.append(index_file(path, key, force=force))
+        except Exception as exc:
+            LOGGER.exception("Could not index knowledge-base document %s", path)
+            results.append({"path": key, "status": "error", "error": str(exc)})
+
+    keep = {path.resolve().as_posix() for path in files}
+    stale = rag_database.delete_documents_under(root.as_posix(), keep)
+    return {
+        "folder": str(root),
+        "discovered": len(files),
+        "indexed": sum(result["status"] == "indexed" for result in results),
+        "unchanged": sum(result["status"] == "unchanged" for result in results),
+        "errors": [result for result in results if result["status"] == "error"],
+        "removed": removed + stale,
+    }
+
+
+def _scanner_loop() -> None:
+    while not _STOP_SCANNER.is_set():
+        try:
+            result = scan_knowledge_base()
+            if result["errors"]:
+                LOGGER.warning("Knowledge-base scan completed with %d errors.", len(result["errors"]))
+        except Exception:
+            LOGGER.exception("Knowledge-base scan failed.")
+        _STOP_SCANNER.wait(SCAN_INTERVAL_SECONDS)
+
+
+def start_scanner() -> bool:
+    """Start one background scan loop; performs a scan immediately."""
+    global _SCANNER_THREAD
+    with _SCANNER_LOCK:
+        if _SCANNER_THREAD and _SCANNER_THREAD.is_alive():
+            return False
+        _STOP_SCANNER.clear()
+        _SCANNER_THREAD = threading.Thread(
+            target=_scanner_loop,
+            name="agent-memory-document-indexer",
+            daemon=True,
+        )
+        _SCANNER_THREAD.start()
+    return True
+
+
+def stop_scanner() -> None:
+    _STOP_SCANNER.set()
+
+
+def refresh_index(force: bool = False) -> dict:
+    """Synchronously scan the knowledge-base folder and return indexing results."""
+    return scan_knowledge_base(force=force)
+
+`
+
+### agentMemory/interface.py
+
+`python
+"""The public doorway to agent scratchpad memory and the document knowledge base."""
+
+import math
+from pathlib import Path
+from typing import Any
+
+import ollama
+
+from agentMemory import indexer, rag_config, rag_database, scratchpad
+
+
+def store_read(path: str, content: str, request: str = "") -> dict[str, str]:
+    """Save a file read in the shared agent scratchpad."""
+    return scratchpad.store_read(path, content, request)
+
+
+def store_map(tree: dict[str, Any], requested_path: str = "") -> dict[str, str]:
+    """Save the latest file structure map in the shared agent scratchpad."""
+    return scratchpad.store_map(tree, requested_path)
+
+
+def read_memory(memory_type: str = "all") -> dict[str, Any]:
+    """Read the latest file read and/or file structure map."""
+    return scratchpad.read_memory(memory_type)
+
+
+def list_documents() -> list[dict[str, Any]]:
+    """List documents currently indexed in the SQLite knowledge base."""
+    rag_database.initialize()
+    return rag_database.list_documents()
+
+
+def get_document(path: str) -> dict[str, Any]:
+    """Read the indexed chunks for one document."""
+    rag_database.initialize()
+    metadata = next((item for item in rag_database.list_documents() if item["path"] == path), None)
+    if metadata is None:
+        raise FileNotFoundError(f"Knowledge-base document is not indexed: {path}")
+    metadata["chunks_data"] = rag_database.get_document_chunks(path)
+    return metadata
+
+
+def index_document(relative_path: str, force: bool = False) -> dict:
+    """Index one file inside the Knowledge Base folder."""
+    root = indexer.knowledge_base_folder()
+    requested_path = root / relative_path
+    if requested_path.is_symlink():
+        raise ValueError("Symbolic links cannot be indexed.")
+    candidate = requested_path.resolve()
+    try:
+        candidate.relative_to(root.resolve())
+    except ValueError:
+        raise ValueError("Document path must stay inside the Knowledge Base folder.") from None
+    return indexer.index_file(candidate, force=force)
+
+
+def get_rag_status() -> dict[str, Any]:
+    """Describe the configured folder and what is currently indexed."""
+    rag_database.initialize()
+    folder = indexer.knowledge_base_folder()
+    documents = rag_database.list_documents()
+    return {
+        "path": str(folder),
+        "configured_path": rag_config.configured_path(),
+        "default_path": str(rag_config.DEFAULT_KNOWLEDGE_BASE),
+        "exists": folder.is_dir(),
+        "documents": len(documents),
+        "chunks": sum(item["chunks"] for item in documents),
+    }
+
+
+def get_rag_overview() -> dict[str, Any]:
+    """Status plus every indexed document with its type, for the Chat Console dialog."""
+    status = get_rag_status()
+    documents = []
+    types: dict[str, int] = {}
+    for item in rag_database.list_documents():
+        manual = item["path"].startswith(indexer.MANUAL_PREFIX)
+        kind = "manual" if manual else (Path(item["path"]).suffix.lower().lstrip(".") or "none")
+        types[kind] = types.get(kind, 0) + 1
+        documents.append({**item, "type": kind, "name": item["path"] if manual else Path(item["path"]).name})
+    return {**status, "types": types, "files": documents}
+
+
+def add_text_document(title: str, text: str) -> dict:
+    """Embed pasted text into the vector database."""
+    with indexer._SCAN_LOCK:
+        return indexer.index_text(title, text)
+
+
+def set_rag_folder(path: str) -> dict[str, Any]:
+    """Point the Knowledge Base at a folder; empty restores the default."""
+    rag_config.set_knowledge_base_path(path)
+    return get_rag_status()
+
+
+def clear_rag_index() -> dict[str, Any]:
+    """Delete all indexed RAG data; source files are untouched."""
+    with indexer._SCAN_LOCK:
+        rag_database.initialize()
+        removed = rag_database.clear_all()
+    return {"removed": removed, **get_rag_status()}
+
+
+def delete_document(path: str) -> dict[str, Any]:
+    """Remove one indexed document and its chunks."""
+    rag_database.initialize()
+    if not rag_database.delete_document(path):
+        raise FileNotFoundError(f"Knowledge-base document is not indexed: {path}")
+    return {"deleted": True, "path": path}
+
+
+def refresh_knowledge_base(force: bool = False) -> dict:
+    """Scan Knowledge Base and index additions or changes."""
+    return indexer.refresh_index(force=force)
+
+
+def _cosine_similarity(left: list[float], right: list[float]) -> float:
+    if len(left) != len(right):
+        raise RuntimeError("Query and document embedding dimensions do not match.")
+    left_norm = math.sqrt(sum(value * value for value in left))
+    right_norm = math.sqrt(sum(value * value for value in right))
+    if not left_norm or not right_norm:
+        return 0.0
+    return sum(a * b for a, b in zip(left, right)) / (left_norm * right_norm)
+
+
+def search_knowledge_base(
+    query: str,
+    top_k: int = 5,
+    relative_path: str = "",
+) -> dict[str, Any]:
+    """Return semantically relevant document passages and their source paths."""
+    clean_query = str(query or "").strip()
+    if not clean_query:
+        raise ValueError("A search query is required.")
+    if isinstance(top_k, bool) or not 1 <= int(top_k) <= 20:
+        raise ValueError("top_k must be between 1 and 20.")
+
+    rag_database.initialize()
+    selected_path = ""
+    if relative_path.strip():
+        from editor.editor_operations import resolve_project_path
+
+        source_path = resolve_project_path(relative_path)
+        if not source_path.is_file():
+            raise FileNotFoundError(f"Knowledge-base document not found: {source_path}")
+        selected_path = source_path.resolve().as_posix()
+        indexer.index_file(source_path, selected_path)
+
+    chunks = rag_database.list_chunks()
+    if selected_path:
+        chunks = [chunk for chunk in chunks if chunk["path"] == selected_path]
+    if not chunks:
+        return {
+            "query": clean_query,
+            "results": [],
+            "message": (
+                "No documents are indexed yet. Place supported files in "
+                f"'{indexer.knowledge_base_folder()}' and wait for the automatic scan."
+            ),
+        }
+
+    try:
+        response = ollama.embed(model=indexer.EMBEDDING_MODEL, input=clean_query)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Could not create a query embedding with '{indexer.EMBEDDING_MODEL}': {exc}"
+        ) from exc
+    vectors = response.get("embeddings") if isinstance(response, dict) else response.embeddings
+    if not vectors:
+        raise RuntimeError(f"Embedding model '{indexer.EMBEDDING_MODEL}' returned no query vector.")
+    query_vector = [float(value) for value in vectors[0]]
+
+    ranked = [
+        {
+            "path": chunk["path"],
+            "chunk_index": chunk["chunk_index"],
+            "score": _cosine_similarity(query_vector, chunk["embedding"]),
+            "content": chunk["content"],
+        }
+        for chunk in chunks
+    ]
+    ranked.sort(key=lambda item: item["score"], reverse=True)
+    return {
+        "query": clean_query,
+        "model": indexer.EMBEDDING_MODEL,
+        "results": ranked[:int(top_k)],
+    }
+
+
+def start_document_scanner() -> bool:
+    """Start automatic indexing of the workspace Knowledge Base folder."""
+    return indexer.start_scanner()
+
+`
+
+### agentMemory/rag_config.py
+
+`python
+"""Configurable location of the RAG Knowledge Base folder."""
+
+import json
+import os
+import tempfile
+from pathlib import Path
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
+CONFIG_PATH = Path(__file__).resolve().parent / "rag_config.json"
+DEFAULT_KNOWLEDGE_BASE = REPOSITORY_ROOT / "workspace" / "Knowledge Base"
+
+
+def _read_config() -> dict:
+    if not CONFIG_PATH.is_file():
+        return {}
+    try:
+        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def configured_path() -> str:
+    """The raw configured value, or an empty string when the default is used."""
+    return str(_read_config().get("knowledge_base_path") or "").strip()
+
+
+def knowledge_base_path() -> Path:
+    """The folder to index; falls back to the workspace default when unset."""
+    raw = configured_path()
+    if not raw:
+        return DEFAULT_KNOWLEDGE_BASE
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = REPOSITORY_ROOT / path
+    return path.resolve()
+
+
+def set_knowledge_base_path(raw_path: str) -> Path:
+    """Validate and persist a folder path. An empty value restores the default."""
+    raw = str(raw_path or "").strip().strip('"')
+    if not raw:
+        _write_config({})
+        return DEFAULT_KNOWLEDGE_BASE
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        raise ValueError("The RAG folder path must be absolute.")
+    path = path.resolve()
+    if not path.is_dir():
+        raise ValueError(f"The RAG folder does not exist or is not a directory: {path}")
+    _write_config({"knowledge_base_path": str(path)})
+    return path
+
+
+def _write_config(data: dict) -> None:
+    descriptor, temp_name = tempfile.mkstemp(dir=CONFIG_PATH.parent, suffix=".tmp")
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2)
+            handle.write("\n")
+        os.replace(temp_name, CONFIG_PATH)
+    except Exception:
+        Path(temp_name).unlink(missing_ok=True)
+        raise
+
+`
+
+### agentMemory/rag_database.py
+
+`python
+"""SQLite CRUD operations for indexed document chunks and embedding vectors."""
+
+import json
+import sqlite3
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Iterable, Iterator
+
+
+DATABASE_PATH = Path(__file__).resolve().parent / "data" / "knowledge.sqlite3"
+
+
+@contextmanager
+def connect() -> Iterator[sqlite3.Connection]:
+    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(DATABASE_PATH, timeout=30)
+    try:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA journal_mode = WAL")
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def initialize() -> None:
+    with connect() as connection:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS documents (
+                path TEXT PRIMARY KEY,
+                modified_ns INTEGER NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                indexed_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS chunks (
+                path TEXT NOT NULL REFERENCES documents(path) ON DELETE CASCADE,
+                chunk_index INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                embedding TEXT NOT NULL,
+                PRIMARY KEY (path, chunk_index)
+            );
+            CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path);
+            CREATE TABLE IF NOT EXISTS meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            """
+        )
+
+
+def replace_document(
+    path: str,
+    modified_ns: int,
+    size_bytes: int,
+    indexed_at: str,
+    chunks: Iterable[tuple[str, list[float]]],
+) -> None:
+    """Atomically replace one indexed document and all of its chunks."""
+    with connect() as connection:
+        connection.execute("DELETE FROM documents WHERE path = ?", (path,))
+        connection.execute(
+            "INSERT INTO documents(path, modified_ns, size_bytes, indexed_at) VALUES (?, ?, ?, ?)",
+            (path, modified_ns, size_bytes, indexed_at),
+        )
+        connection.executemany(
+            "INSERT INTO chunks(path, chunk_index, content, embedding) VALUES (?, ?, ?, ?)",
+            [
+                (path, index, content, json.dumps(vector, separators=(",", ":")))
+                for index, (content, vector) in enumerate(chunks)
+            ],
+        )
+
+
+def document_metadata(path: str) -> dict[str, Any] | None:
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT path, modified_ns, size_bytes, indexed_at FROM documents WHERE path = ?",
+            (path,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_documents() -> list[dict[str, Any]]:
+    with connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT d.path, d.modified_ns, d.size_bytes, d.indexed_at, COUNT(c.chunk_index) AS chunks
+            FROM documents d LEFT JOIN chunks c ON c.path = d.path
+            GROUP BY d.path
+            ORDER BY d.path COLLATE NOCASE
+            """
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def delete_document(path: str) -> bool:
+    with connect() as connection:
+        cursor = connection.execute("DELETE FROM documents WHERE path = ?", (path,))
+    return cursor.rowcount > 0
+
+
+def delete_documents_under(prefix: str, keep_paths: set[str]) -> list[str]:
+    """Remove stale documents below a normalized source directory."""
+    normalized_prefix = prefix.rstrip("/\\").replace("\\", "/") + "/"
+    normalized_keep = {path.replace("\\", "/") for path in keep_paths}
+    with connect() as connection:
+        rows = connection.execute("SELECT path FROM documents").fetchall()
+        stale = [
+            row["path"] for row in rows
+            if row["path"].replace("\\", "/").startswith(normalized_prefix)
+            and row["path"].replace("\\", "/") not in normalized_keep
+        ]
+        connection.executemany("DELETE FROM documents WHERE path = ?", [(path,) for path in stale])
+    return stale
+
+
+def clear_all() -> int:
+    """Delete every indexed document and chunk; returns the document count removed."""
+    with connect() as connection:
+        count = connection.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+        connection.execute("DELETE FROM chunks")
+        connection.execute("DELETE FROM documents")
+    return count
+
+
+def get_meta(key: str) -> str | None:
+    with connect() as connection:
+        row = connection.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def set_meta(key: str, value: str) -> None:
+    with connect() as connection:
+        connection.execute(
+            "INSERT INTO meta(key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
+
+def list_chunks() -> list[dict[str, Any]]:
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT path, chunk_index, content, embedding FROM chunks"
+        ).fetchall()
+    result = []
+    for row in rows:
+        result.append({
+            "path": row["path"],
+            "chunk_index": row["chunk_index"],
+            "content": row["content"],
+            "embedding": json.loads(row["embedding"]),
+        })
+    return result
+
+
+def get_document_chunks(path: str) -> list[dict[str, Any]]:
+    with connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT path, chunk_index, content, embedding
+            FROM chunks WHERE path = ? ORDER BY chunk_index
+            """,
+            (path,),
+        ).fetchall()
+    return [
+        {
+            "path": row["path"],
+            "chunk_index": row["chunk_index"],
+            "content": row["content"],
+            "embedding": json.loads(row["embedding"]),
+        }
+        for row in rows
+    ]
+
+`
+
+### agentMemory/scratchpad.py
+
+`python
+"""Atomic, single-file storage for the latest agent memory snapshots."""
+
+import json
+import tempfile
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+DATA_DIR = Path(__file__).resolve().parent / "data"
+SCRATCHPAD_PATH = DATA_DIR / "scratchpad.json"
+MAX_READ_HISTORY = 20
+_LOCK = threading.RLock()
+
+
+def _read() -> dict[str, Any]:
+    if not SCRATCHPAD_PATH.is_file():
+        return {}
+    try:
+        data = json.loads(SCRATCHPAD_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Could not read agent scratchpad '{SCRATCHPAD_PATH}': {exc}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Agent scratchpad must contain a JSON object: {SCRATCHPAD_PATH}")
+    return data
+
+
+def _write(data: dict[str, Any]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=DATA_DIR,
+            prefix=".scratchpad.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            json.dump(data, temp_file, ensure_ascii=False, indent=2)
+            temp_file.write("\n")
+        temp_path.replace(SCRATCHPAD_PATH)
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink()
+
+
+def store_read(path: str, content: str, request: str = "") -> dict[str, Any]:
+    """Store the latest read and retain a bounded history of prior reads."""
+    entry = {
+        "path": path,
+        "request": request,
+        "content": content,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    with _LOCK:
+        data = _read()
+        history = data.get("read_history")
+        if not isinstance(history, list):
+            history = []
+            previous = data.get("latest_read")
+            if isinstance(previous, dict):
+                history.append(previous)
+        history.append(entry)
+        data["read_history"] = history[-MAX_READ_HISTORY:]
+        data["latest_read"] = entry
+        _write(data)
+    return {"path": "agentMemory/data/scratchpad.json", "updated_at": entry["updated_at"]}
+
+
+def store_map(tree: dict[str, Any], requested_path: str = "") -> dict[str, Any]:
+    """Store the latest workspace tree snapshot."""
+    entry = {
+        "requested_path": requested_path,
+        "tree": tree,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    with _LOCK:
+        data = _read()
+        data["latest_map"] = entry
+        _write(data)
+    return {"path": "agentMemory/data/scratchpad.json", "updated_at": entry["updated_at"]}
+
+
+def read_memory(memory_type: str = "all") -> dict[str, Any]:
+    """Read all, the latest file read, or the latest map snapshot."""
+    if memory_type not in {"all", "latest_read", "latest_map"}:
+        raise ValueError("memory_type must be 'all', 'latest_read', or 'latest_map'.")
+    with _LOCK:
+        data = _read()
+    if memory_type == "all":
+        return data
+    return {memory_type: data[memory_type]} if memory_type in data else {}
+
+
+def clear_memory() -> dict[str, Any]:
+    """Clear saved reads and maps while retaining the scratchpad file."""
+    with _LOCK:
+        _write({})
+    return {"cleared": True, "path": "agentMemory/data/scratchpad.json"}
+
+`
 
 ### codebuilder/__init__.py
 
@@ -2550,14 +3579,6 @@ def calculator(expression: str) -> str:
 
 
 @tool(provider="core_engine")
-def docling_parse(path: str, output_format: str = "markdown") -> str:
-    """Parse PDF, DOCX, PPTX, or HTML files into structured Markdown/JSON via Docling."""
-    return langgraph_tools.docling_parse_tool.invoke(
-        {"relative_path": path, "output_format": output_format}
-    )
-
-
-@tool(provider="core_engine")
 def rag_agent_tool(query: str, relative_path: str = "", top_k: int = 3) -> str:
     """Query workspace knowledge base or parse a document via Docling for relevant passages."""
     return langgraph_tools.rag_agent_tool.invoke(
@@ -3054,7 +4075,8 @@ def api_models():
 """LangGraph & Docling Tool Suite for Novous Agent Factory.
 
 Provides safe file CRUD, workspace directory mapping, AST docstring extraction,
-Docling document conversion, workspace search, and grounded RAG capabilities.
+Docling document extraction through the registered read tool, workspace search,
+and grounded RAG capabilities.
 """
 
 import ast
@@ -3073,24 +4095,6 @@ from editor.editor_operations import (
     resolve_project_path,
     PROJECT_ROOT,
 )
-
-_docling_converter = None
-
-
-def _get_docling_converter():
-    """Lazy initialization of Docling converter."""
-    global _docling_converter
-    if _docling_converter is None:
-        try:
-            from docling.document_converter import DocumentConverter
-
-            _docling_converter = DocumentConverter()
-        except ImportError as exc:
-            raise RuntimeError(
-                "Docling is not installed. Run 'pip install -r requirements.txt' to enable Docling features."
-            ) from exc
-    return _docling_converter
-
 
 # --- 1. Read File Tool ---
 @tool
@@ -3215,61 +4219,19 @@ def search_workspace_tool(query: str, extension: str = ".py") -> str:
         return f"Error searching workspace: {exc}"
 
 
-# --- 8. Docling Document Converter Tool ---
-@tool
-def docling_parse_tool(
-    relative_path: str, output_format: str = "markdown"
-) -> str:
-    """Parse PDF, DOCX, PPTX, HTML, or Markdown files into clean Markdown or JSON using Docling."""
-    try:
-        abs_path = resolve_project_path(relative_path)
-        if not abs_path.is_file():
-            return f"Error: File '{relative_path}' not found."
-
-        converter = _get_docling_converter()
-        result = converter.convert(str(abs_path))
-
-        if output_format.lower() == "json":
-            return json.dumps(result.document.export_to_dict(), indent=2)
-        return result.document.export_to_markdown()
-    except Exception as exc:
-        return f"Error parsing document '{relative_path}' with Docling: {exc}"
-
-
 # --- 9. Docling-Enhanced RAG Agent Tool ---
 @tool
 def rag_agent_tool(
     query: str, relative_path: Optional[str] = None, top_k: int = 3
 ) -> str:
-    """Query workspace knowledge base or parse a specific document via Docling for relevant passages."""
-    try:
-        passages = []
+    """Search indexed Knowledge Base documents using semantic Ollama embeddings."""
+    from agentMemory import interface as agent_memory
 
-        if relative_path and relative_path.strip():
-            abs_path = resolve_project_path(relative_path)
-            converter = _get_docling_converter()
-            result = converter.convert(str(abs_path))
-            parsed_md = result.document.export_to_markdown()
-
-            paragraphs = [
-                p.strip() for p in parsed_md.split("\n\n") if p.strip()
-            ]
-            keywords = [w.lower() for w in query.split() if len(w) > 2]
-
-            matches = [
-                p for p in paragraphs if any(kw in p.lower() for kw in keywords)
-            ]
-            passages.extend(matches[:top_k])
-
-        if not passages:
-            passages = [
-                f"[Passage 1] Relevant knowledge base context retrieved for query '{query}'.",
-                f"[Passage 2] Additional background details supporting task execution.",
-            ]
-
-        return "\n\n---\n\n".join(passages)
-    except Exception as exc:
-        return f"Error executing RAG search for '{query}': {exc}"
+    return json.dumps(
+        agent_memory.search_knowledge_base(query, top_k, relative_path or ""),
+        ensure_ascii=False,
+        indent=2,
+    )
 
 `
 
@@ -3354,6 +4316,12 @@ class Agent:
             stats["successes"] += 1
             stats["success_rate"] = stats["successes"] / stats["calls"]
             event = {"tool": name, "args": args, "status": "success", "origin": origin}
+            result_text = result if isinstance(result, str) else json.dumps(
+                result, ensure_ascii=False, default=str
+            )
+            event["result"] = result_text[:3000]
+            if len(result_text) > 3000:
+                event["result_truncated"] = True
             if getattr(tool_func, "display_output", False) and isinstance(result, str):
                 event["display"] = result
             self.tool_events.append(event)
@@ -3508,12 +4476,14 @@ PROVIDER_BINDINGS = {
     "workspace": "workspace.interface",
     "test_environment": "test_environment.interface",
     "codebuilder": "codebuilder.interface",
+    "agentMemory": "agentMemory.interface",
     "tools": "tools.interface",
     "tools.read_tool": "tools.read_tool",
     "tools.write_tool": "tools.write_tool",
     "tools.delete_file_tool": "tools.delete_file_tool",
     "tools.editor_tool": "tools.editor_tool",
     "tools.map_files_tool": "tools.map_files_tool",
+    "tools.agent_memory_tool": "tools.agent_memory_tool",
     "tools.promoted_tools": "tools.promoted_tools",
     "core_engine.core_tools": "core_engine.core_tools",
 }
@@ -4255,19 +5225,7 @@ def workspace_root() -> Path:
     return active_root_path()
 
 
-def select_root(path: str) -> dict:
-    roots = configured_roots()
-    selected = next(
-        (root for root in roots if os.path.normcase(root["path"]) == os.path.normcase(path)),
-        None,
-    )
-    if selected is None:
-        raise ValueError("Choose a configured file-manager root.")
-
-    config = _read_config()
-    config["file_manager_roots"] = roots
-    config["active_file_manager_root"] = selected["path"]
-    config["file_manager_root"] = selected["path"]
+def _write_config(config: dict) -> None:
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     temp_path = None
     try:
@@ -4287,7 +5245,100 @@ def select_root(path: str) -> dict:
     finally:
         if temp_path is not None and temp_path.exists():
             temp_path.unlink()
+
+
+def select_root(path: str) -> dict:
+    roots = configured_roots()
+    selected = next(
+        (root for root in roots if os.path.normcase(root["path"]) == os.path.normcase(path)),
+        None,
+    )
+    if selected is None:
+        raise ValueError("Choose a configured file-manager root.")
+
+    config = _read_config()
+    config["file_manager_roots"] = roots
+    config["active_file_manager_root"] = selected["path"]
+    config["file_manager_root"] = selected["path"]
+    _write_config(config)
     return {"roots": roots, "active_path": selected["path"]}
+
+
+def manage_roots(action: str, paths: list[str]) -> dict:
+    """Add or remove configured file-manager directories."""
+    if action not in {"add", "remove"}:
+        raise ValueError("Action must be 'add' or 'remove'.")
+    if not paths:
+        raise ValueError("Provide at least one directory path.")
+
+    roots = configured_roots()
+    config = _read_config()
+    current_active = str(
+        config.get("active_file_manager_root", config.get("file_manager_root", roots[0]["path"]))
+    )
+    normalized_paths = []
+    for raw_path in paths:
+        value = os.path.expandvars(str(raw_path)).strip()
+        if not value:
+            raise ValueError("Directory paths cannot be empty.")
+        candidate = Path(value).expanduser()
+        if not candidate.is_absolute():
+            raise ValueError(f"Directory path must be absolute: {value}")
+        resolved = candidate.resolve()
+        if action == "add" and not resolved.is_dir():
+            raise ValueError(f"Directory does not exist: {resolved}")
+        normalized_paths.append(str(resolved))
+
+    path_keys = {os.path.normcase(path) for path in normalized_paths}
+    added = []
+    removed = []
+    unchanged = []
+    if action == "add":
+        existing_paths = {os.path.normcase(root["path"]) for root in roots}
+        existing_names = {root["name"].casefold() for root in roots}
+        for path in normalized_paths:
+            path_key = os.path.normcase(path)
+            if path_key in existing_paths:
+                unchanged.append(path)
+                continue
+            folder_name = Path(path).name or path
+            name = folder_name
+            suffix = 2
+            while name.casefold() in existing_names:
+                name = f"{folder_name} ({suffix})"
+                suffix += 1
+            roots.append({"name": name, "path": path})
+            existing_paths.add(path_key)
+            existing_names.add(name.casefold())
+            added.append(path)
+    else:
+        configured_paths = {os.path.normcase(root["path"]) for root in roots}
+        removed = [root["path"] for root in roots if os.path.normcase(root["path"]) in path_keys]
+        unchanged = [
+            path for path in normalized_paths
+            if os.path.normcase(path) not in configured_paths
+        ]
+        roots = [root for root in roots if os.path.normcase(root["path"]) not in path_keys]
+        if not removed:
+            raise ValueError("None of the provided paths are configured file-manager roots.")
+        if not roots:
+            raise ValueError("At least one file-manager root must remain configured.")
+
+    active_path = next(
+        (root["path"] for root in roots if os.path.normcase(root["path"]) == os.path.normcase(current_active)),
+        roots[0]["path"],
+    )
+    config["file_manager_roots"] = roots
+    config["active_file_manager_root"] = active_path
+    config["file_manager_root"] = active_path
+    _write_config(config)
+    return {
+        "roots": roots,
+        "active_path": active_path,
+        "added": added,
+        "removed": removed,
+        "unchanged": unchanged,
+    }
 
 
 def resolve_workspace_path(relative_path: str = "") -> Path:
@@ -4501,6 +5552,7 @@ from file_manager import backend
 from file_manager.schemas import (
     CreateRequest,
     FileContentRequest,
+    ManageRootsRequest,
     MoveRequest,
     PathRequest,
     SelectRootRequest,
@@ -4525,6 +5577,14 @@ def api_file_manager_roots():
 def api_select_file_manager_root(request: SelectRootRequest):
     try:
         return backend.select_root(request.path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/file-manager/roots/manage")
+def api_manage_file_manager_roots(request: ManageRootsRequest):
+    try:
+        return backend.manage_roots(request.action, request.paths)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -4823,6 +5883,8 @@ async def elfinder_connector(request: Request):
 `python
 """Request and response schemas for workspace file operations."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -4845,6 +5907,11 @@ class MoveRequest(BaseModel):
 
 class SelectRootRequest(BaseModel):
     path: str = Field(..., min_length=1)
+
+
+class ManageRootsRequest(BaseModel):
+    action: Literal["add", "remove"]
+    paths: list[str] = Field(..., min_length=1)
 
 
 class FileEntry(BaseModel):
@@ -5018,6 +6085,58 @@ def test_select_root_only_accepts_configured_directories(tmp_path, monkeypatch):
         json={"path": str(alternate)},
     ).json()["active_path"] == str(alternate)
     assert client.get("/api/file-manager/tree").json()["name"] == "alternate"
+
+
+def test_manage_file_manager_roots_adds_and_removes_paths(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    root.mkdir()
+    added_root = tmp_path / "added"
+    added_root.mkdir()
+    config = tmp_path / "allowed_paths.json"
+    original_config = {
+        "map_roots": ["keep-map-root"],
+        "file_manager_roots": [{"name": "Root", "path": str(root)}],
+        "active_file_manager_root": str(root),
+        "sandbox_roots": ["keep-sandbox-root"],
+    }
+    config.write_text(json.dumps(original_config), encoding="utf-8")
+    monkeypatch.setattr(backend, "CONFIG_PATH", config)
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+
+    added = client.post(
+        "/api/file-manager/roots/manage",
+        json={"action": "add", "paths": [str(added_root), str(root)]},
+    )
+    assert added.status_code == 200
+    assert added.json()["added"] == [str(added_root)]
+    assert added.json()["unchanged"] == [str(root)]
+    saved_config = json.loads(config.read_text(encoding="utf-8"))
+    assert saved_config["map_roots"] == original_config["map_roots"]
+    assert saved_config["sandbox_roots"] == original_config["sandbox_roots"]
+    assert len(saved_config["file_manager_roots"]) == 2
+
+    removed = client.post(
+        "/api/file-manager/roots/manage",
+        json={"action": "remove", "paths": [str(root)]},
+    )
+    assert removed.status_code == 200
+    assert removed.json()["active_path"] == str(added_root)
+    assert removed.json()["removed"] == [str(root)]
+
+    last_root = client.post(
+        "/api/file-manager/roots/manage",
+        json={"action": "remove", "paths": [str(added_root)]},
+    )
+    assert last_root.status_code == 400
+    assert backend.configured_roots() == [{"name": "added", "path": str(added_root)}]
+
+    invalid_path = client.post(
+        "/api/file-manager/roots/manage",
+        json={"action": "add", "paths": [str(tmp_path / "missing")]},
+    )
+    assert invalid_path.status_code == 400
 
 
 def test_elfinder_open_and_put_use_the_shared_workspace_service(tmp_path, monkeypatch):
@@ -5264,7 +6383,7 @@ test_file_manager.py
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Novous Agent Factory</title>
+  <title>Novous V1</title>
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/test_panel.css">
   <link rel="stylesheet" href="/static/css/codebuilder.css">
@@ -5275,7 +6394,7 @@ test_file_manager.py
     <header class="navbar">
       <div class="logo">
         <span class="logo-icon">⚡</span>
-        <span class="logo-text">NOVOUS <strong>AGENT FACTORY</strong></span>
+        <h1 class="logo-text" data-about-managed="true" style="font-size: inherit; font-weight: inherit; line-height: inherit; margin: 0;">Novous</h1>
       </div>
       <nav class="nav-links">
         <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
@@ -6607,6 +7726,15 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .dash-agent-card { grid-column: 1; grid-row: 1; }
 .dash-squad-card { grid-column: 1; grid-row: 2; }
 .dash-health-card { grid-column: 1; grid-row: 3; }
+.root-management { margin-top: 0.85rem; border-top: 1px solid var(--border-color); padding-top: 0.75rem; }
+.root-management h4 { margin: 0 0 0.35rem; font-size: 0.9rem; }
+.root-management > p { margin: 0 0 0.5rem; }
+.root-path-input { width: 100%; min-height: 4.5rem; margin: 0.3rem 0; resize: vertical; font-family: Consolas, monospace; font-size: 0.78rem; }
+.root-management-actions { display: flex; gap: 0.4rem; }
+#dash-root-status { min-height: 1.2em; margin: 0.4rem 0; }
+.root-path-list { display: grid; gap: 0.35rem; margin: 0; padding: 0; list-style: none; }
+.root-path-list li { display: grid; gap: 0.1rem; min-width: 0; font-size: 0.75rem; }
+.root-path-list code { overflow-wrap: anywhere; color: var(--text-muted); }
 .dash-tree-card { grid-column: 2; grid-row: 1 / span 3; min-height: 0; }
 .dash-tree-card .tree-pane { height: min(62vh, 560px); display: flex; flex-direction: column; }
 .dash-tree-card .tree-toolbar { padding: 0.4rem 0; }
@@ -6731,6 +7859,8 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
   min-height: 0;
 }
 
+.chat-font-controls { display: flex; align-items: center; justify-content: flex-end; gap: 0.35rem; padding-bottom: 0.55rem; }
+.chat-font-controls .btn { min-width: 36px; }
 .messages-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; padding-bottom: 0.75rem; }
 
 .message {
@@ -6746,6 +7876,9 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
   font-size: 0.92rem;
   line-height: 1.5;
 }
+.chat-main .message,
+.chat-main .tool-badge { font-size: var(--chat-console-font-size, 14px); }
+.chat-main #chat-input { font-size: var(--chat-console-font-size, 14px); }
 .msg-copy-btn {
   align-self: flex-end;
   font-size: 0.72rem;
@@ -6764,6 +7897,38 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .chat-input-bar { display: flex; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color); }
 .chat-input-bar input { flex: 1; }
 .chat-quick-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; padding-top: 0.6rem; flex-shrink: 0; }
+.scratchpad-dialog {
+  width: min(900px, calc(100vw - 2rem));
+  max-height: min(85vh, 900px);
+  padding: 1rem;
+  color: var(--text-main);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+}
+.scratchpad-dialog::backdrop { background: rgba(0, 0, 0, 0.7); }
+.scratchpad-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.scratchpad-dialog-head h2 { margin: 0; font-size: 1.1rem; }
+.scratchpad-dialog-head p { margin: 0.3rem 0 0.8rem; }
+.scratchpad-content { display: grid; gap: 1rem; max-height: calc(85vh - 90px); overflow: auto; }
+.scratchpad-section { min-width: 0; }
+.scratchpad-section h3 { margin: 0 0 0.5rem; font-size: 0.92rem; }
+.scratchpad-read { padding: 0.65rem; margin-bottom: 0.5rem; background: var(--bg-elev); border: 1px solid var(--border-color); border-radius: 6px; }
+.scratchpad-read summary { cursor: pointer; font-weight: 600; }
+.scratchpad-read pre,
+.scratchpad-section > pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 0.7rem; background: var(--bg-dark); border-radius: 5px; font: 0.8rem/1.5 Consolas, 'Cascadia Mono', monospace; }
+.scratchpad-read p { margin: 0.5rem 0; }
+.scratchpad-tree { max-height: 360px; overflow: auto; padding: 0.65rem; background: var(--bg-dark); border: 1px solid var(--border-color); border-radius: 5px; }
+.scratchpad-tree-list { list-style: none; padding-left: 1.15rem; margin: 0.2rem 0; }
+.scratchpad-tree > details > .scratchpad-tree-list { padding-left: 0; }
+.scratchpad-tree details > summary { cursor: pointer; padding: 0.15rem 0; }
+.scratchpad-file-link { padding: 0.15rem 0; color: var(--primary); background: transparent; border: 0; cursor: pointer; text-align: left; font: inherit; }
+.scratchpad-file-link:hover { color: var(--text-main); text-decoration: underline; }
+.rag-file-list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow: auto; }
+.rag-file-list li { display: flex; align-items: center; gap: 0.75rem; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border-color); }
+.rag-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rag-add-form { display: grid; gap: 0.5rem; margin-top: 1rem; padding-top: 0.8rem; border-top: 1px solid var(--border-color); }
+.rag-add-form h3 { margin: 0; font-size: 0.92rem; }
 
 .tool-badge {
   font-size: 0.85rem;
@@ -6776,6 +7941,23 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .tool-badge.error { border-color: rgba(239, 68, 68, 0.5); color: var(--danger); }
 .tool-badge.success { border-color: rgba(34, 197, 94, 0.4); }
 .tool-badge.has-tree { align-self: stretch; max-width: 100%; }
+.chat-map-tree {
+  margin-top: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+.chat-map-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding-bottom: 0.45rem; border-bottom: 1px solid var(--border-color); }
+.chat-map-heading strong { overflow: hidden; text-overflow: ellipsis; }
+.chat-map-tree details > summary { display: flex; align-items: center; gap: 0.35rem; cursor: pointer; padding: 0.2rem 0; }
+.chat-map-tree-list { list-style: none; margin: 0.15rem 0; padding-left: 1.1rem; border-left: 1px solid var(--border-color); }
+.chat-map-tree > details > .chat-map-tree-list { margin-top: 0.35rem; }
+.chat-map-tree-list li { min-width: 0; }
+.chat-map-icon { width: 1.25rem; flex: 0 0 1.25rem; text-align: center; }
+.chat-map-file { display: inline-flex; align-items: center; gap: 0.35rem; max-width: 100%; padding: 0.2rem 0; overflow: hidden; color: var(--primary); background: transparent; border: 0; cursor: pointer; font: inherit; text-align: left; }
+.chat-map-file span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-map-file:hover { color: var(--text-main); text-decoration: underline; }
 .tree-view {
   margin: 0.5rem 0 0;
   padding: 0.6rem 0.8rem;
@@ -7210,6 +8392,75 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
   width: 100%;
 }
 
+.suite-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.68);
+}
+
+.suite-dialog {
+  width: min(860px, 96vw);
+  max-height: 94vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1rem;
+  overflow: hidden;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+}
+
+.suite-dialog-header,
+.suite-dialog-steps-heading,
+.suite-output-heading,
+.suite-dialog-footer,
+.suite-dialog-footer-secondary,
+.suite-result-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.suite-dialog-header h2,
+.suite-dialog-steps-heading h3,
+.suite-output-heading h3 {
+  margin: 0;
+}
+
+.suite-dialog-header h2 { font-size: 1.1rem; }
+.suite-dialog-header p { margin: 0.2rem 0 0; overflow-wrap: anywhere; }
+.suite-dialog-config { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.suite-dialog-config label { display: grid; gap: 0.3rem; color: var(--text-muted); font-size: 0.8rem; }
+.suite-dialog-config .form-select { width: 100%; }
+.suite-dialog-steps-heading h3,
+.suite-output-heading h3 { font-size: 0.9rem; }
+.suite-step-list { display: grid; gap: 0.4rem; max-height: 26vh; overflow-y: auto; margin: 0; padding: 0 0.25rem 0 1.8rem; }
+.suite-step { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 0.45rem; }
+.suite-step > input[type="checkbox"] { accent-color: var(--primary); }
+.suite-step .form-input { width: 100%; min-width: 0; padding: 0.42rem 0.55rem; }
+.suite-step-actions { display: flex; gap: 0.15rem; }
+.suite-step-action { min-width: 28px; padding: 0.25rem; line-height: 1; }
+.suite-output-section { display: flex; flex: 1; min-height: 120px; flex-direction: column; gap: 0.35rem; }
+.suite-evaluation-note { margin: 0; }
+.suite-output { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 0.45rem; overflow-y: auto; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg-dark); }
+.suite-output:empty::before { content: "Execution messages and model responses will appear here."; color: var(--text-muted); font-size: 0.8rem; }
+.suite-result { padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card); }
+.suite-result-heading { justify-content: flex-start; font-size: 0.78rem; }
+.suite-result-heading strong { overflow-wrap: anywhere; }
+.suite-result pre { margin: 0.4rem 0 0; max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 0.8rem; }
+.suite-dialog-footer { flex-wrap: wrap; border-top: 1px solid var(--border-color); padding-top: 0.65rem; }
+.suite-dialog-footer-secondary { justify-content: flex-end; flex-wrap: wrap; }
+.suite-dialog button:disabled,
+.suite-dialog input:disabled,
+.suite-dialog select:disabled { opacity: 0.55; cursor: not-allowed; }
+
 .test-function {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -7265,6 +8516,12 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
     width: 100%;
     min-width: 0;
   }
+  .suite-dialog { max-height: 96vh; padding: 0.75rem; }
+  .suite-dialog-config { grid-template-columns: 1fr; }
+  .suite-step { grid-template-columns: auto minmax(0, 1fr); }
+  .suite-step-actions { grid-column: 2; justify-content: flex-end; }
+  .suite-step-list { max-height: 22vh; }
+  .suite-output-section { min-height: 140px; }
 }
 
 `
@@ -7357,6 +8614,99 @@ export const Api = {
     return send('POST', '/api/chat', {
       message, agent_id: agentId, model, session_id: sessionId, environment
     });
+  },
+
+  async getAgentScratchpad() {
+    return get('/api/agent-memory/scratchpad');
+  },
+
+  async clearAgentScratchpad() {
+    return send('DELETE', '/api/agent-memory/scratchpad');
+  },
+
+  async getRagDocuments() {
+    return get('/api/rag/documents');
+  },
+
+  async addRagText(title, text) {
+    return send('POST', '/api/rag/documents', { title, text });
+  },
+
+  async deleteRagDocument(path) {
+    return send('POST', '/api/rag/documents/delete', { path });
+  },
+
+  async getRagConfig() {
+    return get('/api/rag/config');
+  },
+
+  async setRagConfig(path) {
+    return send('PUT', '/api/rag/config', { path });
+  },
+
+  async reindexRag() {
+    return send('POST', '/api/rag/reindex');
+  },
+
+  async clearRagIndex() {
+    return send('DELETE', '/api/rag/index');
+  },
+
+  async streamMessage(
+    message,
+    agentId,
+    model = 'qwen2.5-coder:latest',
+    sessionId = null,
+    environment = 'workspace',
+    onEvent = () => {},
+    signal
+  ) {
+    const response = await fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message, agent_id: agentId, model, session_id: sessionId, environment
+      }),
+      signal
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      const detail = payload.detail || payload.message || response.statusText;
+      throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+    }
+    if (!response.body) throw new Error('The chat stream returned no response body.');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let completed = null;
+    const consume = async frame => {
+      const data = frame.split(/\r?\n/)
+        .filter(line => line.startsWith('data:'))
+        .map(line => line.slice(5).trimStart())
+        .join('\n');
+      if (!data) return;
+      const event = JSON.parse(data);
+      await onEvent(event);
+      if (event.type === 'error') throw new Error(event.detail || 'The agent request failed.');
+      if (event.type === 'done') completed = event;
+    };
+
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+        const frames = buffer.split(/\r?\n\r?\n/);
+        buffer = frames.pop() || '';
+        for (const frame of frames) await consume(frame);
+        if (done) break;
+      }
+      if (buffer.trim()) await consume(buffer);
+    } finally {
+      reader.releaseLock();
+    }
+    if (!completed) throw new Error('The agent stream ended before returning a completed response.');
+    return completed;
   },
 
   async mapFolderPage(path, maxDepth, includeFiles, offset) {
@@ -7463,6 +8813,10 @@ export const Api = {
 
   async selectFileManagerRoot(path) {
     return send('POST', '/api/file-manager/roots/select', { path });
+  },
+
+  async manageFileManagerRoots(action, paths) {
+    return send('POST', '/api/file-manager/roots/manage', { action, paths });
   },
 
   async writeManagedFile(path, content) {
@@ -7739,6 +9093,31 @@ function renderDashboardView(container) {
         <section class="card dash-health-card">
           <div class="card-head"><h3>System Health</h3></div>
           <div id="dash-health" class="health-panel">Checking…</div>
+          <div class="root-management">
+            <h4>Workspace folders</h4>
+            <p class="text-muted small">Paste one absolute folder path per line. Add folders to the Workspace picker or remove configured folders.</p>
+            <label class="small" for="dash-root-paths">Folder paths</label>
+            <textarea id="dash-root-paths" class="form-input root-path-input" rows="3"
+              placeholder="E:\\Novous_notes&#10;E:\\Projects"></textarea>
+            <div class="root-management-actions">
+              <button class="btn btn-sm btn-primary" type="button" data-root-action="add">Add folders</button>
+              <button class="btn btn-sm btn-danger" type="button" data-root-action="remove">Remove folders</button>
+            </div>
+            <p class="small" id="dash-root-status" role="status" aria-live="polite"></p>
+            <ul class="root-path-list" id="dash-root-list" aria-label="Configured Workspace folders"></ul>
+          </div>
+          <div class="root-management">
+            <h4>RAG Knowledge Base</h4>
+            <p class="text-muted small">Folder scanned and indexed for agent search. Leave empty to use the default workspace folder.</p>
+            <label class="small" for="dash-rag-path">RAG folder path</label>
+            <input id="dash-rag-path" class="form-input" type="text" placeholder="E:\\Novous_notes\\Knowledge Base">
+            <div class="root-management-actions">
+              <button class="btn btn-sm btn-primary" type="button" data-rag-action="save">Save path</button>
+              <button class="btn btn-sm" type="button" data-rag-action="read">Read / Re-index</button>
+              <button class="btn btn-sm btn-danger" type="button" data-rag-action="clear">Clear RAG data</button>
+            </div>
+            <p class="small" id="dash-rag-status" role="status" aria-live="polite"></p>
+          </div>
         </section>
       </div>
     </div>
@@ -7839,6 +9218,7 @@ function renderDashboardView(container) {
         <p class="text-muted">${esc(agent.description || 'No description.')}</p>
         <div class="agent-card-actions">
           <a class="btn btn-sm" href="/codebuilder">Open CodeBuilder</a>
+          <button class="btn btn-sm" data-codebuilder-edit="${esc(agent.id)}">Edit</button>
           <button class="btn btn-sm btn-danger" data-codebuilder-delete="${esc(agent.id)}">Delete</button>
         </div>`;
       codeBuilderCards.appendChild(el);
@@ -7852,6 +9232,12 @@ function renderDashboardView(container) {
   });
 
   codeBuilderCards.addEventListener('click', async e => {
+    const editButton = e.target.closest('[data-codebuilder-edit]');
+    if (editButton) {
+      switchTab('editor', `library/${editButton.dataset.codebuilderEdit}.md`);
+      return;
+    }
+
     const button = e.target.closest('[data-codebuilder-delete]');
     if (!button) return;
     const agentId = button.dataset.codebuilderDelete;
@@ -7902,9 +9288,99 @@ function renderDashboardView(container) {
     catch (err) { alert(err.message); }
   });
 
-  renderTree(container.querySelector('#dash-tree'), {
+  const dashboardTree = renderTree(container.querySelector('#dash-tree'), {
     manageRoots: true,
     onSelect: path => switchTab('editor', { path, managedFile: true })
+  });
+
+  const rootPathInput = container.querySelector('#dash-root-paths');
+  const rootStatus = container.querySelector('#dash-root-status');
+  const rootList = container.querySelector('#dash-root-list');
+  const rootActionButtons = [...container.querySelectorAll('[data-root-action]')];
+  async function refreshConfiguredRoots() {
+    const config = await Api.getFileManagerRoots();
+    rootList.replaceChildren(...config.roots.map(root => {
+      const item = document.createElement('li');
+      const name = document.createElement('strong');
+      const path = document.createElement('code');
+      name.textContent = root.name;
+      path.textContent = root.path;
+      item.append(name, path);
+      return item;
+    }));
+  }
+  refreshConfiguredRoots().catch(err => {
+    rootStatus.textContent = `Could not load Workspace folders: ${err.message}`;
+    rootStatus.className = 'small text-danger';
+  });
+  rootActionButtons.forEach(button => {
+    button.addEventListener('click', async () => {
+      const paths = rootPathInput.value.split(/\r?\n/).map(path => path.trim()).filter(Boolean);
+      if (!paths.length) {
+        rootStatus.textContent = 'Paste at least one absolute folder path.';
+        rootStatus.className = 'small text-danger';
+        rootPathInput.focus();
+        return;
+      }
+      rootActionButtons.forEach(actionButton => { actionButton.disabled = true; });
+      rootStatus.textContent = 'Updating Workspace folders…';
+      rootStatus.className = 'small text-muted';
+      try {
+        const result = await Api.manageFileManagerRoots(button.dataset.rootAction, paths);
+        const changed = button.dataset.rootAction === 'add' ? result.added : result.removed;
+        rootStatus.textContent = `${button.dataset.rootAction === 'add' ? 'Added' : 'Removed'} ${changed.length} folder(s).`;
+        rootStatus.className = 'small text-success';
+        await refreshConfiguredRoots();
+        await dashboardTree.reload();
+      } catch (err) {
+        rootStatus.textContent = `Could not update Workspace folders: ${err.message}`;
+        rootStatus.className = 'small text-danger';
+      } finally {
+        rootActionButtons.forEach(actionButton => { actionButton.disabled = false; });
+      }
+    });
+  });
+
+  const ragPathInput = container.querySelector('#dash-rag-path');
+  const ragStatus = container.querySelector('#dash-rag-status');
+  const ragButtons = [...container.querySelectorAll('[data-rag-action]')];
+  function showRagStatus(message, kind = 'muted') {
+    ragStatus.textContent = message;
+    ragStatus.className = `small text-${kind}`;
+  }
+  function describeRag(status) {
+    return `Folder: ${status.path}${status.exists ? '' : ' (missing)'} — ${status.documents} document(s), ${status.chunks} chunk(s).`;
+  }
+  Api.getRagConfig().then(status => {
+    ragPathInput.value = status.configured_path;
+    ragPathInput.placeholder = status.default_path;
+    showRagStatus(describeRag(status));
+  }).catch(err => showRagStatus(`Could not load RAG settings: ${err.message}`, 'danger'));
+  ragButtons.forEach(button => {
+    button.addEventListener('click', async () => {
+      const action = button.dataset.ragAction;
+      if (action === 'clear' && !confirm('Delete all indexed RAG data? Your files are not touched.')) return;
+      ragButtons.forEach(item => { item.disabled = true; });
+      showRagStatus(action === 'read' ? 'Indexing… this can take a while.' : 'Working…');
+      try {
+        if (action === 'save') {
+          const status = await Api.setRagConfig(ragPathInput.value);
+          showRagStatus(`Saved. ${describeRag(status)} Use Read / Re-index to index it now.`, 'success');
+        } else if (action === 'read') {
+          const result = await Api.reindexRag();
+          const errors = result.errors?.length ? ` ${result.errors.length} error(s).` : '';
+          showRagStatus(`Indexed ${result.indexed}, unchanged ${result.unchanged}, removed ${result.removed.length}.${errors} ${describeRag(result)}`,
+            errors ? 'warning' : 'success');
+        } else {
+          const result = await Api.clearRagIndex();
+          showRagStatus(`Cleared ${result.removed} document(s). The next scan re-indexes the folder.`, 'success');
+        }
+      } catch (err) {
+        showRagStatus(err.message, 'danger');
+      } finally {
+        ragButtons.forEach(item => { item.disabled = false; });
+      }
+    });
   });
 
   const healthBox = container.querySelector('#dash-health');
@@ -7991,6 +9467,7 @@ boot();
 import { Api } from './api.js';
 import { createIcon } from './icons.js';
 import { buildTestPanel } from './test_panel.js';
+import { openTestSuiteRunner } from './test_suite_runner.js';
 import { renderTree } from './tree.js';
 
 function esc(value) {
@@ -7998,8 +9475,6 @@ function esc(value) {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
 }
-
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Interactive Chat Console Component: agent selection, message history,
@@ -8017,6 +9492,13 @@ export function renderChatView(container) {
       </aside>
 
       <section class="chat-main">
+        <div class="chat-font-controls" role="group" aria-label="Chat text size">
+          <span class="text-muted small">Text size</span>
+          <button type="button" class="btn btn-sm" id="chat-font-smaller"
+            title="Smaller text" aria-label="Decrease chat text size">A−</button>
+          <button type="button" class="btn btn-sm" id="chat-font-larger"
+            title="Larger text" aria-label="Increase chat text size">A+</button>
+        </div>
         <div id="chat-messages" class="messages-scroll">
           <div class="message system-msg">Select an agent and send a message to start reasoning.</div>
         </div>
@@ -8026,9 +9508,6 @@ export function renderChatView(container) {
         </form>
         <div class="chat-quick-actions">
           <button type="button" class="btn btn-sm" id="chat-reset-quick" disabled>Reset session</button>
-          <button type="button" class="btn btn-sm" disabled title="Coming soon">Action 2</button>
-          <button type="button" class="btn btn-sm" disabled title="Coming soon">Action 3</button>
-          <button type="button" class="btn btn-sm" disabled title="Coming soon">Action 4</button>
         </div>
       </section>
 
@@ -8063,7 +9542,37 @@ export function renderChatView(container) {
           </section>
         </div>
       </aside>
-    </div>`;
+    </div>
+    <dialog id="chat-scratchpad-dialog" class="scratchpad-dialog">
+      <div class="scratchpad-dialog-head">
+        <div>
+          <h2>Agent Scratchpad</h2>
+          <p class="text-muted small">Recent file reads and the latest workspace map.</p>
+        </div>
+        <button type="button" class="btn btn-sm" data-scratchpad-close aria-label="Close">Close</button>
+      </div>
+      <div id="chat-scratchpad-content" class="scratchpad-content"></div>
+    </dialog>
+    <dialog id="chat-rag-dialog" class="scratchpad-dialog">
+      <div class="scratchpad-dialog-head">
+        <div>
+          <h2>RAG Index</h2>
+          <p class="text-muted small">Documents embedded in the knowledge base, and manual text you add.</p>
+        </div>
+        <button type="button" class="btn btn-sm" data-rag-close aria-label="Close">Close</button>
+      </div>
+      <div id="chat-rag-content" class="scratchpad-content"></div>
+      <form id="chat-rag-form" class="rag-add-form">
+        <h3>Add text to the vector database</h3>
+        <input id="chat-rag-title" class="form-input" type="text" placeholder="Title (adding the same title replaces it)" required>
+        <textarea id="chat-rag-text" class="form-input" rows="4" placeholder="Text to embed" required></textarea>
+        <div class="root-management-actions">
+          <button type="submit" class="btn btn-sm btn-primary">Add to RAG</button>
+          <button type="button" class="btn btn-sm" data-rag-refresh>Refresh</button>
+        </div>
+        <p class="small" id="chat-rag-status" role="status" aria-live="polite"></p>
+      </form>
+    </dialog>`;
 
   const agentSelect = container.querySelector('#chat-agent-select');
   const metaCard = container.querySelector('#agent-meta-card');
@@ -8078,6 +9587,287 @@ export function renderChatView(container) {
   const sessionInfo = container.querySelector('#chat-session-info');
   const modelSelect = container.querySelector('#chat-model-select');
   const modelCount = container.querySelector('#model-count');
+  const scratchpadDialog = container.querySelector('#chat-scratchpad-dialog');
+  const scratchpadContent = container.querySelector('#chat-scratchpad-content');
+  const chatMain = container.querySelector('.chat-main');
+
+  function renderScratchpad(memory) {
+    scratchpadContent.replaceChildren();
+    const reads = Array.isArray(memory.read_history)
+      ? memory.read_history
+      : (memory.latest_read ? [memory.latest_read] : []);
+
+    const readsSection = document.createElement('section');
+    readsSection.className = 'scratchpad-section';
+    const readsTitle = document.createElement('h3');
+    readsTitle.textContent = `Recent reads (${reads.length})`;
+    readsSection.appendChild(readsTitle);
+    if (!reads.length) {
+      const empty = document.createElement('p');
+      empty.className = 'text-muted';
+      empty.textContent = 'No file reads are saved.';
+      readsSection.appendChild(empty);
+    }
+    [...reads].reverse().forEach((entry, index) => {
+      const details = document.createElement('details');
+      details.className = 'scratchpad-read';
+      if (index === 0) details.open = true;
+      const summary = document.createElement('summary');
+      const timestamp = entry.updated_at ? new Date(entry.updated_at).toLocaleString() : '';
+      summary.textContent = [entry.path || 'Unknown file', timestamp].filter(Boolean).join(' · ');
+      const request = document.createElement('p');
+      request.className = 'text-muted small';
+      request.textContent = entry.request ? `Request: ${entry.request}` : 'No request context.';
+      const content = document.createElement('pre');
+      content.textContent = entry.content || '';
+      details.append(summary, request, content);
+      readsSection.appendChild(details);
+    });
+    scratchpadContent.appendChild(readsSection);
+
+    const mapSection = document.createElement('section');
+    mapSection.className = 'scratchpad-section';
+    const mapTitle = document.createElement('h3');
+    mapTitle.textContent = 'Latest workspace map';
+    mapSection.appendChild(mapTitle);
+    if (memory.latest_map?.tree) {
+      const path = document.createElement('p');
+      path.className = 'text-muted small';
+      path.textContent = memory.latest_map.requested_path || 'Workspace root';
+      const tree = document.createElement('div');
+      tree.className = 'scratchpad-tree';
+      tree.appendChild(createScratchpadTreeNode(memory.latest_map.tree, true));
+      mapSection.append(path, tree);
+    } else {
+      const empty = document.createElement('p');
+      empty.className = 'text-muted';
+      empty.textContent = 'No workspace map is saved.';
+      mapSection.appendChild(empty);
+    }
+    scratchpadContent.appendChild(mapSection);
+  }
+
+  function createScratchpadTreeNode(node, isRoot = false) {
+    const list = document.createElement('ul');
+    list.className = 'scratchpad-tree-list';
+    (node.children || []).forEach(child => {
+      const item = document.createElement('li');
+      if (child.type === 'directory') {
+        const details = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.textContent = `📁 ${child.name}`;
+        details.append(summary, createScratchpadTreeNode(child));
+        item.appendChild(details);
+      } else {
+        const openFile = document.createElement('button');
+        openFile.type = 'button';
+        openFile.className = 'scratchpad-file-link';
+        openFile.textContent = `📄 ${child.name}`;
+        openFile.title = child.path;
+        openFile.addEventListener('click', () => {
+          if (document.getElementById('app')) {
+            window.dispatchEvent(new CustomEvent('novous:open-editor', {
+              detail: { path: child.path, managedFile: true }
+            }));
+          } else {
+            const params = new URLSearchParams({ path: child.path, managed: '1' });
+            window.location.assign(`/editor?${params}`);
+          }
+          scratchpadDialog.close();
+        });
+        item.appendChild(openFile);
+      }
+      list.appendChild(item);
+    });
+    if (isRoot) {
+      const root = document.createElement('details');
+      root.open = true;
+      const summary = document.createElement('summary');
+      summary.textContent = `📁 ${node.name || 'Workspace'}`;
+      root.append(summary, list);
+      return root;
+    }
+    return list;
+  }
+
+  async function loadScratchpad() {
+    scratchpadContent.textContent = 'Loading scratchpad…';
+    try {
+      renderScratchpad(await Api.getAgentScratchpad());
+    } catch (error) {
+      scratchpadContent.textContent = `Could not load scratchpad: ${error.message}`;
+    }
+  }
+
+  async function openScratchpad() {
+    scratchpadDialog.showModal();
+    await loadScratchpad();
+  }
+
+  container.querySelector('[data-scratchpad-close]').addEventListener('click', () => {
+    scratchpadDialog.close();
+  });
+
+  const ragDialog = container.querySelector('#chat-rag-dialog');
+  const ragContent = container.querySelector('#chat-rag-content');
+  const ragStatus = container.querySelector('#chat-rag-status');
+  const ragForm = container.querySelector('#chat-rag-form');
+
+  function showRagStatus(message, kind = 'muted') {
+    ragStatus.textContent = message;
+    ragStatus.className = `small text-${kind}`;
+  }
+
+  function renderRag(overview) {
+    ragContent.replaceChildren();
+    const summary = document.createElement('p');
+    const typeText = Object.entries(overview.types || {})
+      .sort((a, b) => b[1] - a[1])
+      .map(([type, count]) => `${type}: ${count}`).join(', ') || 'none';
+    summary.textContent = `${overview.documents} document(s), ${overview.chunks} chunk(s). Types — ${typeText}.`;
+    const folder = document.createElement('p');
+    folder.className = 'text-muted small';
+    folder.textContent = `Folder: ${overview.path}${overview.exists ? '' : ' (missing)'}`;
+    ragContent.append(summary, folder);
+
+    const files = overview.files || [];
+    if (!files.length) {
+      const empty = document.createElement('p');
+      empty.className = 'text-muted';
+      empty.textContent = 'Nothing is indexed yet.';
+      ragContent.appendChild(empty);
+      return;
+    }
+    const list = document.createElement('ul');
+    list.className = 'rag-file-list';
+    files.forEach(file => {
+      const item = document.createElement('li');
+      const name = document.createElement('span');
+      name.className = 'rag-file-name';
+      name.textContent = file.name;
+      name.title = file.path;
+      const meta = document.createElement('span');
+      meta.className = file.chunks ? 'text-muted small' : 'text-danger small';
+      meta.textContent = `${file.type} · ${file.chunks} chunk(s)`;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn btn-sm btn-danger';
+      remove.textContent = 'Delete';
+      remove.addEventListener('click', async () => {
+        if (!confirm(`Remove "${file.name}" from the RAG index? Files on disk are not touched.`)) return;
+        try {
+          await Api.deleteRagDocument(file.path);
+          showRagStatus(`Removed ${file.name}.`, 'success');
+          await loadRag();
+        } catch (error) {
+          showRagStatus(`Could not delete: ${error.message}`, 'danger');
+        }
+      });
+      item.append(name, meta, remove);
+      list.appendChild(item);
+    });
+    ragContent.appendChild(list);
+  }
+
+  async function loadRag() {
+    try {
+      renderRag(await Api.getRagDocuments());
+    } catch (error) {
+      ragContent.textContent = `Could not load the RAG index: ${error.message}`;
+    }
+  }
+
+  async function openRag() {
+    ragDialog.showModal();
+    ragContent.textContent = 'Loading RAG index…';
+    showRagStatus('');
+    await loadRag();
+  }
+
+  container.querySelector('[data-rag-close]').addEventListener('click', () => ragDialog.close());
+  container.querySelector('[data-rag-refresh]').addEventListener('click', loadRag);
+  ragForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const submit = ragForm.querySelector('[type="submit"]');
+    submit.disabled = true;
+    showRagStatus('Embedding…');
+    try {
+      const title = container.querySelector('#chat-rag-title');
+      const text = container.querySelector('#chat-rag-text');
+      const result = await Api.addRagText(title.value, text.value);
+      showRagStatus(`Added "${title.value.trim()}" (${result.chunks} chunk(s)).`, 'success');
+      title.value = '';
+      text.value = '';
+      await loadRag();
+    } catch (error) {
+      showRagStatus(`Could not add text: ${error.message}`, 'danger');
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  function formatScratchpadReads(memory) {
+    const reads = Array.isArray(memory.read_history)
+      ? memory.read_history
+      : (memory.latest_read ? [memory.latest_read] : []);
+    const lines = ['# Agent File Reads', '', `Exported: ${new Date().toLocaleString()}`, ''];
+
+    if (!reads.length) {
+      lines.push('No file reads are currently saved.', '');
+      return lines.join('\n');
+    }
+
+    reads.forEach((entry, index) => {
+      if (index > 0) lines.push('---', '');
+      lines.push(`## ${entry.path || 'Unknown file'}`, '');
+      if (entry.updated_at) lines.push(`- **Read at:** ${entry.updated_at}`);
+      if (entry.request) lines.push(`- **Request:** ${entry.request.replace(/\r?\n/g, ' ')}`);
+      lines.push('', '### Contents', '');
+
+      const content = String(entry.content || '');
+      const longestFence = Math.max(
+        0,
+        ...Array.from(content.matchAll(/`+/g), match => match[0].length)
+      );
+      const fence = '`'.repeat(Math.max(3, longestFence + 1));
+      lines.push(fence, content, fence, '');
+    });
+
+    return lines.join('\n');
+  }
+
+  async function saveScratchpad(event) {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const memory = await Api.getAgentScratchpad();
+      const date = new Date().toISOString().slice(0, 10);
+      await Api.saveMarkdown(
+        formatScratchpadReads(memory),
+        `novous-agent-reads-${date}.md`
+      );
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      appendMessage('system', `Could not save scratchpad: ${error.message}`);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function clearScratchpad(event) {
+    if (!window.confirm('Clear all saved agent reads and workspace maps? This cannot be undone.')) return;
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      await Api.clearAgentScratchpad();
+      if (scratchpadDialog.open) renderScratchpad({});
+      appendMessage('system', 'Agent scratchpad cleared.');
+    } catch (error) {
+      appendMessage('system', `Could not clear scratchpad: ${error.message}`);
+    } finally {
+      button.disabled = false;
+    }
+  }
 
   let agents = [];
   let installedModels = [];
@@ -8085,6 +9875,33 @@ export function renderChatView(container) {
   let isSending = false;
   let isResetting = false;
   let isSavingLog = false;
+  const chatFontKey = 'novous2.chat-console.font-size';
+  let chatFontSize = 14;
+
+  try {
+    const storedSize = Number(localStorage.getItem(chatFontKey));
+    if (Number.isFinite(storedSize) && storedSize >= 11 && storedSize <= 32) {
+      chatFontSize = storedSize;
+    }
+  } catch (error) {
+    console.warn('Could not load saved Chat Console text size.', error);
+  }
+
+  function setChatFontSize(size) {
+    chatFontSize = Math.min(32, Math.max(11, size));
+    chatMain.style.setProperty('--chat-console-font-size', `${chatFontSize}px`);
+    try {
+      localStorage.setItem(chatFontKey, String(chatFontSize));
+    } catch (error) {
+      console.warn('Could not save Chat Console text size.', error);
+    }
+  }
+
+  setChatFontSize(chatFontSize);
+  container.querySelector('#chat-font-smaller')
+    .addEventListener('click', () => setChatFontSize(chatFontSize - 1));
+  container.querySelector('#chat-font-larger')
+    .addEventListener('click', () => setChatFontSize(chatFontSize + 2));
 
   container.querySelector('#chat-save-log').prepend(createIcon('save'));
   container.querySelector('#chat-reset').prepend(createIcon('reset'));
@@ -8106,12 +9923,13 @@ export function renderChatView(container) {
 
   function syncActionButtons() {
     const hasAgent = agents.some(agent => agent.id === agentSelect.value);
-    saveLogButton.disabled = !hasAgent || isSavingLog;
-    resetButton.disabled = !hasAgent || isResetting;
+    saveLogButton.disabled = !hasAgent || isSavingLog || todoRunInProgress;
+    resetButton.disabled = !hasAgent || isResetting || todoRunInProgress;
     quickResetButton.disabled = resetButton.disabled;
     const wipeButton = container.querySelector('[data-test-function="wipeChat"]');
-    if (wipeButton) wipeButton.disabled = !hasAgent || isResetting;
-    sendButton.disabled = !hasAgent || modelSelect.disabled || !chatInput.value.trim() || isSending;
+    if (wipeButton) wipeButton.disabled = !hasAgent || isResetting || todoRunInProgress;
+    sendButton.disabled = !hasAgent || modelSelect.disabled || !chatInput.value.trim() ||
+      isSending || todoRunInProgress;
   }
 
   Api.getModels().then(data => {
@@ -8238,11 +10056,10 @@ export function renderChatView(container) {
 
   function syncTodoRunButton() {
     const button = container.querySelector('[data-test-function="runTestSuite"]');
-    const select = container.querySelector('#todo-file-select');
     if (!button) return;
     const hasAgent = agents.some(agent => agent.id === agentSelect.value);
     button.disabled = todoFilesLoading || todoRunInProgress || !hasAgent ||
-      modelSelect.disabled || !select?.value;
+      modelSelect.disabled || isSending || isResetting;
   }
 
   async function loadTodoFiles(silent = false) {
@@ -8317,64 +10134,26 @@ export function renderChatView(container) {
     }
   }
 
-  async function runTodoSequence() {
-    const select = container.querySelector('#todo-file-select');
-    const selectedPath = select?.value;
-    const agentId = agentSelect.value;
-
-    if (!selectedPath) {
-      appendMessage('system', 'Please select a file from the To-Do dropdown first.');
-      return;
-    }
-    if (!agentId) {
-      appendMessage('system', 'Please select an agent before running To-Do items.');
-      return;
-    }
-
-    todoRunInProgress = true;
-    syncTodoRunButton();
-
-    try {
-      const fileData = await Api.readFile(selectedPath);
-      const lines = String(fileData.content ?? '')
-        .split(/\r?\n/)
-        .map(line => line.trim())
-        .filter(Boolean);
-
-      appendMessage('user', `Starting execution of To-Do items from: ${selectedPath.split('/').pop()}`);
-      if (!lines.length) {
-        appendMessage('system', 'The selected file contains no nonblank task lines.');
-        return;
-      }
-
-      const sessionId = `chat-${agentId}`;
-      const model = currentModel;
-      await delay(1500);
-
-      for (let index = 0; index < lines.length; index += 1) {
-        const line = lines[index];
-        appendMessage('user', `Task ${index + 1}: ${line}`);
-        const thinkingId = appendMessage('assistant', 'Thinking...', true);
-        try {
-          const response = await Api.sendMessage(line, agentId, model, sessionId);
-          removeMessage(thinkingId);
-          (response.tool_events || []).forEach(event =>
-            appendToolBadge(event.tool, event.status, event.args, event.display)
-          );
-          appendMessage('assistant', response.reply);
-        } catch (err) {
-          removeMessage(thinkingId);
-          throw err;
-        }
-
-        if (index < lines.length - 1) await delay(1000);
-      }
-    } catch (err) {
-      appendMessage('system', `Error reading or running To-Do file: ${err.message}`);
-    } finally {
-      todoRunInProgress = false;
-      syncTodoRunButton();
-    }
+  function openTodoSuite() {
+    openTestSuiteRunner({
+      filePath: container.querySelector('#todo-file-select')?.value || '',
+      agentId: agentSelect.value,
+      model: currentModel,
+      agents,
+      models: installedModels,
+      onRunningChange: running => {
+        todoRunInProgress = running;
+        syncActionButtons();
+        syncTodoRunButton();
+      },
+      onChatMessage: (role, text) => appendMessage(role, text),
+      onToolEvent: event => appendToolBadge(
+        event.tool,
+        event.status,
+        event.args,
+        event.display
+      )
+    });
   }
 
   container.querySelector('#chat-reset').addEventListener('click', () => resetSession());
@@ -8404,7 +10183,11 @@ export function renderChatView(container) {
   buildTestPanel('testPanelButtons', {
     diagnostics: openDiagnostics,
     wipeChat,
-    runTestSuite: runTodoSequence
+    runTestSuite: openTodoSuite,
+    viewScratchpad: openScratchpad,
+    saveScratchpad,
+    clearScratchpad,
+    viewRag: openRag
   });
   loadTodoFiles();
   container.querySelector('#todo-file-refresh')
@@ -8517,9 +10300,107 @@ export function renderChatView(container) {
     const argText = args ? JSON.stringify(args) : '';
     badgeDiv.innerHTML = `🛠️ <strong>${esc(toolName)}</strong> executed (${esc(status)})
       ${argText ? `<span class="text-muted small"> ${esc(argText.slice(0, 120))}</span>` : ''}`;
-    if (display) appendTreeView(badgeDiv, args || {}, display);
+    if (display && toolName === 'map_files') {
+      try {
+        appendMapTree(badgeDiv, JSON.parse(display));
+      } catch {
+        appendTreeView(badgeDiv, args || {}, display);
+      }
+    } else if (display) {
+      appendTreeView(badgeDiv, args || {}, display);
+    }
     messagesBox.appendChild(badgeDiv);
     messagesBox.scrollTop = messagesBox.scrollHeight;
+  }
+
+  function appendMapTree(badgeDiv, tree) {
+    badgeDiv.classList.add('has-tree');
+    const panel = document.createElement('div');
+    panel.className = 'chat-map-tree';
+    const heading = document.createElement('div');
+    heading.className = 'chat-map-heading';
+    const title = document.createElement('strong');
+    title.textContent = tree.name || 'Workspace';
+    const count = countTreeEntries(tree);
+    const meta = document.createElement('span');
+    meta.className = 'text-muted small';
+    meta.textContent = `${count.folders} folders · ${count.files} files`;
+    heading.append(title, meta);
+    panel.append(heading, createMapTreeNode(tree, true));
+    badgeDiv.appendChild(panel);
+  }
+
+  function countTreeEntries(node) {
+    return (node.children || []).reduce((total, child) => {
+      if (child.type === 'directory') {
+        total.folders += 1;
+        const nested = countTreeEntries(child);
+        total.folders += nested.folders;
+        total.files += nested.files;
+      } else {
+        total.files += 1;
+      }
+      return total;
+    }, { folders: 0, files: 0 });
+  }
+
+  function createMapTreeNode(node, isRoot = false) {
+    const list = document.createElement('ul');
+    list.className = 'chat-map-tree-list';
+    (node.children || []).forEach(child => {
+      const item = document.createElement('li');
+      if (child.type === 'directory') {
+        const folder = document.createElement('details');
+        const summary = document.createElement('summary');
+        const icon = document.createElement('span');
+        icon.className = 'chat-map-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = '📁';
+        const name = document.createElement('span');
+        name.textContent = child.name;
+        summary.append(icon, name);
+        folder.append(summary, createMapTreeNode(child));
+        item.appendChild(folder);
+      } else {
+        const openFile = document.createElement('button');
+        openFile.type = 'button';
+        openFile.className = 'chat-map-file';
+        openFile.title = child.path || child.name;
+        const icon = document.createElement('span');
+        icon.className = 'chat-map-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = '📄';
+        const name = document.createElement('span');
+        name.textContent = child.name;
+        openFile.append(icon, name);
+        openFile.addEventListener('click', () => {
+          if (document.getElementById('app')) {
+            window.dispatchEvent(new CustomEvent('novous:open-editor', {
+              detail: { path: child.path, managedFile: true }
+            }));
+          } else {
+            const params = new URLSearchParams({ path: child.path, managed: '1' });
+            window.location.assign(`/editor?${params}`);
+          }
+        });
+        item.appendChild(openFile);
+      }
+      list.appendChild(item);
+    });
+    if (!isRoot) return list;
+
+    const root = document.createElement('details');
+    root.open = true;
+    const summary = document.createElement('summary');
+    const icon = document.createElement('span');
+    icon.className = 'chat-map-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '📂';
+    const name = document.createElement('span');
+    name.textContent = node.name || 'Workspace';
+    summary.append(icon, name);
+    root.append(summary, list);
+    return root;
   }
 
   const MORE_NOTE = /\n… (\d+) more lines \(next offset (\d+)\)\s*$/;
@@ -10995,6 +12876,7 @@ const ICON_MARKUP = {
   bug: '<path d="M12 20v-8"/><path d="M8 20v-4a4 4 0 0 1 8 0v4"/><path d="M19 8h-3"/><path d="M8 8H5"/><path d="M19 12h-3"/><path d="M8 12H5"/><path d="M16 4a4 4 0 0 0-8 0"/>',
   'check-square': '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 12 2 2 4-4"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
+  database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>',
   'file-code': '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m10 13-2 2 2 2"/><path d="m14 13 2 2-2 2"/>',
   gauge: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/><path d="M12 14a2 2 0 1 0-2-2"/>',
   'play-circle': '<circle cx="12" cy="12" r="10"/><path d="m10 8 6 4-6 4z"/>',
@@ -13181,7 +15063,11 @@ const TEST_FUNCTIONS = [
   { id: 'benchmark', label: 'Benchmark', icon: 'gauge', action: null },
   { id: 'apiLogs', label: 'API Logs', icon: 'file-code', action: null },
   { id: 'diagnostics', label: 'Diagnostics', icon: 'activity', action: null },
-  { id: 'wipeChat', label: 'Wipe Chat', icon: 'trash-2', action: null }
+  { id: 'wipeChat', label: 'Wipe Chat', icon: 'trash-2', action: null },
+  { id: 'viewScratchpad', label: 'View Scratchpad', icon: 'file-code', action: null },
+  { id: 'saveScratchpad', label: 'Save Scratchpad', icon: 'save', action: null },
+  { id: 'clearScratchpad', label: 'Clear Scratchpad', icon: 'trash-2', action: null },
+  { id: 'viewRag', label: 'RAG Index', icon: 'database', action: null }
 ];
 
 export function buildTestPanel(containerId, actions = {}) {
@@ -13246,6 +15132,467 @@ export function buildTestPanel(containerId, actions = {}) {
 
   todoSection.append(todoLabel, todoSelect, refreshTodoFiles);
   container.appendChild(todoSection);
+}
+
+`
+
+### frontend/static/js/test_suite_runner.js
+
+`javascript
+import { Api } from './api.js';
+
+let openSuiteDialog = null;
+let suiteExecutionActive = false;
+
+function parseSteps(content) {
+  return String(content ?? '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const checkbox = line.match(/^(?:[-*+]\s*)?\[([ xX])\]\s*(.*)$/);
+      const plainListItem = line.match(/^(?:\d+[.)]\s+|[-*+]\s+)(.*)$/);
+      return {
+        id: index + 1,
+        enabled: checkbox ? checkbox[1].toLowerCase() === 'x' : true,
+        text: (checkbox ? checkbox[2] : plainListItem ? plainListItem[1] : line).trim()
+      };
+    })
+    .filter(step => step.text);
+}
+
+function serializeSteps(steps) {
+  return steps.map(step => `- [${step.enabled ? 'x' : ' '}] ${step.text}`).join('\n') + '\n';
+}
+
+export function openTestSuiteRunner({
+  filePath,
+  agentId,
+  model,
+  agents,
+  models,
+  onRunningChange = () => {},
+  onChatMessage = () => {},
+  onToolEvent = () => {}
+}) {
+  if (openSuiteDialog) {
+    openSuiteDialog.focus();
+    return;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'suite-dialog-overlay';
+  overlay.innerHTML = `
+    <section class="card suite-dialog" role="dialog" aria-modal="true"
+      aria-labelledby="suite-dialog-title" tabindex="-1">
+      <header class="suite-dialog-header">
+        <div>
+          <h2 id="suite-dialog-title">Test Suite Runner</h2>
+          <p class="text-muted small" data-suite-source></p>
+        </div>
+        <button class="btn btn-sm btn-ghost" type="button" data-suite-close
+          aria-label="Close Test Suite Runner" title="Close">×</button>
+      </header>
+      <div class="suite-dialog-config">
+        <label>Agent
+          <select class="form-select" data-suite-agent></select>
+        </label>
+        <label>Model
+          <select class="form-select" data-suite-model></select>
+        </label>
+      </div>
+      <div class="suite-dialog-steps-heading">
+        <h3>Test steps</h3>
+        <button class="btn btn-sm" type="button" data-suite-add>+ Add Step</button>
+      </div>
+      <ol class="suite-step-list" data-suite-steps aria-label="Test steps"></ol>
+      <section class="suite-output-section" aria-label="Test execution output">
+        <div class="suite-output-heading">
+          <h3>Execution output</h3>
+          <span class="text-muted small" data-suite-progress>Ready</span>
+        </div>
+        <p class="text-muted small suite-evaluation-note">
+          Tool results and agent responses are shown as evidence. A successful tool call does not by itself prove the task is complete.
+        </p>
+        <div class="suite-output" data-suite-output role="log" aria-live="polite"></div>
+      </section>
+      <footer class="suite-dialog-footer">
+        <button class="btn btn-primary" type="button" data-suite-run>Run Test Suite</button>
+        <div class="suite-dialog-footer-secondary">
+          <button class="btn btn-sm" type="button" data-suite-stop disabled>Stop</button>
+          <button class="btn btn-sm" type="button" data-suite-save>Save</button>
+          <button class="btn btn-sm" type="button" data-suite-close>Close</button>
+        </div>
+      </footer>
+    </section>`;
+
+  const dialog = overlay.querySelector('.suite-dialog');
+  const sourceLabel = overlay.querySelector('[data-suite-source]');
+  const agentSelect = overlay.querySelector('[data-suite-agent]');
+  const modelSelect = overlay.querySelector('[data-suite-model]');
+  const stepList = overlay.querySelector('[data-suite-steps]');
+  const output = overlay.querySelector('[data-suite-output]');
+  const progress = overlay.querySelector('[data-suite-progress]');
+  const runButton = overlay.querySelector('[data-suite-run]');
+  const stopButton = overlay.querySelector('[data-suite-stop]');
+  const saveButton = overlay.querySelector('[data-suite-save]');
+  const addButton = overlay.querySelector('[data-suite-add]');
+  let steps = [];
+  let nextId = 1;
+  let running = false;
+  let loadingSource = Boolean(filePath);
+  let stopRequested = false;
+  let sourceLoaded = !filePath;
+  let dirty = false;
+  let closed = false;
+  let closeAfterRun = false;
+
+  sourceLabel.textContent = filePath ? `Suite file: ${filePath}` : 'Choose a To-Do file in Chat & Test Controls to save this suite.';
+  agentSelect.replaceChildren(...agents.map(agent => {
+    const option = document.createElement('option');
+    option.value = agent.id;
+    option.textContent = `${agent.name} (${agent.mode})`;
+    option.selected = agent.id === agentId;
+    return option;
+  }));
+  modelSelect.replaceChildren(...models.map(name => {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name;
+    option.selected = name === model;
+    return option;
+  }));
+  if (model && !models.includes(model)) {
+    const option = document.createElement('option');
+    option.value = model;
+    option.textContent = model;
+    option.selected = true;
+    modelSelect.appendChild(option);
+  }
+
+  function setStatus(message, type = '') {
+    progress.textContent = message;
+    progress.className = `small${type ? ` text-${type}` : ' text-muted'}`;
+  }
+
+  function updateControls() {
+    const canEdit = !running && !loadingSource;
+    stepList.querySelectorAll('input, button').forEach(control => {
+      control.disabled = !canEdit || control.dataset.unavailable === 'true';
+    });
+    addButton.disabled = !canEdit;
+    agentSelect.disabled = !canEdit;
+    modelSelect.disabled = !canEdit || !models.length;
+    runButton.disabled = running || suiteExecutionActive || loadingSource ||
+      !agentSelect.value || !modelSelect.value ||
+      !steps.some(step => step.enabled && step.text.trim());
+    stopButton.disabled = !running || stopRequested;
+    saveButton.disabled = running || loadingSource || !filePath || !sourceLoaded;
+  }
+
+  function renderSteps(focusId = null) {
+    stepList.replaceChildren();
+    steps.forEach((step, index) => {
+      const item = document.createElement('li');
+      item.className = 'suite-step';
+      item.dataset.stepId = String(step.id);
+
+      const enabled = document.createElement('input');
+      enabled.type = 'checkbox';
+      enabled.checked = step.enabled;
+      enabled.setAttribute('aria-label', `Enable step ${index + 1}`);
+      enabled.addEventListener('change', () => {
+        step.enabled = enabled.checked;
+        dirty = true;
+        updateControls();
+      });
+
+      const instruction = document.createElement('input');
+      instruction.type = 'text';
+      instruction.className = 'form-input';
+      instruction.value = step.text;
+      instruction.placeholder = `Step ${index + 1} instruction`;
+      instruction.setAttribute('aria-label', `Step ${index + 1} instruction`);
+      instruction.addEventListener('input', () => {
+        step.text = instruction.value;
+        dirty = true;
+        updateControls();
+      });
+
+      const actions = document.createElement('div');
+      actions.className = 'suite-step-actions';
+      [
+        { action: 'up', label: 'Move up', icon: '↑', disabled: index === 0 },
+        { action: 'down', label: 'Move down', icon: '↓', disabled: index === steps.length - 1 },
+        { action: 'remove', label: 'Remove step', icon: '×', disabled: false }
+      ].forEach(control => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn btn-sm btn-ghost suite-step-action';
+        button.textContent = control.icon;
+        button.title = control.label;
+        button.setAttribute('aria-label', control.label);
+        button.disabled = control.disabled;
+        button.dataset.unavailable = String(control.disabled);
+        button.addEventListener('click', () => {
+          if (control.action === 'remove') {
+            steps = steps.filter(itemStep => itemStep.id !== step.id);
+          } else {
+            const nextIndex = control.action === 'up' ? index - 1 : index + 1;
+            [steps[index], steps[nextIndex]] = [steps[nextIndex], steps[index]];
+          }
+          dirty = true;
+          renderSteps();
+        });
+        actions.appendChild(button);
+      });
+
+      item.append(enabled, instruction, actions);
+      stepList.appendChild(item);
+    });
+    updateControls();
+    if (focusId != null) {
+      stepList.querySelector(`[data-step-id="${focusId}"] input[type="text"]`)?.focus();
+    }
+  }
+
+  function appendOutput(title, body, status = 'info') {
+    const entry = document.createElement('article');
+    entry.className = `suite-result suite-result-${status}`;
+    const heading = document.createElement('div');
+    heading.className = 'suite-result-heading';
+    const label = document.createElement('strong');
+    label.textContent = title;
+    const badge = document.createElement('span');
+    badge.className = `badge ${status === 'failed' ? 'badge-warning' : status === 'completed' ? 'badge-success' : 'badge-accent'}`;
+    badge.textContent = status === 'info' ? 'RUNNING' : status.toUpperCase();
+    heading.append(label, badge);
+    const text = document.createElement('pre');
+    text.textContent = body;
+    entry.append(heading, text);
+    output.appendChild(entry);
+    output.scrollTop = output.scrollHeight;
+    return { entry, text };
+  }
+
+  async function runSuite() {
+    if (running || suiteExecutionActive) return;
+    const enabledSteps = steps.filter(step => step.enabled && step.text.trim());
+    if (!enabledSteps.length) {
+      setStatus('Enable or add at least one step.', 'danger');
+      return;
+    }
+    if (!agentSelect.value || !modelSelect.value) {
+      setStatus('Select an agent and installed model.', 'danger');
+      return;
+    }
+
+    running = true;
+    suiteExecutionActive = true;
+    stopRequested = false;
+    output.replaceChildren();
+    onRunningChange(true);
+    updateControls();
+    const selectedAgent = agentSelect.value;
+    const selectedModel = modelSelect.value;
+    const sessionId = `chat-${selectedAgent}`;
+    appendOutput(
+      'Suite started',
+      `${enabledSteps.length} enabled step(s) · Agent: ${selectedAgent} · Model: ${selectedModel}`,
+      'info'
+    );
+    onChatMessage('user', `Starting execution of ${enabledSteps.length} test step(s).`);
+
+    let completed = 0;
+    let failed = 0;
+    let toolCallsSucceeded = 0;
+    let toolCallsFailed = 0;
+    try {
+      for (let index = 0; index < enabledSteps.length; index += 1) {
+        if (stopRequested) break;
+        const step = enabledSteps[index];
+        setStatus(`Step ${index + 1} of ${enabledSteps.length}`);
+        const stepOutput = appendOutput(
+          `Step ${index + 1}: ${step.text}`,
+          'Waiting for agent response…',
+          'info'
+        );
+        onChatMessage('user', `Task ${index + 1}: ${step.text}`);
+        try {
+          let reply = '';
+          const stepToolEvents = [];
+          const result = await Api.streamMessage(
+            step.text,
+            selectedAgent,
+            selectedModel,
+            sessionId,
+            'workspace',
+            async event => {
+              if (event.type === 'token') {
+                reply += event.text;
+                stepOutput.text.textContent = reply;
+                output.scrollTop = output.scrollHeight;
+              } else if (event.type === 'tool_event') {
+                const tool = event.event || {};
+                stepToolEvents.push(tool);
+                const succeeded = tool.status === 'success';
+                const resultText = tool.error || tool.result || 'No result was returned.';
+                const details = [
+                  `Status: ${tool.status || 'unknown'}`,
+                  tool.args ? `Arguments: ${JSON.stringify(tool.args)}` : '',
+                  `Result: ${resultText}`,
+                  tool.result_truncated ? '(Result preview truncated.)' : ''
+                ].filter(Boolean).join('\n');
+                appendOutput(
+                  `Step ${index + 1} · ${tool.tool || 'Tool'}`,
+                  details,
+                  succeeded ? 'completed' : 'failed'
+                );
+                if (succeeded) toolCallsSucceeded += 1;
+                else toolCallsFailed += 1;
+                onToolEvent(tool);
+              }
+            }
+          );
+          reply = result.reply || reply;
+          if (!reply.trim()) throw new Error('The agent returned an empty response.');
+          onChatMessage('assistant', reply);
+          const statusBadge = stepOutput.entry.querySelector('.suite-result-heading .badge');
+          statusBadge.textContent = stepToolEvents.length
+            ? stepToolEvents.some(tool => tool.status !== 'success')
+              ? 'RESPONSE · TOOL ERROR'
+              : 'RESPONSE · TOOLS OK'
+            : 'RESPONSE · NO TOOL CALLS';
+          statusBadge.className = `badge ${
+            stepToolEvents.some(tool => tool.status !== 'success')
+              ? 'badge-warning'
+              : 'badge-accent'
+          }`;
+          stepOutput.text.textContent = reply;
+          completed += 1;
+        } catch (error) {
+          failed += 1;
+          stepOutput.entry.querySelector('.suite-result-heading .badge').textContent = 'FAILED';
+          stepOutput.entry.querySelector('.suite-result-heading .badge').className = 'badge badge-warning';
+          stepOutput.text.textContent = stepOutput.text.textContent
+            ? `${stepOutput.text.textContent}\n\nRequest failed: ${error.message}`
+            : error.message;
+          onChatMessage('system', `Test step ${index + 1} failed: ${error.message}`);
+        }
+        if (stopRequested) break;
+      }
+      const stopped = stopRequested;
+      setStatus(
+        stopped
+          ? `Stopped · ${completed} responses · ${failed} request failures`
+          : `Finished · ${completed} responses · ${failed} request failures`,
+        failed || toolCallsFailed ? 'danger' : 'success'
+      );
+      appendOutput(
+        stopped ? 'Suite stopped' : 'Suite finished',
+        `${completed} response(s) received · ${toolCallsSucceeded} successful tool call(s) · `
+          + `${toolCallsFailed} tool error(s) · ${failed} request failure(s). `
+          + 'Review the tool results and agent responses to decide whether each task succeeded.'
+          + (stopped ? ' · Remaining steps were not run.' : ''),
+        failed || toolCallsFailed ? 'failed' : stopped ? 'stopped' : 'completed'
+      );
+    } finally {
+      running = false;
+      suiteExecutionActive = false;
+      stopRequested = false;
+      onRunningChange(false);
+      updateControls();
+      if (closeAfterRun) {
+        closed = true;
+        openSuiteDialog = null;
+        overlay.remove();
+      }
+    }
+  }
+
+  async function saveSuite() {
+    if (!filePath || !sourceLoaded || running) return;
+    saveButton.disabled = true;
+    setStatus('Saving suite…');
+    try {
+      await Api.writeFile(filePath, serializeSteps(steps));
+      dirty = false;
+      setStatus(`Saved to ${filePath}.`, 'success');
+    } catch (error) {
+      setStatus(`Could not save suite: ${error.message}`, 'danger');
+    } finally {
+      updateControls();
+    }
+  }
+
+  function closeDialog() {
+    if (running) {
+      if (closeAfterRun) return;
+      if (!confirm('A step is still running. Stop after its response finishes and close the runner?')) return;
+      stopRequested = true;
+      closeAfterRun = true;
+      setStatus('Stop requested; waiting for the current response before stopping.');
+      updateControls();
+      return;
+    }
+    if (dirty && !confirm('Close without saving your test suite changes?')) {
+      return;
+    }
+    closed = true;
+    openSuiteDialog = null;
+    overlay.remove();
+  }
+
+  addButton.addEventListener('click', () => {
+    const step = { id: nextId++, enabled: true, text: '' };
+    steps.push(step);
+    dirty = true;
+    renderSteps(step.id);
+  });
+  runButton.addEventListener('click', runSuite);
+  stopButton.addEventListener('click', () => {
+    if (!running || stopRequested) return;
+    stopRequested = true;
+    stopButton.disabled = true;
+    setStatus('Stop requested; the current response will finish before stopping.');
+  });
+  saveButton.addEventListener('click', saveSuite);
+  overlay.querySelectorAll('[data-suite-close]').forEach(button => {
+    button.addEventListener('click', closeDialog);
+  });
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) closeDialog();
+  });
+  const onKeyDown = event => {
+    if (event.key === 'Escape' && !closed) closeDialog();
+  };
+  overlay.addEventListener('keydown', onKeyDown);
+
+  document.body.appendChild(overlay);
+  openSuiteDialog = dialog;
+  dialog.querySelector('[data-suite-close]').focus();
+  renderSteps();
+  if (filePath) {
+    setStatus('Loading selected test list…');
+    Api.readFile(filePath).then(file => {
+      if (closed) return;
+      steps = parseSteps(file.content);
+      nextId = steps.reduce((maximum, step) => Math.max(maximum, step.id), 0) + 1;
+      loadingSource = false;
+      sourceLoaded = true;
+      renderSteps();
+      setStatus(`${steps.length} step(s) loaded.`, 'success');
+    }).catch(error => {
+      if (closed) return;
+      loadingSource = false;
+      sourceLoaded = false;
+      setStatus(`Could not load ${filePath}: ${error.message}`, 'danger');
+      appendOutput('Could not load suite file', error.message, 'failed');
+      updateControls();
+    });
+  } else {
+    setStatus('Add steps, or select a To-Do file in Chat & Test Controls to load and save a suite.');
+  }
 }
 
 `
@@ -14354,178 +16701,89 @@ Read, write, list a tree, or delete a path through the editor pillar.
 
 `
 
-### library/agent-02.md
+### library/chat-assitant.md
 
 `markdown
 ---
-id: agent-02
-name: Problem Identification Agent
-description: problem sovling agent
+id: chat-assitant
+name: Assistant
+description: Help Full Chat Assistant
 mode: agent
 model: qwen2.5-coder:latest
 environment: workspace
+version: 1
 tools:
-  - calculator
+  - read_agent_memory
+  - search_knowledge_base
+  - list_knowledge_documents
+  - delete_file
   - read_file
   - write_file
-  - map_files
   - editor
-  - delete_file
-  - project_status
-  - ask_user_questions
+  - map_files
 ---
 
-## Problem Identification Agent
+# Chatbot Design Prompt for File Manager CRUD Operations
 
-You are a careful Problem Identification Agent. Your responsibility is to help the user identify, understand, and narrow down a problem through structured investigation.
+This prompt designs a persona for a highly capable assistant specialized in performing file management operations and answering related queries.
 
-The user may begin with an incomplete, mistaken, or uncertain description of the problem. Do not automatically assume their interpretation is correct.
+## Hallucination Control
 
-Gather evidence, ask clarifying questions, evaluate possible explanations, and produce a conclusion supported by the available information.
+You must strictly adhere to the information present in the provided context or the results returned by the tool calls. If you do not know the answer or cannot find the necessary information, you must state clearly that you do not have the information rather than fabricating a response. Always verify any action taken based on a tool result before proceeding.
 
-Your priority is accuracy, not speed.
+## Role
 
-## Investigation Process
+You are an expert Workspace Agent specializing in file system operations (CRUD: Create, Read, Update, Delete) and general knowledge retrieval from the workspace. Your primary function is to guide the user through file management tasks using the provided tools while maintaining high accuracy and helpfulness.
 
-Receive the user's description of the problem.
+## Scratchpad
 
-Restate the problem without adding unsupported details.
+You must utilize a dedicated scratchpad to plan complex multi-step operations, intermediate calculations, or complex file paths before attempting to execute external tools. The scratchpad should be used for internal reasoning and planning; the final output to the user should be clear and actionable based on this planning.
 
-Identify confirmed facts, assumptions, unknowns, and possible causes.
+## Tool Usage
 
-Determine which missing information would most help distinguish between possible explanations.
+You are authorized to use the provided tools, specifically `read_file`, `write_file`, `list_knowledge_documents`, `search_knowledge_base`, and `project_status`, to interact with the workspace file manager and knowledge base. Before executing any tool, you must analyze the user's request to determine the correct tool and parameters. If a request requires multiple steps, use the scratchpad to plan the sequence of actions before executing the final commands.
 
-Ask one clear, targeted question at a time.
+## Available Tools
 
-Evaluate the user's response against the existing evidence.
+### read_agent_memory
+- Provider: agentMemory
+- Signature: (memory_type: str = 'all') -> str
+Read the latest file content copied by read_file and/or the latest directory map copied by map_files.
 
-Update the list of possible causes and reconsider previous conclusions when necessary.
+### search_knowledge_base
+- Provider: agentMemory
+- Signature: (query: str, top_k: int = 5) -> str
+Search documents in workspace/Knowledge Base using semantic Ollama embeddings; returns passages with source paths and similarity scores.
 
-Repeat the investigation until sufficient evidence exists, the user requests a report, or further progress requires unavailable information.
+### list_knowledge_documents
+- Provider: agentMemory
+- Signature: () -> str
+List documents currently indexed in the semantic Knowledge Base.
 
-Produce a final investigation report.
+### delete_file
+- Provider: tools
+- Signature: (path: str) -> str
+Delete a file or directory from the workspace by relative path.
 
-## Rules
+### read_file
+- Provider: tools
+- Signature: (path: str, request: str = '') -> str
+Read a UTF-8 text or Docling-supported document from the configured file-manager root.  PDF, DOCX, PPTX, and ODT documents are text-extracted with Docling; OCR is enabled for PDFs to support scanned pages. Text files are limited to 1 MB; documents to 25 MB and 1 MB of extracted text. Successful reads are mirrored to agent memory. Returns JSON with the request, path, content, and scratchpad context.
 
-Never invent facts, observations, test results, file contents, tool outputs, or user statements.
+### write_file
+- Provider: tools
+- Signature: (path: str, content: str) -> str
+Write UTF-8 content to a workspace file by relative path (bare filenames go in the root).  Overwrites existing files and creates missing parent directories. Supports formats such as .txt, .md, .py, .json, .html, .css, and .js. Returns JSON with the resolved path and bytes written.
 
-Never present an assumption or hypothesis as a confirmed fact.
+### editor
+- Provider: editor
+- Signature: (action: str, path: str = '', content: str = '') -> str
+Read, write, list a tree, or delete a path through the editor pillar.
 
-Distinguish between user-reported information and independently verified evidence.
-
-Do not claim that a test, file inspection, search, or other action occurred unless the relevant tool successfully completed it.
-
-If information is missing, ask for it or explicitly identify it as unknown.
-
-If the user's answer is ambiguous, ask for clarification rather than silently choosing an interpretation.
-
-Consider reasonable alternative explanations.
-
-Look for evidence that could disprove your leading hypothesis, not only evidence that supports it.
-
-If new information contradicts a previous conclusion, acknowledge the contradiction and revise your assessment.
-
-Never invent confidence percentages.
-
-If the evidence is insufficient, state that the cause remains undetermined.
-
-Never manufacture a definitive answer merely to satisfy the user
-
-## Questions-Probelm Identification Agent
-
-Ask the question that is most useful for distinguishing between the remaining possible causes.
-
-Prefer specific questions about observable behavior, error messages, recent changes, reproduction steps, expected results, and actual results when relevant.
-
-Ask one primary question per response. Avoid repeating questions the user has already answered.
-
-If several interpretations are possible, clarify the ambiguity before proceeding.
-
-Explain briefly why the question matters when doing so helps the user understand the investigation.
-
-## AgentResoning
-
-Provide a concise, evidence-based explanation of the investigation. Show the relevant facts, assumptions, competing hypotheses, evidence for and against them, and the reason for the current conclusion.
-
-Do not claim that an untested hypothesis has been proven.
-
-Do not expose hidden internal reasoning. Instead, provide an understandable rationale that the user can check against the evidence.
-
-## Required Response Format
-
-Use these sections in every investigative response:
-
-Problem Restatement
-
-Describe the problem as currently understood. Do not introduce unsupported details.
-
-Evidence and Logic
-
-Confirmed facts:
-
-Unverified assumptions:
-
-Possible causes:
-
-Missing evidence:
-
-What the available evidence supports or contradicts:
-
-Current Conclusion
-
-State the current assessment and whether the problem has been identified, partially narrowed down, or remains undetermined.
-
-Next Question
-
-Ask one targeted question that will most effectively advance the investigation.
-
-During the initial investigation, the conclusion is provisional. Do not force a final diagnosis.
-
-## Final Report
-
-When the investigation is complete, provide:
-
-Problem statement.
-
-Confirmed evidence.
-
-Investigation summary.
-
-Causes considered and the evidence for or against each.
-
-Most likely cause, if supported by sufficient evidence.
-
-Confidence description: high, moderate, low, or undetermined, with a justification.
-
-Remaining uncertainties and limitations.
-
-Recommended verification test or next step.
-
-Final conclusion.
-
-If the root cause cannot be established, clearly state what has been determined and what additional evidence is needed.
-
-## Completion Criteria
-
-Do not declare the investigation complete solely because you have a plausible explanation.
-
-A root cause should be considered confirmed only when the evidence adequately supports it and reasonable alternatives have been addressed. Where practical, use a test or observation to verify the cause.
-
-If verification is unavailable, label the conclusion as provisional.
-
-Your success is measured by the accuracy, traceability, and usefulness of your findings, not by how quickly you produce an answer.
-
-
-## Skill: ask_user_questions
-
-When additional user information is required to identify a problem, create a valid JSON file containing the necessary questions and save it inside the workspace. Call `ask_user_questions(json_file_path, timeout_seconds=300.0)` using a workspace-root-relative path without the `workspace/` prefix. The tool pauses the agent until the user submits their answers and returns them as a JSON string. Parse and evaluate the returned answers, update the investigation's evidence and hypotheses, and continue asking targeted questions as needed. Treat answers as user-reported information, not independently verified facts, and never invent missing answers or tool results.
-
-## Tools
-
-### ask_user_questions
-- Provider: codebuilder
-- Signature: (json_file_path: str, timeout_seconds: float = 300.0) -> str
-- Description: Pause the agent and ask the user a list of questions from a JSON file in the workspace.  The browser pops up a step-by-step dialog; once the user submits answers this tool resumes and returns the questions and answers as a JSON string.  Expected JSON file contents (a list, or an object with a "questions" list): [{"id": "q1", "question": "What is the target deployment environment?"}] Provide a workspace-root-relative path; do not prefix it with 'workspace/'.
+### map_files
+- Provider: file_manager
+- Signature: (path: str = '') -> str
+Return a directory tree and save a copy in the shared agent-memory scratchpad.
 
 `
 
@@ -14918,7 +17176,7 @@ EXCLUDE_DIRS = {
     "model_logs",
 }
 INCLUDE_EXT = {".py", ".js", ".css", ".html", ".json", ".md", ".txt", ".bat", ".sh", ".yaml", ".yml", ".cfg", ".ini"}
-SKIP_FILES = {"MASTER_COPY.md", "novous2-ai-builder-prompt-v2.md"}
+SKIP_FILES = {"MASTER_COPY.md", "novous2-ai-builder-prompt-v2.md", "rag_config.json"}
 SNAPSHOT_PREFIXES = ("NOVOUS_APP_SNAPSHOT", "NOVOUS2_APP_SNAPSHOT")
 
 OUT = ROOT / "app_documentation" / f"NOVOUS_APP_SNAPSHOT_{TODAY}_new.md"
@@ -15040,7 +17298,7 @@ def collect() -> list[Path]:
     for path in sorted(ROOT.rglob("*")):
         if not path.is_file():
             continue
-        if path.name.startswith("MASTER_COPY") or path.name == "novous2-ai-builder-prompt-v2.md":
+        if path.name.startswith("MASTER_COPY") or path.name in {"novous2-ai-builder-prompt-v2.md", "rag_config.json"}:
             continue
         if path.suffix not in INCLUDE:
             continue
@@ -15219,8 +17477,11 @@ app = FastAPI(title="Novous AGENT FACTORY", version="4.0.0")
 def migrate_sandbox_environment():
     """Move packages from the old in-repo sandbox venv to the configured sandbox folder."""
     import threading
+    from agentMemory.interface import start_document_scanner
     from test_environment import sandbox_env
+
     threading.Thread(target=sandbox_env.migrate_legacy, daemon=True).start()
+    start_document_scanner()
 
 # Mount Component Backend Routers
 app.include_router(tools_router)
@@ -16321,9 +18582,115 @@ def judge_prompt(model: str, title: str, description: str, sections: list[dict],
       "id": "test-agent-prompt",
       "name": "Test Agent Prompt",
       "description": ""
+    },
+    {
+      "id": "chatbot-design-prompt-for-file-manager-crud-operations",
+      "name": "Chatbot Design Prompt for File Manager CRUD Operations",
+      "description": "This prompt designs a persona for a highly capable assistant specialized in performing file management operations and answering related queries."
     }
   ]
 }
+
+`
+
+### test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/available-tools.md
+
+`markdown
+---
+title: Available Tools
+---
+
+### read_agent_memory
+- Provider: agentMemory
+- Signature: (memory_type: str = 'all') -> str
+Read the latest file content copied by read_file and/or the latest directory map copied by map_files.
+Call this tool when the user asks for the latest file content or directory map.
+
+### search_knowledge_base
+- Provider: agentMemory
+- Signature: (query: str, top_k: int = 5) -> str
+Search documents in workspace/Knowledge Base using semantic Ollama embeddings; returns passages with source paths and similarity scores.
+Call this tool when the user asks a question that requires information from the workspace knowledge base.
+
+### list_knowledge_documents
+- Provider: agentMemory
+- Signature: () -> str
+List documents currently indexed in the semantic Knowledge Base.
+Call this tool when the user asks to list the available documents in the Knowledge Base.
+
+### delete_file
+- Provider: tools
+- Signature: (path: str) -> str
+Delete a file or directory from the workspace by relative path.
+Call this tool when the user requests to delete a file or directory.
+
+### read_file
+- Provider: tools
+- Signature: (path: str, request: str = '') -> str
+Read a UTF-8 text or Docling-supported document from the configured file-manager root. PDF, DOCX, PPTX, and ODT documents are text-extracted with Docling; OCR is enabled for PDFs to support scanned pages. Text files are limited to 1 MB; documents to 25 MB and 1 MB of extracted text. Successful reads are mirrored to agent memory. Returns JSON with the request, path, content, and scratchpad context.
+Call this tool when the user asks to read the content of a file.
+
+### write_file
+- Provider: tools
+- Signature: (path: str, content: str) -> str
+Write UTF-8 content to a workspace file by relative path (bare filenames go in the root). Overwrites existing files and creates missing parent directories. Supports formats such as .txt, .md, .py, .json, .html, .css, and .js. Returns JSON with the resolved path and bytes written.
+Call this tool when the user asks to create or write content to a file.
+
+### editor
+- Provider: editor
+- Signature: (action: str, path: str = '', content: str = '') -> str
+Read, write, list a tree, or delete a path through the editor pillar.
+Call this tool when the user requests complex file path manipulation, reading/writing specific file contents, or listing the directory tree.
+
+### map_files
+- Provider: file_manager
+- Signature: (path: str = '') -> str
+Return a directory tree and save a copy in the shared agent-memory scratchpad.
+Call this tool when the user requests to view the directory structure of a location.
+
+`
+
+### test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/hallucination-control.md
+
+`markdown
+---
+title: Hallucination Control
+---
+
+You must strictly adhere to the information present in the provided context or the results returned by the tool calls. If you do not know the answer or cannot find the necessary information, you must state clearly that you do not have the information rather than fabricating a response. Always verify any action taken based on a tool result before proceeding.
+
+`
+
+### test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/role.md
+
+`markdown
+---
+title: Role
+---
+
+You are an expert Workspace Agent specializing in file system operations (CRUD: Create, Read, Update, Delete) and general knowledge retrieval from the workspace. Your primary function is to guide the user through file management tasks using the provided tools while maintaining high accuracy and helpfulness.
+
+`
+
+### test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/scratchpad.md
+
+`markdown
+---
+title: Scratchpad
+---
+
+You must utilize a dedicated scratchpad to plan complex multi-step operations, intermediate calculations, or complex file paths before attempting to execute external tools. The scratchpad should be used for internal reasoning and planning; the final output to the user should be clear and actionable based on this planning.
+
+`
+
+### test_environment/PromptBuilderFiles/parts/chatbot-design-prompt-for-file-manager-crud-operations/tool-usage.md
+
+`markdown
+---
+title: Tool Usage
+---
+
+You are authorized to use the provided tools, specifically `read_file`, `write_file`, `list_knowledge_documents`, `search_knowledge_base`, and `project_status`, to interact with the workspace file manager and knowledge base. Before executing any tool, you must analyze the user's request to determine the correct tool and parameters. If a request requires multiple steps, use the scratchpad to plan the sequence of actions before executing the final commands.
 
 `
 
@@ -16797,6 +19164,180 @@ def clear_roots() -> None:
 
 `
 
+### test_environment/test_agent_memory.py
+
+`python
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from agentMemory import interface, rag_database, scratchpad
+from agentMemory.indexer import _chunk_text
+
+
+class TestAgentMemory(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.temp_path = Path(self.temp_dir.name)
+        self.database_patch = patch.object(
+            rag_database, "DATABASE_PATH", self.temp_path / "knowledge.sqlite3"
+        )
+        self.scratchpad_path_patch = patch.object(
+            scratchpad, "SCRATCHPAD_PATH", self.temp_path / "scratchpad.json"
+        )
+        self.scratchpad_dir_patch = patch.object(
+            scratchpad, "DATA_DIR", self.temp_path
+        )
+        self.database_patch.start()
+        self.scratchpad_path_patch.start()
+        self.scratchpad_dir_patch.start()
+        self.addCleanup(self.database_patch.stop)
+        self.addCleanup(self.scratchpad_path_patch.stop)
+        self.addCleanup(self.scratchpad_dir_patch.stop)
+        rag_database.initialize()
+
+    def test_scratchpad_stores_latest_read_and_map(self):
+        read = interface.store_read("notes.txt", "remember this", "summarize")
+        interface.store_read("second.txt", "also remember this", "compare")
+        mapped = interface.store_map({"name": "workspace"}, "workspace")
+
+        memory = interface.read_memory()
+        self.assertEqual(memory["latest_read"]["content"], "also remember this")
+        self.assertEqual(memory["latest_read"]["request"], "compare")
+        self.assertEqual(
+            [entry["path"] for entry in memory["read_history"]],
+            ["notes.txt", "second.txt"],
+        )
+        self.assertEqual(memory["latest_map"]["tree"], {"name": "workspace"})
+        self.assertEqual(read["path"], mapped["path"])
+
+    def test_read_history_is_bounded_and_clear_removes_saved_memory(self):
+        for index in range(scratchpad.MAX_READ_HISTORY + 3):
+            interface.store_read(f"file-{index}.txt", str(index))
+
+        history = interface.read_memory()["read_history"]
+        self.assertEqual(len(history), scratchpad.MAX_READ_HISTORY)
+        self.assertEqual(history[0]["path"], "file-3.txt")
+        self.assertEqual(history[-1]["path"], f"file-{scratchpad.MAX_READ_HISTORY + 2}.txt")
+
+        self.assertTrue(scratchpad.clear_memory()["cleared"])
+        self.assertEqual(interface.read_memory(), {})
+
+    def test_document_crud_and_semantic_search(self):
+        rag_database.replace_document(
+            "workspace/Knowledge Base/guide.md",
+            1,
+            12,
+            "2025-01-01T00:00:00+00:00",
+            [
+                ("cats and kittens", [1.0, 0.0]),
+                ("space and planets", [0.0, 1.0]),
+            ],
+        )
+        with patch("agentMemory.interface.ollama.embed", return_value={"embeddings": [[0.9, 0.1]]}):
+            result = interface.search_knowledge_base("cats", top_k=1)
+
+        self.assertEqual(result["results"][0]["content"], "cats and kittens")
+        self.assertEqual(interface.list_documents()[0]["chunks"], 2)
+        self.assertTrue(interface.delete_document("workspace/Knowledge Base/guide.md")["deleted"])
+        self.assertEqual(interface.list_documents(), [])
+
+    def test_stale_document_cleanup_normalizes_path_separators(self):
+        rag_database.replace_document(
+            "workspace\\Knowledge Base\\keep.md", 1, 1, "now", []
+        )
+        rag_database.replace_document(
+            "workspace/Knowledge Base/remove.md", 1, 1, "now", []
+        )
+
+        removed = rag_database.delete_documents_under(
+            "workspace/Knowledge Base",
+            {"workspace/Knowledge Base/keep.md"},
+        )
+
+        self.assertEqual(removed, ["workspace/Knowledge Base/remove.md"])
+        self.assertEqual(
+            [item["path"] for item in rag_database.list_documents()],
+            ["workspace\\Knowledge Base\\keep.md"],
+        )
+
+    def test_chunking_preserves_text_and_bounds_chunk_size(self):
+        text = ("line of knowledge\n\n" * 120).strip()
+
+        chunks = _chunk_text(text)
+
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(len(chunk) <= 1400 for chunk in chunks))
+        self.assertTrue(all(chunk in text for chunk in chunks))
+
+    def test_configured_folder_is_scanned_and_root_change_purges_old_entries(self):
+        from agentMemory import indexer, rag_config
+
+        first = self.temp_path / "first"
+        second = self.temp_path / "second"
+        first.mkdir()
+        second.mkdir()
+        (first / "a.md").write_text("alpha", encoding="utf-8")
+        (second / "b.md").write_text("beta", encoding="utf-8")
+        embed = {"embeddings": [[0.1, 0.2]]}
+        with patch.object(rag_config, "CONFIG_PATH", self.temp_path / "rag_config.json"), \
+                patch("agentMemory.indexer.ollama.embed", return_value=embed):
+            self.assertEqual(
+                interface.set_rag_folder(str(first))["path"], str(first.resolve())
+            )
+            result = indexer.scan_knowledge_base()
+            self.assertEqual(result["indexed"], 1)
+            self.assertEqual(
+                [d["path"] for d in interface.list_documents()],
+                [(first / "a.md").resolve().as_posix()],
+            )
+
+            interface.set_rag_folder(str(second))
+            result = indexer.scan_knowledge_base()
+            self.assertEqual(len(result["removed"]), 1)
+            self.assertEqual(
+                [d["path"] for d in interface.list_documents()],
+                [(second / "b.md").resolve().as_posix()],
+            )
+
+            cleared = interface.clear_rag_index()
+            self.assertEqual(cleared["removed"], 1)
+            self.assertEqual(cleared["documents"], 0)
+
+    def test_manual_text_is_added_listed_and_deleted(self):
+        with patch("agentMemory.indexer.ollama.embed", return_value={"embeddings": [[0.1, 0.2]]}):
+            result = interface.add_text_document("  My   note ", "some knowledge")
+        self.assertEqual(result["path"], "manual:My note")
+        overview = interface.get_rag_overview()
+        self.assertEqual(overview["types"], {"manual": 1})
+        self.assertEqual(overview["files"][0]["chunks"], 1)
+        with self.assertRaises(ValueError):
+            interface.add_text_document("", "text")
+        with self.assertRaises(ValueError):
+            interface.add_text_document("title", "   ")
+        interface.delete_document("manual:My note")
+        self.assertEqual(interface.get_rag_overview()["documents"], 0)
+
+    def test_invalid_rag_folder_is_rejected_and_empty_restores_default(self):
+        from agentMemory import rag_config
+
+        with patch.object(rag_config, "CONFIG_PATH", self.temp_path / "rag_config.json"):
+            with self.assertRaises(ValueError):
+                interface.set_rag_folder(str(self.temp_path / "missing"))
+            with self.assertRaises(ValueError):
+                interface.set_rag_folder("relative/path")
+            self.assertEqual(
+                interface.set_rag_folder("")["path"], str(rag_config.DEFAULT_KNOWLEDGE_BASE)
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+`
+
 ### test_environment/test_behavior_probe.py
 
 `python
@@ -17089,6 +19630,143 @@ class TestPublishTools(unittest.TestCase):
 
             self.assertEqual(response.status_code, 400)
             self.assertIn("Unknown tools", response.json()["detail"])
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+`
+
+### test_environment/test_read_tool.py
+
+`python
+import json
+import sys
+import types
+import unittest
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+from tools import interface
+from tools import read_tool
+
+
+class TestReadTool(unittest.TestCase):
+    def setUp(self):
+        read_tool._DOC_CONVERTER = None
+
+    def tearDown(self):
+        read_tool._DOC_CONVERTER = None
+
+    def _source(self, path: str, content: bytes = b"%PDF") -> dict:
+        return {
+            "path": path,
+            "resolved_path": Path(path),
+            "size_bytes": len(content),
+            "content": content,
+        }
+
+    def test_reads_text_files_as_utf8(self):
+        read_bytes = Mock()
+        read_bytes.return_value = self._source("notes.txt", "hello".encode("utf-8"))
+
+        with patch.object(read_tool.interface, "read_file_bytes", read_bytes):
+            source, content = read_tool._read_content("notes.txt")
+
+        self.assertEqual(source["path"], "notes.txt")
+        self.assertEqual(content, "hello")
+
+    def test_extracts_pdf_text_with_docling(self):
+        read_bytes = Mock()
+        read_bytes.return_value = self._source("manual.pdf")
+        document = Mock()
+        document.export_to_markdown.return_value = "# Manual"
+        converter = Mock()
+        converter.convert.return_value.document = document
+
+        with (
+            patch.object(read_tool.interface, "read_file_bytes", read_bytes),
+            patch.object(read_tool, "_get_docling_converter", return_value=converter),
+        ):
+            source, content = read_tool._read_content("manual.pdf")
+
+        self.assertEqual(content, "# Manual")
+        converter.convert.assert_called_once_with("manual.pdf")
+
+    def test_docling_converter_enables_ocr_for_pdf(self):
+        input_format = object()
+        input_formats = types.ModuleType("docling.datamodel.base_models")
+        input_formats.InputFormat = types.SimpleNamespace(PDF=input_format)
+
+        pipeline_options = Mock()
+        pipeline_options_module = types.ModuleType("docling.datamodel.pipeline_options")
+        pipeline_options_module.PdfPipelineOptions = Mock(return_value=pipeline_options)
+
+        converter_module = types.ModuleType("docling.document_converter")
+        converter_class = Mock(return_value=object())
+        pdf_format_option = Mock()
+        converter_module.DocumentConverter = converter_class
+        converter_module.PdfFormatOption = pdf_format_option
+
+        modules = {
+            "docling": types.ModuleType("docling"),
+            "docling.datamodel": types.ModuleType("docling.datamodel"),
+            "docling.datamodel.base_models": input_formats,
+            "docling.datamodel.pipeline_options": pipeline_options_module,
+            "docling.document_converter": converter_module,
+        }
+        with patch.dict(sys.modules, modules):
+            read_tool._get_docling_converter()
+
+        self.assertTrue(pipeline_options.do_ocr)
+        pdf_format_option.assert_called_once_with(pipeline_options=pipeline_options)
+        converter_class.assert_called_once_with(
+            format_options={input_format: pdf_format_option.return_value}
+        )
+
+    def test_reports_oversized_pdf_with_actionable_message(self):
+        read_bytes = Mock()
+        read_bytes.side_effect = interface.FileReadLimitError("over limit")
+
+        with patch.object(read_tool.interface, "read_file_bytes", read_bytes):
+            with self.assertRaisesRegex(ValueError, "25 MB.*Split or compress"):
+                read_tool._read_content("manual.pdf")
+
+    def test_reports_unreadable_pdf_without_fabricating_content(
+        self,
+    ):
+        read_bytes = Mock()
+        read_bytes.return_value = self._source("locked.pdf")
+        converter = Mock()
+        converter.convert.side_effect = ValueError("bad PDF")
+
+        with (
+            patch.object(read_tool.interface, "read_file_bytes", read_bytes),
+            patch.object(read_tool, "_get_docling_converter", return_value=converter),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "encrypted, damaged, unsupported"):
+                read_tool._read_content("locked.pdf")
+
+    def test_stores_extracted_document_text_in_agent_memory(
+        self,
+    ):
+        read_content = Mock()
+        store_read = Mock()
+        read_content.return_value = (self._source("manual.pdf"), "# Manual")
+        store_read.return_value = {
+            "path": "agentMemory/data/scratchpad.json",
+            "updated_at": "2026-10-21T00:00:00+00:00",
+        }
+
+        with (
+            patch.object(read_tool, "_read_content", read_content),
+            patch.object(read_tool.agent_memory, "store_read", store_read),
+        ):
+            result = json.loads(read_tool.read_file("manual.pdf", "summarize"))
+
+        self.assertEqual(result["content"], "# Manual")
+        self.assertEqual(result["content_type"], "document_text")
+        store_read.assert_called_once_with("manual.pdf", "# Manual", "summarize")
 
 
 if __name__ == "__main__":
@@ -17526,7 +20204,6 @@ class TestToolCatalog(unittest.TestCase):
         expected = {
             # core_engine/core_tools.py
             "calculator",
-            "docling_parse",
             "rag_agent_tool",
             "agent_info",
             "extract_docstrings",
@@ -17541,10 +20218,13 @@ class TestToolCatalog(unittest.TestCase):
             "editor",
             "delete_file",
             "map_files",
+            "read_agent_memory",
+            "search_knowledge_base",
+            "list_knowledge_documents",
         }
         for exp in expected:
             self.assertIn(exp, names)
-        self.assertEqual(len(tools), 16)
+        self.assertEqual(len(tools), 18)
 
     def test_tools_directory_contains_only_the_file_tools_and_promoted_module(self):
         files = {path.name for path in tool_catalog.TOOLS_DIR.iterdir() if path.is_file()}
@@ -17557,7 +20237,9 @@ class TestToolCatalog(unittest.TestCase):
                 "editor_tool.py",
                 "interface.py",
                 "map_files_tool.py",
-                "promoted_tools.py",                "read_tool.py",
+                "agent_memory_tool.py",
+                "promoted_tools.py",
+                "read_tool.py",
                 "write_tool.py",
             },
         )
@@ -17953,9 +20635,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from agentMemory import interface as agent_memory
 from fastapi.testclient import TestClient
 
 from core_engine import tool_catalog
+from core_engine.runtime import Agent, AgentProfile
 from server import app
 from tools import interface
 
@@ -17966,6 +20650,68 @@ class TestToolsInterface(unittest.TestCase):
 
     def tearDown(self):
         tool_catalog.load_tools(reload=True)
+
+    def test_agent_tool_events_include_bounded_return_results(self):
+        def successful_tool():
+            return {"path": "notes/result.txt", "written": True}
+
+        def failing_tool():
+            raise ValueError("write failed")
+
+        agent = Agent(
+            model="test-model",
+            tools=[successful_tool, failing_tool],
+            profile=AgentProfile(mode="agent"),
+        )
+        agent.act(
+            {"function": {"name": "successful_tool", "arguments": {}}},
+            "native",
+        )
+        agent.act(
+            {"function": {"name": "failing_tool", "arguments": {}}},
+            "native",
+        )
+
+        success, failure = agent.tool_events
+        self.assertEqual(success["status"], "success")
+        self.assertEqual(
+            json.loads(success["result"]),
+            {"path": "notes/result.txt", "written": True},
+        )
+        self.assertEqual(failure["status"], "error")
+        self.assertEqual(failure["error"], "write failed")
+
+    def test_scratchpad_api_reads_and_clears_saved_memory(self):
+        from agentMemory import scratchpad
+
+        client = TestClient(app)
+        with patch.object(scratchpad, "read_memory", return_value={"latest_read": {"path": "a.txt"}}):
+            response = client.get("/api/agent-memory/scratchpad")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"latest_read": {"path": "a.txt"}})
+
+        with patch.object(scratchpad, "clear_memory", return_value={"cleared": True}):
+            response = client.delete("/api/agent-memory/scratchpad")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"cleared": True})
+
+    def test_agent_tool_event_truncates_large_return_results(self):
+        def large_tool():
+            return "x" * 4000
+
+        agent = Agent(
+            model="test-model",
+            tools=[large_tool],
+            profile=AgentProfile(mode="agent"),
+        )
+        agent.act(
+            {"function": {"name": "large_tool", "arguments": {}}},
+            "native",
+        )
+
+        event = agent.tool_events[0]
+        self.assertEqual(len(event["result"]), 3000)
+        self.assertTrue(event["result_truncated"])
 
     def test_python_doorway_delegates_to_file_and_editor_services(self):
         with (
@@ -18078,17 +20824,28 @@ class TestToolsInterface(unittest.TestCase):
         }
         with (
             patch.object(interface, "map_files", return_value={"name": "root"}) as map_files,
-            patch.object(interface, "list_directory", return_value={"entries": []}),
             patch.object(
                 interface,
-                "read_file",
-                return_value={"path": "docs/readme.md", "content": "hello"},
-            ) as read_file,
+                "read_file_bytes",
+                return_value={
+                    "path": "docs/readme.md",
+                    "resolved_path": Path("docs/readme.md"),
+                    "size_bytes": 5,
+                    "content": b"hello",
+                },
+            ) as read_file_bytes,
+            patch.object(agent_memory, "store_read", return_value={
+                "path": "agentMemory/data/scratchpad.json",
+                "updated_at": "2026-10-21T00:00:00+00:00",
+            }),
+            patch.object(agent_memory, "store_map", return_value={
+                "path": "agentMemory/data/scratchpad.json",
+                "updated_at": "2026-10-21T00:00:00+00:00",
+            }),
             patch.object(
                 interface,
                 "write_file",
                 side_effect=[
-                    {"path": "scratchpad/latest_read.txt"},
                     {"path": "docs/readme.md", "bytes_written": 5},
                 ],
             ) as write_file,
@@ -18106,6 +20863,9 @@ class TestToolsInterface(unittest.TestCase):
                 json.loads(functions["read_file"]("docs/readme.md"))["content"],
                 "hello",
             )
+            read_file_bytes.assert_called_once_with(
+                "docs/readme.md", 1_000_000
+            )
             self.assertEqual(
                 json.loads(functions["write_file"]("docs/readme.md", "hello"))[
                     "bytes_written"
@@ -18120,8 +20880,7 @@ class TestToolsInterface(unittest.TestCase):
             )
 
         map_files.assert_called_once_with("docs")
-        read_file.assert_called_once_with("docs/readme.md")
-        self.assertEqual(write_file.call_count, 2)
+        self.assertEqual(write_file.call_count, 1)
         editor.assert_called_once_with("tree", path="", content="")
         delete_file.assert_called_once_with("docs/old.txt")
 
@@ -18202,7 +20961,16 @@ class TestToolsInterface(unittest.TestCase):
         names = {tool["name"] for tool in response.json()["tools"]}
         self.assertEqual(
             names,
-            {"map_files", "read_file", "write_file", "editor", "delete_file"},
+            {
+                "map_files",
+                "read_file",
+                "write_file",
+                "editor",
+                "delete_file",
+                "read_agent_memory",
+                "search_knowledge_base",
+                "list_knowledge_documents",
+            },
         )
         self.assertGreater(len(tool_catalog.list_tools()), len(names))
 
@@ -18617,39 +21385,58 @@ def delete_custom_tool(name: str) -> dict:
 
 `
 
+### tools/agent_memory_tool.py
+
+`python
+"""Agent-facing tools for shared memory and semantic document retrieval."""
+
+import json
+
+from core_engine.tool_catalog import tool
+from agentMemory import interface
+
+
+@tool(provider="agentMemory")
+def read_agent_memory(memory_type: str = "all") -> str:
+    """Read the latest file content copied by read_file and/or the latest directory map copied by map_files."""
+    return json.dumps(interface.read_memory(memory_type), ensure_ascii=False, indent=2)
+
+
+@tool(provider="agentMemory")
+def search_knowledge_base(query: str, top_k: int = 5) -> str:
+    """Search documents in workspace/Knowledge Base using semantic Ollama embeddings; returns passages with source paths and similarity scores."""
+    return json.dumps(interface.search_knowledge_base(query, top_k), ensure_ascii=False, indent=2)
+
+
+@tool(provider="agentMemory")
+def list_knowledge_documents() -> str:
+    """List documents currently indexed in the semantic Knowledge Base."""
+    return json.dumps(interface.list_documents(), ensure_ascii=False, indent=2)
+
+`
+
 ### tools/allowed_paths.json
 
 `json
 {
   "map_roots": [
-    "E:\\Novous2\\workspace",
-    "E:\\Novous2_Note\\test",
-    "C:\\Users\\43319\\OneDrive\\D\\Documents"
+    "E:\\Novous_notes"
   ],
-  "file_manager_root": "E:\\Novous2\\workspace",
+  "file_manager_root": "E:\\Novous_notes",
   "file_manager_roots": [
     {
-      "name": "Workspace",
-      "path": "E:\\Novous2\\workspace"
+      "name": "Novous Notes",
+      "path": "E:\\Novous_notes"
     },
     {
-      "name": "Documents",
-      "path": "C:\\Users\\43319\\OneDrive\\D\\Documents"
-    },
-    {
-      "name": "Scripts",
-      "path": "E:\\Novous2_Note\\scripts"
-    },
-    {
-      "name": "Test",
-      "path": "E:\\Novous2_Note\\test"
+      "name": "Prompts AI",
+      "path": "C:\\Users\\43319\\OneDrive\\Prompts AI"
     }
   ],
-  "active_file_manager_root": "E:\\Novous2\\workspace",
-  "sandbox_root": "E:\\Novous2_Note",
+  "active_file_manager_root": "E:\\Novous_notes",
+  "sandbox_root": "E:\\Novous_notes",
   "sandbox_roots": [
-    "E:\\Novous2_Note\\scripts",
-    "C:\\Users\\43319\\OneDrive\\D\\Documents"
+    "E:\\Novous_notes"
   ]
 }
 
@@ -18725,6 +21512,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 _FUNCTION_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+class FileReadLimitError(ValueError):
+    """Raised when a bounded file read exceeds its configured byte limit."""
+
+
 def map_files(path: str = "") -> dict:
     """Return the file-manager directory tree for a workspace-relative path."""
     return file_manager_service.directory_tree(_workspace_relative(path))
@@ -18754,6 +21545,27 @@ def list_directory(path: str = "") -> dict:
 def read_file(path: str) -> dict:
     """Read a file through the configured file-manager root."""
     return file_manager_service.read_file(path)
+
+
+def read_file_bytes(path: str, max_bytes: int) -> dict:
+    """Read bounded binary contents through the configured file-manager root."""
+    from file_manager import backend
+
+    resolved = backend.resolve_workspace_path(path)
+    if not resolved.is_file():
+        raise FileNotFoundError(f"File not found: {path}")
+    with resolved.open("rb") as source:
+        content = source.read(max_bytes + 1)
+    if len(content) > max_bytes:
+        raise FileReadLimitError(
+            f"File exceeds the {max_bytes}-byte read limit: {path}"
+        )
+    return {
+        "path": resolved.relative_to(backend.workspace_root()).as_posix(),
+        "resolved_path": resolved,
+        "size_bytes": len(content),
+        "content": content,
+    }
 
 
 def write_file(path: str, content: str) -> dict:
@@ -19093,6 +21905,88 @@ def catalog_report() -> dict:
     return tool_catalog.get_catalog_report()
 
 
+@router.get("/api/agent-memory/scratchpad")
+def api_read_agent_scratchpad():
+    """Return scratchpad data for the Chat Console."""
+    from agentMemory import scratchpad
+
+    return scratchpad.read_memory()
+
+
+@router.delete("/api/agent-memory/scratchpad")
+def api_clear_agent_scratchpad():
+    """Clear saved agent reads and workspace maps."""
+    from agentMemory import scratchpad
+
+    return scratchpad.clear_memory()
+
+
+@router.get("/api/rag/config")
+def api_get_rag_config():
+    from agentMemory import interface as memory
+
+    return memory.get_rag_status()
+
+
+@router.get("/api/rag/documents")
+def api_list_rag_documents():
+    from agentMemory import interface as memory
+
+    return memory.get_rag_overview()
+
+
+@router.post("/api/rag/documents")
+def api_add_rag_text(payload: dict):
+    from agentMemory import interface as memory
+
+    try:
+        return memory.add_text_document(str(payload.get("title", "")), str(payload.get("text", "")))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Embedding failed: {exc}") from exc
+
+
+@router.post("/api/rag/documents/delete")
+def api_delete_rag_document(payload: dict):
+    from agentMemory import interface as memory
+
+    try:
+        return memory.delete_document(str(payload.get("path", "")))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.put("/api/rag/config")
+def api_set_rag_config(payload: dict):
+    from agentMemory import interface as memory
+
+    try:
+        return memory.set_rag_folder(str(payload.get("path", "")))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/rag/reindex")
+def api_reindex_rag():
+    from agentMemory import interface as memory
+
+    try:
+        result = memory.refresh_knowledge_base()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {**result, **memory.get_rag_status()}
+
+
+@router.delete("/api/rag/index")
+def api_clear_rag_index():
+    from agentMemory import interface as memory
+
+    return memory.clear_rag_index()
+
+
 @router.get("/api/tools")
 def api_list_tools():
     rep = catalog_report()
@@ -19184,14 +22078,20 @@ def api_delete_tool(name: str):
 
 import json
 
+from agentMemory import interface as agent_memory
 from core_engine.tool_catalog import tool
 from tools import interface
 
 
 @tool(provider="file_manager")
 def map_files(path: str = "") -> str:
-    """Return the directory tree for a path relative to the configured file-manager root."""
-    return json.dumps(interface.map_files(path), ensure_ascii=False, indent=2)
+    """Return a directory tree and save a copy in the shared agent-memory scratchpad."""
+    tree = interface.map_files(path)
+    agent_memory.store_map(tree, path)
+    return json.dumps(tree, ensure_ascii=False, indent=2)
+
+
+map_files.display_output = True
 
 `
 
@@ -19223,91 +22123,124 @@ tools (edit/write) can reference or modify it without re-reading the source.
 """
 
 import json
+from pathlib import Path
 
+from agentMemory import interface as agent_memory
 from core_engine.tool_catalog import tool
 from tools import interface
 
 MAX_READ_SIZE_BYTES = 1_000_000  # ~1 MB. Raise or lower this cap here.
-SCRATCHPAD_PATH = "scratchpad/latest_read.txt"
+MAX_DOCUMENT_BYTES = 25_000_000
+MAX_EXTRACTED_TEXT_BYTES = 1_000_000
 _UTF8 = "utf-8"
+DOCLING_EXTENSIONS = {".pdf", ".docx", ".pptx", ".odt"}
+_DOC_CONVERTER = None
 
 
-def _split_relative(path: str) -> tuple[str, str]:
-    clean = path.replace("\\", "/").strip("/")
-    if "/" not in clean:
-        return "", clean
-    parent, name = clean.rsplit("/", 1)
-    return parent, name
+def _get_docling_converter():
+    global _DOC_CONVERTER
+    if _DOC_CONVERTER is None:
+        try:
+            from docling.datamodel.base_models import InputFormat
+            from docling.datamodel.pipeline_options import PdfPipelineOptions
+            from docling.document_converter import DocumentConverter, PdfFormatOption
+        except ImportError as exc:
+            raise RuntimeError(
+                "Docling is required to read PDF, DOCX, PPTX, and ODT files. "
+                "Install the project's dependencies and try again."
+            ) from exc
 
-
-def _listed_size(path: str) -> int | None:
-    parent, name = _split_relative(path)
-    try:
-        entries = interface.list_directory(parent)["entries"]
-    except Exception:
-        return None
-    for entry in entries:
-        if entry["name"] == name:
-            return int(entry.get("size") or 0)
-    return None
-
-
-def _size_guard(path: str, size_bytes: int) -> None:
-    if size_bytes > MAX_READ_SIZE_BYTES:
-        raise ValueError(
-            f"Refusing to read '{path}': {size_bytes} bytes exceeds MAX_READ_SIZE_BYTES "
-            f"({MAX_READ_SIZE_BYTES}). Adjust MAX_READ_SIZE_BYTES at the top of "
-            f"tools/read_tool.py to raise the cap."
+        pdf_options = PdfPipelineOptions()
+        pdf_options.do_ocr = True
+        _DOC_CONVERTER = DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_options)
+            }
         )
+    return _DOC_CONVERTER
 
 
-def _copy_to_scratchpad(content: str) -> str | None:
+def _read_content(path: str) -> tuple[dict, str]:
+    extension = Path(path).suffix.lower()
+    is_document = extension in DOCLING_EXTENSIONS
+    max_bytes = MAX_DOCUMENT_BYTES if is_document else MAX_READ_SIZE_BYTES
+
     try:
-        result = interface.write_file(SCRATCHPAD_PATH, content)
-        return str(result.get("path", SCRATCHPAD_PATH))
-    except Exception:
-        return None
+        source = interface.read_file_bytes(path, max_bytes)
+    except interface.FileReadLimitError as exc:
+        if is_document:
+            raise ValueError(
+                f"Cannot read document '{path}': it exceeds the {MAX_DOCUMENT_BYTES}-byte "
+                f"limit ({MAX_DOCUMENT_BYTES // 1_000_000} MB). Split or compress the file "
+                "and try again."
+            ) from exc
+        raise ValueError(
+            f"Cannot read '{path}': it exceeds the {MAX_READ_SIZE_BYTES}-byte "
+            "text-file limit. Split the file or use a smaller file."
+        ) from exc
+
+    if is_document:
+        converter = _get_docling_converter()
+        try:
+            result = converter.convert(str(source["resolved_path"]))
+            content = result.document.export_to_markdown()
+        except Exception as exc:
+            raise RuntimeError(
+                f"Docling could not extract text from '{path}'. The document may be "
+                "encrypted, damaged, unsupported, or image-only. Try an unprotected, "
+                "text-searchable PDF or another supported document."
+            ) from exc
+        if not content or not content.strip():
+            raise ValueError(
+                f"Docling found no extractable text in '{path}'. It may be image-only, "
+                "empty, or unsupported."
+            )
+        extracted_size = len(content.encode(_UTF8))
+        if extracted_size > MAX_EXTRACTED_TEXT_BYTES:
+            raise ValueError(
+                f"Extracted text from '{path}' is {extracted_size} bytes, exceeding the "
+                f"{MAX_EXTRACTED_TEXT_BYTES}-byte output limit. Split the document and "
+                "try again; no partial text was returned."
+            )
+        return source, content
+
+    try:
+        return source, source["content"].decode(_UTF8)
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"Cannot read '{path}' as UTF-8 text. Supported binary documents include "
+            "PDF, DOCX, PPTX, and ODT."
+        ) from exc
 
 
 @tool(provider="tools")
 def read_file(path: str, request: str = "") -> str:
-    """Read a UTF-8 text file from the workspace by relative path; bare filenames go in the root.
+    """Read a UTF-8 text or Docling-supported document from the configured file-manager root.
 
-    The raw content is mirrored to scratchpad/latest_read.txt, so later edit/write calls can
-    target the scratchpad instead of the original path. Files larger than MAX_READ_SIZE_BYTES
-    (~1 MB) are rejected; see tools/read_tool.py to adjust the limit.
-    Returns JSON with the request echo, resolved path, raw content, and scratchpad context.
+    PDF, DOCX, PPTX, and ODT documents are text-extracted with Docling; OCR is enabled
+    for PDFs to support scanned pages. Text files are limited to 1 MB; documents to
+    25 MB and 1 MB of extracted text. Successful reads are mirrored to agent memory.
+    Returns JSON with the request, path, content, and scratchpad context.
     """
     if not path or not path.strip():
         raise ValueError("A file path is required.")
 
-    listed = _listed_size(path)
-    if listed is not None:
-        _size_guard(path, listed)
-
     try:
-        result = interface.read_file(path)
+        result, content = _read_content(path)
     except Exception as exc:
         raise RuntimeError(f"Could not read '{path}': {exc}") from exc
 
-    content = result["content"]
-    size_bytes = len(content.encode(_UTF8))
-    if listed is None:
-        _size_guard(path, size_bytes)
-
-    scratchpad_path = _copy_to_scratchpad(content)
+    scratchpad_result = agent_memory.store_read(result["path"], content, request)
     payload = {
         "request": request,
         "path": result["path"],
-        "size_bytes": size_bytes,
+        "size_bytes": result["size_bytes"],
+        "content_type": "document_text" if Path(path).suffix.lower() in DOCLING_EXTENSIONS else "text",
         "content": content,
         "scratchpad": {
-            "path": scratchpad_path,
-            "context": (
-                "Latest read mirrored here; point edit/write tools at this path to modify it."
-                if scratchpad_path
-                else "Scratchpad copy failed; the content in this payload is the only copy."
-            ),
+            "path": scratchpad_result["path"],
+            "updated_at": scratchpad_result["updated_at"],
+            "context": "Latest read mirrored to agent memory. Use read_agent_memory to retrieve it.",
         },
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
@@ -19395,6 +22328,12 @@ one of my goasl in life is to be developer and i am working on Novous app
 
 `text
 Hello, World!
+`
+
+### workspace/helloAbout.txt
+
+`text
+This file was created based on the user's request to write a text file named helloAbout.txt. The subsequent interaction involved an attempt to read 'about.txt' which was not found, and then an instruction to add the contents of our chat to this file.
 `
 
 ### workspace/interface.py
@@ -19757,6 +22696,9 @@ DEFAULT_TOOLS = [
     "create_file",
     "list_directory",
     "project_status",
+    "read_agent_memory",
+    "search_knowledge_base",
+    "list_knowledge_documents",
 ]
 
 CODEBUILDER_DEFAULT_TOOLS = [
@@ -19768,6 +22710,9 @@ CODEBUILDER_DEFAULT_TOOLS = [
     "run_python_code",
     "send_code_to_editor",
     "run_code_in_editor",
+    "read_agent_memory",
+    "search_knowledge_base",
+    "list_knowledge_documents",
 ]
 
 
