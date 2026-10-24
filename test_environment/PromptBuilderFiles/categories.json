@@ -4,6 +4,11 @@
       "id": "skills",
       "name": "Skills",
       "description": ""
+    },
+    {
+      "id": "role",
+      "name": "Role",
+      "description": "You are a Prompt Engineer responsible for creating high-quality, well-structured prompts for AI agents. Your tasks include defining the agent's role, preventing hallucinations, stating objectives, and providing clear instructions."
     }
   ]
 }

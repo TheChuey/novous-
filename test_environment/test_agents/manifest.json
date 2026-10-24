@@ -249,5 +249,26 @@
     "label": "snapshot",
     "snapshot": "chat-assitant__snapshot__20261024-022557",
     "published_at": "2026-10-24T02:25:57.709139+00:00"
+  },
+  {
+    "agent_id": "prompt-generator",
+    "environment": "prompt-creation",
+    "label": "snapshot",
+    "snapshot": "prompt-creation__prompt-generator__snapshot__20261024-045819",
+    "published_at": "2026-10-24T04:58:19.044446+00:00"
+  },
+  {
+    "agent_id": "prompt-generator",
+    "environment": "prompt-creation",
+    "label": "snapshot",
+    "snapshot": "prompt-creation__prompt-generator__snapshot__20261024-050027",
+    "published_at": "2026-10-24T05:00:27.452794+00:00"
+  },
+  {
+    "agent_id": "prompt-generator",
+    "environment": "prompt-creation",
+    "label": "snapshot",
+    "snapshot": "prompt-creation__prompt-generator__snapshot__20261024-050537",
+    "published_at": "2026-10-24T05:05:37.788605+00:00"
   }
 ]

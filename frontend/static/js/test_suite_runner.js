@@ -110,7 +110,8 @@ export function openTestSuiteRunner({
   agentSelect.replaceChildren(...agents.map(agent => {
     const option = document.createElement('option');
     option.value = agent.id;
-    option.textContent = `${agent.name} (${agent.mode})`;
+    option.dataset.environment = agent.environment || 'workspace';
+    option.textContent = `${agent.name} (${agent.mode}) · ${agent.environment || 'workspace'}`;
     option.selected = agent.id === agentId;
     return option;
   }));
@@ -253,6 +254,7 @@ export function openTestSuiteRunner({
     onRunningChange(true);
     updateControls();
     const selectedAgent = agentSelect.value;
+    const selectedEnvironment = agentSelect.selectedOptions[0]?.dataset.environment || 'workspace';
     const selectedModel = modelSelect.value;
     const sessionId = `chat-${selectedAgent}`;
     appendOutput(
@@ -285,7 +287,7 @@ export function openTestSuiteRunner({
             selectedAgent,
             selectedModel,
             sessionId,
-            'workspace',
+            selectedEnvironment,
             async event => {
               if (event.type === 'token') {
                 reply += event.text;

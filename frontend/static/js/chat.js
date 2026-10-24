@@ -507,10 +507,21 @@ export function renderChatView(container) {
     syncActionButtons();
   });
 
-  Api.getAgents().then(data => {
-    agents = data.agents || [];
+  const agentEnvironments = ['workspace', 'codebuilder', 'prompt-creation'];
+  const environmentLabels = {
+    workspace: 'Workspace',
+    codebuilder: 'CodeBuilder',
+    'prompt-creation': 'Prompt Creation'
+  };
+  Promise.all(agentEnvironments.map(environment => Api.getAgents(environment))).then(results => {
+    agents = results.flatMap((data, index) =>
+      (data.agents || []).map(agent => ({
+        ...agent,
+        environment: agentEnvironments[index]
+      }))
+    );
     agentSelect.innerHTML = agents.length
-      ? agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.mode)})</option>`).join('')
+      ? agents.map(a => `<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.mode)}) · ${esc(environmentLabels[a.environment])}</option>`).join('')
       : '<option value="">No agents found</option>';
     if (agents.length > 0) {
       let last = null;
@@ -539,7 +550,8 @@ export function renderChatView(container) {
       <h4>${esc(agent.name)}</h4>
       <p><span class="badge ${agent.mode === 'agent' ? 'badge-accent' : 'badge-success'}">${esc((agent.mode || '').toUpperCase())}</span></p>
       <p>${esc(agent.description || 'No description provided.')}</p>
-      <p class="text-muted small">Model: ${esc(currentModel)}<br>
+      <p class="text-muted small">Environment: ${esc(environmentLabels[agent.environment] || 'Workspace')}<br>
+      Model: ${esc(currentModel)}<br>
       Tools: ${esc((agent.tools || []).join(', ') || 'none')}</p>`;
     toolsToggle.disabled = agent.mode !== 'agent';
     toolsToggle.checked = agent.mode === 'agent';
@@ -772,7 +784,14 @@ export function renderChatView(container) {
 
     try {
       const sessionId = `chat-${agentId}`;
-      const res = await Api.sendMessage(text, agentId, currentModel, sessionId);
+      const agent = agents.find(item => item.id === agentId);
+      const res = await Api.sendMessage(
+        text,
+        agentId,
+        currentModel,
+        sessionId,
+        agent?.environment || 'workspace'
+      );
       removeMessage(thinkingId);
 
       if (res.tool_events && res.tool_events.length > 0) {

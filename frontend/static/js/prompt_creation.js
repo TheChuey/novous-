@@ -328,7 +328,7 @@ export function renderPromptCreationView(container) {
           <h3 id="tb-tools-title">Available Core Engine Tools</h3>
           <button type="button" class="btn btn-sm" id="btn-refresh-tools">Refresh Tools</button>
         </div>
-        <p class="text-muted small">Tools retrieved from the five file-tool modules and <code>promoted_tools.py</code> in <code>tools/</code>. Tick a tool to include it in the prompt; use ✎ to edit its description and 🧪 to test it.</p>
+        <p class="text-muted small">Tools retrieved from the five file-tool modules and <code>promoted_tools.py</code> in <code>tools/</code>. Select tools to include them in the prompt, or edit and test each tool.</p>
         <div id="tools-list-container" class="prompt-core-tools-list">
           <p class="text-muted">Loading available tools...</p>
         </div>
@@ -1498,77 +1498,10 @@ export function renderPromptCreationView(container) {
   });
 
   catBox.addEventListener('click', async (e) => {
-    const testCatBtn = e.target.closest('[data-test-cat]');
-    if (testCatBtn) {
-      const cat = (manifest.categories || []).find(item => item.id === testCatBtn.dataset.testCat);
-      if (!cat) return;
-      if (!(cat.parts || []).length) return showMsg(`Category '${cat.name}' has no parts to test.`, true);
-      const markdown = [
-        `# ${cat.name}`,
-        cat.description || '',
-        ...cat.parts.map(part => `## ${part.title}\n\n${part.content.trim()}`)
-      ].filter(Boolean).join('\n\n');
-      const { switchTab } = await import('./app.js');
-      switchTab('testing', {
-        type: 'category',
-        id: cat.id,
-        name: cat.name,
-        partCount: cat.parts.length,
-        markdown
-      });
-      return;
-    }
-
-    const testBtn = e.target.closest('[data-test-part]');
-    if (testBtn) {
-      const part = findPromptPart(testBtn.getAttribute('data-test-part'));
-      const row = testBtn.closest('.part-row');
-      const existing = row.nextElementSibling;
-      if (existing?.classList.contains('part-test-panel')) {
-        existing.remove();
-        return;
-      }
-      if (!part) return;
-      const panel = document.createElement('div');
-      panel.className = 'part-test-panel card bg-elev small';
-      panel.style.cssText = 'padding: 0.5rem; margin: 0.25rem 0;';
-      panel.textContent = 'Testing part…';
-      row.after(panel);
-      try {
-        const result = await Api.evaluatePromptComponents(
-          promptTitle,
-          promptDescription,
-          [{ id: part.id, title: part.title, category: part.category, content: part.content }],
-          []
-        );
-        const components = (result.components || []).filter(component =>
-          !['Prompt title', 'Prompt description'].includes(component.name)
-        );
-        panel.replaceChildren();
-        const passed = components.every(component => component.passed);
-        const summary = document.createElement('strong');
-        summary.className = passed ? 'text-success' : 'text-danger';
-        summary.textContent = passed ? 'PASS' : 'NOT PASS';
-        panel.appendChild(summary);
-        for (const component of components) {
-          for (const check of component.checks || []) {
-            const line = document.createElement('p');
-            line.style.margin = '0.2rem 0 0';
-            line.textContent = `${check.passed ? '✓' : '✗'} ${checkDetail(check)}`;
-            panel.appendChild(line);
-          }
-        }
-      } catch (err) {
-        panel.className = 'part-test-panel card bg-elev small text-danger';
-        panel.textContent = `Part test failed: ${err.message}`;
-      }
-      return;
-    }
-
     const editBtn = e.target.closest('[data-edit-part]');
     if (editBtn) {
       const partId = editBtn.getAttribute('data-edit-part');
-      const row = editBtn.closest('.part-row');
+      const row = editBtn.closest('.prompt-assembly-part');
       const existing = row.nextElementSibling;
       if (existing?.classList.contains('part-edit-panel')) {
         existing.remove();
@@ -1822,7 +1755,8 @@ export function renderPromptCreationView(container) {
     appendReportActions(result);
   }
 
-  container.querySelector('#tb-test-prompt').addEventListener('click', async () => {
+  const promptTestButton = container.querySelector('#tb-test-prompt');
+  if (promptTestButton) promptTestButton.addEventListener('click', async () => {
     if (!preview.value.trim()) return showMsg('Assemble a prompt before testing it.', true);
     const button = container.querySelector('#tb-test-prompt');
     const revisionBeingTested = promptRevision;

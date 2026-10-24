@@ -864,7 +864,62 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .prompt-rich-markdown .prompt-markdown-table th { background: var(--bg-elev); font-weight: 650; }
 .prompt-markdown-table tbody tr:nth-child(even) { background: var(--bg-elev); }
 .prompt-rich-markdown a { overflow-wrap: anywhere; }
-.prompt-assembly-card .category-grid { max-height: 420px; }
+.prompt-assembly-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 500px;
+  overflow-y: auto;
+  padding: 0 0.25rem 0.25rem 0;
+}
+.prompt-assembly-category {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.75rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.prompt-assembly-category-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.prompt-assembly-category-heading h4 { margin: 0; font-size: 0.95rem; }
+.prompt-assembly-category-heading p { margin: 0.25rem 0 0; }
+.prompt-assembly-category-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.prompt-assembly-part-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.prompt-assembly-part {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding: 0.55rem 0.65rem;
+  background: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+}
+.prompt-assembly-part-select { flex: 1 1 auto; min-width: 0; margin: 0; }
+.prompt-assembly-part-select span { overflow-wrap: anywhere; }
+.prompt-assembly-part-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.35rem;
+}
 
 .prompt-tool-description { resize: vertical; min-height: 76px; }
 .prompt-selected-sections,
