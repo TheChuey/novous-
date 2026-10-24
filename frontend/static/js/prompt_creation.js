@@ -207,6 +207,30 @@ function appendMarkdown(parent, markdown) {
 export function renderPromptCreationView(container) {
   container.innerHTML = `
     <div class="prompt-creation-flow">
+      <aside class="card prompt-library-card" aria-labelledby="pc-library-title">
+        <div class="card-head">
+          <div>
+            <h2 id="pc-library-title">Prompt Library</h2>
+            <p class="text-muted small">App prompts in <code>library/</code></p>
+          </div>
+          <button type="button" class="btn btn-sm btn-primary" id="pc-new-prompt">+ New</button>
+        </div>
+        <form id="pc-new-prompt-form" class="prompt-library-create hidden">
+          <label class="small" for="pc-new-prompt-name">Prompt name</label>
+          <input class="form-input" id="pc-new-prompt-name" maxlength="100" required
+                 placeholder="Prompt name">
+          <label class="small" for="pc-new-prompt-id">File name</label>
+          <input class="form-input" id="pc-new-prompt-id" maxlength="64" required
+                 pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,63}" placeholder="prompt-file-name">
+          <div class="toolbar-row">
+            <button type="submit" class="btn btn-sm btn-primary">Create prompt</button>
+            <button type="button" class="btn btn-sm" id="pc-cancel-new-prompt">Cancel</button>
+          </div>
+        </form>
+        <p id="pc-library-status" class="small text-muted" role="status" aria-live="polite">Loading prompts…</p>
+        <div id="pc-library-list" class="prompt-library-list"></div>
+      </aside>
+
       <section class="card prompt-chat-card" aria-labelledby="pc-chat-title">
         <div class="codebuilder-chat-heading">
           <h2 id="pc-chat-title">Prompt Coach Chat</h2>
@@ -238,6 +262,7 @@ export function renderPromptCreationView(container) {
                     aria-label="Message to prompt coach"></textarea>
           <div class="codebuilder-chat-actions">
             <button id="pc-chat-clear" class="btn btn-sm" type="button">Clear</button>
+            <button id="pc-add-response" class="btn btn-sm" type="button" disabled>Add response to prompt</button>
             <button class="btn btn-primary" type="submit" disabled>Send</button>
           </div>
         </form>
@@ -254,6 +279,7 @@ export function renderPromptCreationView(container) {
             <button type="button" class="btn btn-sm" id="tb-toggle-cat-form">+ Category</button>
             <button type="button" class="btn btn-sm" id="tb-toggle-part-form">+ Part</button>
             <button type="button" class="btn btn-sm btn-primary" id="tb-assemble">Assemble</button>
+            <button type="button" class="btn btn-sm" id="tb-clear-assembly">Clear assembly</button>
           </div>
         </div>
 
@@ -291,20 +317,7 @@ export function renderPromptCreationView(container) {
           </div>
         </div>
 
-        <div class="prompt-metadata-fields">
-          <label class="prompt-component-field">
-            <span>Prompt title</span>
-            <input id="tb-title" class="form-input" maxlength="100"
-                   placeholder="What is this prompt for?">
-          </label>
-          <label class="prompt-component-field">
-            <span>Prompt description</span>
-            <textarea id="tb-description" class="form-input" rows="3" maxlength="1000"
-                      placeholder="Describe the outcome this prompt should help an agent achieve, and when it should be used."></textarea>
-          </label>
-        </div>
-
-        <div id="tb-categories" class="category-grid">
+        <div id="tb-categories" class="prompt-assembly-categories">
           <p class="text-muted">Loading categories…</p>
         </div>
 
@@ -316,7 +329,7 @@ export function renderPromptCreationView(container) {
           <button type="button" class="btn btn-sm" id="btn-refresh-tools">Refresh Tools</button>
         </div>
         <p class="text-muted small">Tools retrieved from the five file-tool modules and <code>promoted_tools.py</code> in <code>tools/</code>. Tick a tool to include it in the prompt; use ✎ to edit its description and 🧪 to test it.</p>
-        <div id="tools-list-container" class="category-grid" style="overflow-y: auto; max-height: 500px;">
+        <div id="tools-list-container" class="prompt-core-tools-list">
           <p class="text-muted">Loading available tools...</p>
         </div>
       </section>
@@ -325,49 +338,25 @@ export function renderPromptCreationView(container) {
         <div class="card-head">
           <div>
             <h3 id="tb-preview-title">Assembled Prompt</h3>
-            <p class="text-muted small">Review or edit the completed prompt here before testing it. Re-assembling replaces manual edits.</p>
+            <p class="text-muted small">Review or edit the completed prompt here. Re-assembling replaces manual edits.</p>
           </div>
           <span id="tb-stats" class="text-muted small"></span>
         </div>
         <textarea id="tb-preview" class="prompt-preview"
                   placeholder="Assemble selected prompt parts to prepare the prompt for testing…"></textarea>
         <div class="toolbar-row">
+          <button type="button" class="btn btn-sm" id="tb-clear-prompt">Clear prompt</button>
           <button type="button" class="btn btn-sm" id="tb-copy">Copy</button>
           <span class="spacer"></span>
           <select id="tb-publish-agent" class="form-select prompt-publish-select">
             <option value="">Select agent…</option>
           </select>
           <button type="button" class="btn btn-sm" id="tb-publish">Save to Agent</button>
-          <label class="checkbox-row" title="Run the prompt on the selected chat model and check role understanding, a known fact, and hallucination resistance">
-            <input type="checkbox" id="tb-model-test" checked> <span>Model test</span>
-          </label>
-          <input class="form-input" id="tb-fact-q" aria-label="Fact question" value="What is the capital of France?" style="max-width: 14rem;">
-          <input class="form-input" id="tb-fact-a" aria-label="Expected answer" value="Paris" style="max-width: 6rem;">
-          <label class="checkbox-row" title="Also have the selected chat model review each section against a rubric">
-            <input type="checkbox" id="tb-ai-review"> <span>AI rubric review</span>
-          </label>
-          <button type="button" class="btn btn-sm btn-primary" id="tb-test-prompt">Test Prompt</button>
         </div>
         <p id="tb-msg" class="small hidden"></p>
         <div id="tb-test-result" class="small hidden" role="status" aria-live="polite"></div>
       </section>
 
-      <section class="card prompt-markdown-draft-card hidden" id="pc-markdown-draft-card"
-               aria-labelledby="pc-markdown-draft-title">
-        <div class="card-head">
-          <div>
-            <h3 id="pc-markdown-draft-title">Chat Markdown Draft</h3>
-            <p class="text-muted small">Responses added from chat are combined here. Copy the raw Markdown when ready.</p>
-          </div>
-          <div class="toolbar-row prompt-markdown-draft-actions">
-            <button type="button" class="btn btn-sm btn-primary" id="pc-parse-markdown">Parse draft</button>
-            <button type="button" class="btn btn-sm" id="pc-copy-markdown">Copy Markdown</button>
-            <button type="button" class="btn btn-sm" id="pc-clear-markdown">Clear</button>
-          </div>
-        </div>
-        <div class="prompt-markdown-preview" id="pc-markdown-preview"></div>
-        <p class="small text-muted" id="pc-markdown-status" role="status" aria-live="polite"></p>
-      </section>
     </div>`;
 
   const catBox = container.querySelector('#tb-categories');
@@ -376,8 +365,6 @@ export function renderPromptCreationView(container) {
   const msg = container.querySelector('#tb-msg');
   const toolsContainer = container.querySelector('#tools-list-container');
   const publishAgentSel = container.querySelector('#tb-publish-agent');
-  const titleField = container.querySelector('#tb-title');
-  const descriptionField = container.querySelector('#tb-description');
   const chatAgentSel = container.querySelector('#pc-chat-agent');
   const chatModelSel = container.querySelector('#pc-chat-model');
   const chatInput = container.querySelector('#pc-chat-input');
@@ -387,9 +374,14 @@ export function renderPromptCreationView(container) {
   const testResult = container.querySelector('#tb-test-result');
   const chatResizer = container.querySelector('.prompt-chat-resizer');
   const flow = container.querySelector('.prompt-creation-flow');
-  const markdownDraftCard = container.querySelector('#pc-markdown-draft-card');
-  const markdownPreview = container.querySelector('#pc-markdown-preview');
-  const markdownStatus = container.querySelector('#pc-markdown-status');
+  const libraryPanel = container.querySelector('.prompt-library-card');
+  const chatCard = container.querySelector('.prompt-chat-card');
+  const libraryList = container.querySelector('#pc-library-list');
+  const libraryStatus = container.querySelector('#pc-library-status');
+  const createPromptForm = container.querySelector('#pc-new-prompt-form');
+  const createPromptName = container.querySelector('#pc-new-prompt-name');
+  const createPromptId = container.querySelector('#pc-new-prompt-id');
+  const addResponseButton = container.querySelector('#pc-add-response');
 
   const catForm = container.querySelector('#tb-cat-form');
   const partForm = container.querySelector('#tb-part-form');
@@ -401,21 +393,25 @@ export function renderPromptCreationView(container) {
   let selectedChatAgent = null;
   let chatPending = false;
   let promptBase = '';
+  let promptTitle = '';
+  let promptDescription = '';
   let promptPartCount = 0;
   let promptRevision = 0;
   let testedPromptRevision = null;
+  let editingLibraryPrompt = null;
+  let libraryDocument = null;
   const promptTools = new Map();
   const chatWidthStorageKey = 'novous2.prompt-creation.chat-width';
-  let markdownDraft = '';
+  let latestAssistantMarkdown = '';
+  let latestResponseAdded = false;
   const stateStorageKey = 'novous2.prompt-creation.state';
   let restoredParts = [];
 
   function saveState() {
     try {
       sessionStorage.setItem(stateStorageKey, JSON.stringify({
-        draft: markdownDraft,
-        title: titleField.value,
-        description: descriptionField.value,
+        title: promptTitle,
+        description: promptDescription,
         parts: [...catBox.querySelectorAll('[data-part]:checked')].map(input => input.value),
         tools: [...promptTools.values()]
       }));
@@ -432,15 +428,10 @@ export function renderPromptCreationView(container) {
       return;
     }
     if (!saved) return;
-    markdownDraft = saved.draft || '';
-    titleField.value = saved.title || '';
-    descriptionField.value = saved.description || '';
+    promptTitle = saved.title || '';
+    promptDescription = saved.description || '';
     restoredParts = saved.parts || [];
     for (const tool of saved.tools || []) promptTools.set(tool.name, tool);
-    if (markdownDraft) {
-      markdownDraftCard.classList.remove('hidden');
-      appendMarkdown(markdownPreview, markdownDraft);
-    }
   }
   function showMsg(text, isError = false) {
     msg.textContent = text;
@@ -498,20 +489,31 @@ export function renderPromptCreationView(container) {
 
       const providers = [...new Set(availableTools.map(t => t.provider || 'tools'))];
       toolsContainer.innerHTML = providers.map(provider => `
-        <div class="category-block">
-          <div class="category-head">
-            <strong>${esc(provider)}</strong>
+        <section class="prompt-tool-provider" aria-label="${esc(provider)} tools">
+          <h4 class="prompt-tool-provider-title">${esc(provider)}</h4>
+          <div class="prompt-tool-provider-list">
+            ${availableTools.map((tool, index) => ({ tool, index }))
+              .filter(({ tool }) => (tool.provider || 'tools') === provider)
+              .map(({ tool, index }) => {
+                const description = toolDescription(promptTools.get(tool.name) || tool);
+                return `
+                  <article class="prompt-core-tool">
+                    <div class="prompt-core-tool-main">
+                      <label class="checkbox-row prompt-core-tool-select">
+                        <input type="checkbox" value="${index}" data-tool ${promptTools.has(tool.name) ? 'checked' : ''}>
+                        <span>${esc(tool.name)}</span>
+                      </label>
+                      ${tool.signature ? `<code class="prompt-core-tool-signature">${esc(tool.signature)}</code>` : ''}
+                      ${description ? `<p class="prompt-core-tool-description">${esc(description)}</p>` : '<p class="prompt-core-tool-description text-muted">No description provided.</p>'}
+                    </div>
+                    <div class="prompt-core-tool-actions">
+                      <button type="button" class="btn btn-sm" title="Edit tool description" aria-label="Edit ${esc(tool.name)} description" data-edit-tool="${index}">Edit</button>
+                      <button type="button" class="btn btn-sm" title="Test tool" aria-label="Test ${esc(tool.name)}" data-test-tool="${index}">Test</button>
+                    </div>
+                  </article>`;
+              }).join('')}
           </div>
-          ${availableTools.map((t, index) => ({ t, index })).filter(({ t }) => (t.provider || 'tools') === provider).map(({ t, index }) => `
-            <div class="part-row" style="display: flex; align-items: center; justify-content: space-between; gap: 0.25rem;">
-              <label class="checkbox-row" style="flex: 1; margin: 0;" title="${esc(t.signature)}">
-                <input type="checkbox" value="${index}" data-tool ${promptTools.has(t.name) ? 'checked' : ''}>
-                <span>${esc(t.name)}</span>
-              </label>
-              <button type="button" class="btn btn-ghost btn-sm text-muted" title="Edit tool description" data-edit-tool="${index}" style="padding: 0 0.3rem;">✎</button>
-              <button type="button" class="btn btn-ghost btn-sm text-muted" title="Test tool description" data-test-tool="${index}" style="padding: 0 0.3rem;">🧪</button>
-            </div>`).join('')}
-        </div>
+        </section>
       `).join('');
     } catch (err) {
       toolsContainer.innerHTML = `<p class="text-danger">Failed to retrieve tools: ${esc(err.message)}</p>`;
@@ -529,8 +531,8 @@ export function renderPromptCreationView(container) {
       ].filter(Boolean).join('\n');
     }).join('\n\n');
 
-    const title = titleField.value.trim();
-    const description = descriptionField.value.trim();
+    const title = promptTitle.trim();
+    const description = promptDescription.trim();
     const sectionText = selectedPromptSections().map(section =>
       `## ${section.title}\n\n${section.content.trim()}`
     ).join('\n\n');
@@ -546,6 +548,30 @@ export function renderPromptCreationView(container) {
   preview.addEventListener('input', () => {
     stats.textContent = `${promptPartCount} sections · ${promptTools.size} tools · ${preview.value.length} chars · edited`;
   });
+
+  function clearPromptAssembly() {
+    if (!confirm('Clear the assembled prompt text and uncheck all selected sections and tools?')) return;
+    catBox.querySelectorAll('[data-part]:checked').forEach(input => {
+      input.checked = false;
+    });
+    toolsContainer.querySelectorAll('[data-tool]:checked').forEach(input => {
+      input.checked = false;
+    });
+    promptTools.clear();
+    promptTitle = '';
+    promptDescription = '';
+    promptBase = '';
+    promptPartCount = 0;
+    preview.value = '';
+    testResult.replaceChildren();
+    testResult.classList.add('hidden');
+    markPromptChanged();
+    updatePromptPreview();
+    showMsg('Assembly cleared. Your chat history was kept.');
+  }
+
+  container.querySelector('#tb-clear-prompt').addEventListener('click', clearPromptAssembly);
+  container.querySelector('#tb-clear-assembly').addEventListener('click', clearPromptAssembly);
 
   async function loadPromptAgents() {
     try {
@@ -577,6 +603,7 @@ export function renderPromptCreationView(container) {
       } else {
         chatStatus.textContent = 'No agents available.';
       }
+
       await loadPromptChatModels();
       updateChatControls();
     } catch (err) {
@@ -586,9 +613,147 @@ export function renderPromptCreationView(container) {
     }
   }
 
+  async function loadPromptLibrary() {
+    libraryList.replaceChildren();
+    libraryStatus.textContent = 'Loading prompts…';
+    libraryStatus.className = 'small text-muted';
+    try {
+      const [workspaceData, codeBuilderData, promptData] = await Promise.all([
+        Api.getAgents('workspace'),
+        Api.getAgents('codebuilder'),
+        Api.getAgents('prompt-creation')
+      ]);
+      const prompts = [
+        ...(workspaceData.agents || []).map(agent => ({ ...agent, environment: 'workspace' })),
+        ...(codeBuilderData.agents || []).map(agent => ({ ...agent, environment: 'codebuilder' })),
+        ...(promptData.agents || []).map(agent => ({ ...agent, environment: 'prompt-creation' }))
+      ];
+      if (!prompts.length) {
+        libraryStatus.textContent = 'No prompts found in the app library.';
+        return;
+      }
+      const sortedPrompts = [...prompts].sort((left, right) =>
+        String(left.name || left.id).localeCompare(String(right.name || right.id))
+      );
+      libraryStatus.textContent = `${sortedPrompts.length} prompt${sortedPrompts.length === 1 ? '' : 's'}`;
+      for (const prompt of sortedPrompts) {
+        const row = document.createElement('div');
+        row.className = 'prompt-library-item';
+        const file = document.createElement('div');
+        file.className = 'prompt-library-file';
+        const name = document.createElement('strong');
+        name.textContent = prompt.name || prompt.id;
+        name.title = name.textContent;
+        const path = document.createElement('span');
+        path.className = 'text-muted small';
+        path.textContent = prompt.path || `library/${prompt.id}.md`;
+        file.append(name, path);
+
+        const actions = document.createElement('div');
+        actions.className = 'prompt-library-actions';
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'btn btn-sm';
+        edit.textContent = 'Edit';
+        edit.setAttribute('aria-label', `Edit ${prompt.name || prompt.id}`);
+        edit.addEventListener('click', async () => {
+          const path = prompt.path || `library/${prompt.id}.md`;
+          libraryStatus.textContent = `Loading ${path}…`;
+          libraryStatus.className = 'small text-muted';
+          edit.disabled = true;
+          try {
+            const file = await Api.readFile(path);
+            editingLibraryPrompt = { ...prompt, path };
+            libraryDocument = splitLibraryPrompt(file.content);
+            promptTitle = prompt.name || prompt.id;
+            promptDescription = prompt.description || '';
+            renderCategories(manifest);
+            libraryStatus.textContent = `Editing ${path}`;
+            container.querySelector('.prompt-assembly-card').scrollIntoView({
+              behavior: 'smooth',
+              block: 'start'
+            });
+          } catch (err) {
+            libraryStatus.textContent = `Could not open prompt: ${err.message}`;
+            libraryStatus.className = 'small text-danger';
+          } finally {
+            edit.disabled = false;
+          }
+        });
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'btn btn-sm btn-danger';
+        remove.textContent = 'Delete';
+        remove.setAttribute('aria-label', `Delete ${prompt.name || prompt.id}`);
+        remove.addEventListener('click', async () => {
+          if (!confirm(`Delete prompt "${prompt.name || prompt.id}" from the app library?`)) return;
+          remove.disabled = true;
+          try {
+            await Api.deleteAgent(prompt.id, prompt.environment || 'workspace');
+            await Promise.all([loadPromptLibrary(), loadPromptAgents()]);
+          } catch (err) {
+            libraryStatus.textContent = `Could not delete prompt: ${err.message}`;
+            libraryStatus.className = 'small text-danger';
+            remove.disabled = false;
+          }
+        });
+        actions.append(edit, remove);
+        row.append(file, actions);
+        libraryList.appendChild(row);
+      }
+    } catch (err) {
+      libraryStatus.textContent = `Could not load app library: ${err.message}`;
+      libraryStatus.className = 'small text-danger';
+    }
+  }
+
+  container.querySelector('#pc-new-prompt').addEventListener('click', () => {
+    createPromptForm.classList.toggle('hidden');
+    if (!createPromptForm.classList.contains('hidden')) createPromptName.focus();
+  });
+  container.querySelector('#pc-cancel-new-prompt').addEventListener('click', () => {
+    createPromptForm.reset();
+    delete createPromptId.dataset.edited;
+    createPromptForm.classList.add('hidden');
+  });
+  createPromptName.addEventListener('input', () => {
+    if (!createPromptId.dataset.edited) createPromptId.value = slugify(createPromptName.value);
+  });
+  createPromptId.addEventListener('input', () => {
+    createPromptId.dataset.edited = 'true';
+  });
+  createPromptForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const name = createPromptName.value.trim();
+    const id = createPromptId.value.trim().toLowerCase();
+    if (!name || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id)) {
+      libraryStatus.textContent = 'Enter a prompt name and a valid file name.';
+      libraryStatus.className = 'small text-danger';
+      return;
+    }
+    const submit = createPromptForm.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    try {
+      const created = await Api.createAgent(id, name, '', 'chat', '', 'prompt-creation');
+      createPromptForm.reset();
+      delete createPromptId.dataset.edited;
+      createPromptForm.classList.add('hidden');
+      await Promise.all([loadPromptLibrary(), loadPromptAgents()]);
+      window.dispatchEvent(new CustomEvent('novous:open-editor', {
+        detail: { path: created.path || `library/${id}.md` }
+      }));
+    } catch (err) {
+      libraryStatus.textContent = `Could not create prompt: ${err.message}`;
+      libraryStatus.className = 'small text-danger';
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
   function updateChatControls() {
     const sendButton = chatForm.querySelector('button[type="submit"]');
     sendButton.disabled = chatPending || !selectedChatAgent || !chatModelSel.value || chatModelSel.disabled;
+    addResponseButton.disabled = chatPending || !latestAssistantMarkdown || latestResponseAdded;
     chatInput.disabled = chatPending;
     chatAgentSel.disabled = chatPending || !promptAgents.length;
   }
@@ -597,28 +762,8 @@ export function renderPromptCreationView(container) {
     const message = document.createElement('div');
     message.className = `codebuilder-chat-message ${role}`;
     if (role === 'assistant') {
+      message.classList.add('prompt-rich-markdown');
       appendMarkdown(message, content);
-      const addButton = document.createElement('button');
-      addButton.type = 'button';
-      addButton.className = 'btn btn-sm prompt-add-markdown';
-      addButton.textContent = 'Add to draft';
-      addButton.setAttribute('aria-label', 'Add this response to the Markdown draft');
-      addButton.addEventListener('click', () => {
-        const responseMarkdown = String(content ?? '').trim();
-        if (!responseMarkdown) return;
-        markdownDraft = markdownDraft
-          ? `${markdownDraft.trimEnd()}\n\n---\n\n${responseMarkdown}`
-          : responseMarkdown;
-                markdownDraftCard.classList.remove('hidden');
-                markdownPreview.replaceChildren();
-                appendMarkdown(markdownPreview, markdownDraft);
-        markdownStatus.textContent = 'Response added to the Markdown draft.';
-        saveState();
-        addButton.disabled = true;
-        addButton.textContent = 'Added to draft';
-        markdownDraftCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      });
-      message.appendChild(addButton);
     } else {
       message.textContent = content;
     }
@@ -627,8 +772,14 @@ export function renderPromptCreationView(container) {
   }
 
   function setChatWidth(width) {
-    const availableWidth = flow.clientWidth;
-    const maxWidth = Math.max(280, availableWidth - 200);
+    const styles = getComputedStyle(flow);
+    const gap = Number.parseFloat(styles.columnGap) || 16;
+    const availableWidth = flow.clientWidth
+      - libraryPanel.getBoundingClientRect().width
+      - 390
+      - 8
+      - (gap * 3);
+    const maxWidth = Math.max(280, availableWidth);
     const nextWidth = Math.round(Math.min(maxWidth, Math.max(280, width)));
     flow.style.setProperty('--prompt-chat-width', `${nextWidth}px`);
     chatResizer.setAttribute('aria-valuemax', String(maxWidth));
@@ -675,7 +826,7 @@ export function renderPromptCreationView(container) {
     event.preventDefault();
     chatResizer.setPointerCapture(event.pointerId);
     const onMove = moveEvent => {
-      const bounds = flow.getBoundingClientRect();
+      const bounds = chatCard.getBoundingClientRect();
       setChatWidth(moveEvent.clientX - bounds.left);
     };
     const onUp = () => {
@@ -700,35 +851,6 @@ export function renderPromptCreationView(container) {
     else return;
     event.preventDefault();
     setChatWidth(nextWidth);
-  });
-
-  container.querySelector('#pc-copy-markdown').addEventListener('click', async () => {
-    if (!markdownDraft) return;
-    try {
-      await navigator.clipboard.writeText(markdownDraft);
-      markdownStatus.textContent = 'Markdown copied to clipboard.';
-    } catch (error) {
-      let copied = false;
-      const copyArea = document.createElement('textarea');
-      try {
-        copyArea.value = markdownDraft;
-        copyArea.setAttribute('readonly', '');
-        copyArea.style.position = 'fixed';
-        copyArea.style.opacity = '0';
-        document.body.appendChild(copyArea);
-        copyArea.select();
-        copied = document.execCommand('copy');
-      } catch {
-        copied = false;
-      } finally {
-        copyArea.remove();
-      }
-      if (!copied) {
-        markdownStatus.textContent = `Could not copy Markdown: ${error.message}`;
-        return;
-      }
-      markdownStatus.textContent = 'Markdown copied to clipboard.';
-    }
   });
 
   const slugify = text => String(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -785,26 +907,29 @@ export function renderPromptCreationView(container) {
     };
   }
 
-  container.querySelector('#pc-parse-markdown').addEventListener('click', async () => {
-    if (!markdownDraft) return;
-    const button = container.querySelector('#pc-parse-markdown');
-    const parsed = parseDraft(markdownDraft);
+  addResponseButton.addEventListener('click', async () => {
+    if (!latestAssistantMarkdown || latestResponseAdded || chatPending) return;
+    const parsed = parseDraft(latestAssistantMarkdown);
     if (!parsed.sections.length) {
-      markdownStatus.textContent = 'No "## Section" headings with content were found in the draft.';
+      chatStatus.textContent = 'Could not find sections in the latest response. Ask the agent to use Markdown headings.';
       return;
     }
-    button.disabled = true;
-    markdownStatus.textContent = 'Parsing draft into category and parts…';
+    addResponseButton.disabled = true;
+    chatStatus.textContent = 'Adding response sections to the assembled prompt…';
     try {
-      if (parsed.title) titleField.value = parsed.title;
-      if (parsed.description) descriptionField.value = parsed.description.slice(0, 1000);
-      const categoryName = parsed.title || 'Parsed Prompt';
-      const categoryId = slugify(categoryName) || 'parsed-prompt';
-      try {
-        await Api.addPromptCategory(categoryId, categoryName, parsed.description.slice(0, 300), '');
-      } catch {
-        // category already exists from an earlier parse
+      if (parsed.title) promptTitle = parsed.title;
+      if (parsed.description) promptDescription = parsed.description.slice(0, 1000);
+      const categoryBaseName = parsed.title || 'Chat Response';
+      const categoryBaseId = slugify(categoryBaseName) || 'chat-response';
+      const existingCategoryIds = new Set((manifest.categories || []).map(category => category.id));
+      let categoryId = categoryBaseId;
+      let suffix = 1;
+      while (existingCategoryIds.has(categoryId)) {
+        suffix += 1;
+        categoryId = `${categoryBaseId}-${suffix}`;
       }
+      const categoryName = suffix === 1 ? categoryBaseName : `${categoryBaseName} (${suffix})`;
+      await Api.addPromptCategory(categoryId, categoryName, parsed.description.slice(0, 300), '');
       const used = new Set();
       const ids = [];
       for (const section of parsed.sections) {
@@ -815,29 +940,23 @@ export function renderPromptCreationView(container) {
         ids.push(part.id);
       }
       await loadManifest();
+      const loadedPartIds = new Set([...catBox.querySelectorAll('[data-part]')].map(input => input.value));
+      if (ids.some(id => !loadedPartIds.has(id))) {
+        throw new Error('The new prompt sections were saved but could not be loaded into the assembly list.');
+      }
       catBox.querySelectorAll('[data-part]').forEach(input => {
         input.checked = ids.includes(input.value);
       });
       markPromptChanged();
       updatePromptPreview();
-      markdownStatus.textContent = `Parsed ${ids.length} sections into category "${categoryName}". The assembled prompt below is updated.`;
+      latestResponseAdded = true;
+      chatStatus.textContent = `Added ${ids.length} sections from "${categoryName}" to the assembled prompt.`;
       preview.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } catch (err) {
-      markdownStatus.textContent = `Parse failed: ${err.message}`;
+      await loadManifest();
+      chatStatus.textContent = `Could not add response to prompt: ${err.message}`;
     } finally {
-      button.disabled = false;
-    }
-  });
-
-  container.querySelector('#pc-clear-markdown').addEventListener('click', () => {
-    markdownDraft = '';
-    markdownPreview.replaceChildren();
-    markdownDraftCard.classList.add('hidden');
-    markdownStatus.textContent = '';
-    saveState();
-    for (const button of chatMessages.querySelectorAll('.prompt-add-markdown')) {
-      button.disabled = false;
-      button.textContent = 'Add to draft';
+      updateChatControls();
     }
   });
 
@@ -891,60 +1010,225 @@ export function renderPromptCreationView(container) {
   }
 
   function renderCategories(data) {
+    if (editingLibraryPrompt && libraryDocument) {
+      container.querySelector('.prompt-assembly-card').classList.add('is-editing-library-prompt');
+      renderLibraryPromptSections();
+      return;
+    }
+    container.querySelector('.prompt-assembly-card').classList.remove('is-editing-library-prompt');
     const cats = data.categories || [];
     const uncategorized = data.uncategorized_parts || [];
 
-    let html = cats.map(cat => `
-      <div class="category-block">
-        <div class="category-head">
-          <div style="display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
-            <strong>${esc(cat.name)}</strong>
-            ${cat.required_header ? `<span class="badge badge-accent">## ${esc(cat.required_header)}</span>` : ''}
-          </div>
-          <span style="display: inline-flex; align-items: center;">
-            <button type="button" class="btn btn-ghost btn-sm text-muted" title="Test category in the Prompt Header Evaluation Battery" data-test-cat="${esc(cat.id)}" style="padding: 0 0.3rem;">🧪</button>
-            <button type="button" class="btn btn-ghost btn-sm text-danger" title="Delete category '${esc(cat.name)}'" data-del-cat="${esc(cat.id)}" style="padding: 0 0.3rem;">✕</button>
-          </span>
+    const renderPart = part => `
+      <article class="prompt-assembly-part">
+        <label class="checkbox-row prompt-assembly-part-select">
+          <input type="checkbox" value="${esc(part.id)}" data-part>
+          <span>${esc(part.title)}</span>
+        </label>
+        <div class="prompt-assembly-part-actions">
+          <button type="button" class="btn btn-sm" title="Edit part" aria-label="Edit ${esc(part.title)}" data-edit-part="${esc(part.id)}">Edit</button>
+          <button type="button" class="btn btn-sm" title="Delete part" aria-label="Delete ${esc(part.title)}" data-del-part="${esc(part.id)}">Delete</button>
         </div>
-        <p class="text-muted small">${esc(cat.description || '')}</p>
-        ${(cat.parts || []).map(p => `
-          <div class="part-row" style="display: flex; align-items: center; justify-content: space-between; gap: 0.25rem;">
-            <label class="checkbox-row" style="flex: 1; margin: 0;">
-              <input type="checkbox" value="${esc(p.id)}" data-part>
-              <span>${esc(p.title)}</span>
-            </label>
-            <button type="button" class="btn btn-ghost btn-sm text-muted" title="Edit part" data-edit-part="${esc(p.id)}" style="padding: 0 0.3rem;">✎</button>
-            <button type="button" class="btn btn-ghost btn-sm text-muted" title="Test part" data-test-part="${esc(p.id)}" style="padding: 0 0.3rem;">🧪</button>
-            <button type="button" class="btn btn-ghost btn-sm text-muted" title="Delete part" data-del-part="${esc(p.id)}" style="padding: 0 0.3rem;">✕</button>
-          </div>`).join('') || '<p class="text-muted small">No parts.</p>'}
-      </div>`).join('');
+      </article>`;
+
+    let html = cats.map(cat => `
+      <section class="prompt-assembly-category">
+        <div class="prompt-assembly-category-heading">
+          <div>
+            <h4>${esc(cat.name)}</h4>
+            ${cat.description ? `<p class="text-muted small">${esc(cat.description)}</p>` : ''}
+          </div>
+          <div class="prompt-assembly-category-actions">
+            ${cat.required_header ? `<span class="badge badge-accent">## ${esc(cat.required_header)}</span>` : ''}
+            <button type="button" class="btn btn-sm" title="Delete category and its parts" aria-label="Delete ${esc(cat.name)} category" data-del-cat="${esc(cat.id)}">Delete category</button>
+          </div>
+        </div>
+        <div class="prompt-assembly-part-list">
+          ${(cat.parts || []).map(renderPart).join('') || '<p class="text-muted small">No parts.</p>'}
+        </div>
+      </section>`).join('');
 
     if (uncategorized.length) {
       html += `
-        <div class="category-block">
-          <div class="category-head">
-            <strong>Uncategorized</strong>
+        <section class="prompt-assembly-category">
+          <div class="prompt-assembly-category-heading">
+            <div>
+              <h4>Uncategorized</h4>
+              <p class="text-muted small">Parts without a matching category definition.</p>
+            </div>
           </div>
-          <p class="text-muted small">Parts without a matching category definition.</p>
-          ${uncategorized.map(p => `
-            <div class="part-row" style="display: flex; align-items: center; justify-content: space-between; gap: 0.25rem;">
-              <label class="checkbox-row" style="flex: 1; margin: 0;">
-                <input type="checkbox" value="${esc(p.id)}" data-part>
-                <span>${esc(p.title)}</span>
-              </label>
-              <button type="button" class="btn btn-ghost btn-sm text-muted" title="Edit part" data-edit-part="${esc(p.id)}" style="padding: 0 0.3rem;">✎</button>
-              <button type="button" class="btn btn-ghost btn-sm text-muted" title="Test part" data-test-part="${esc(p.id)}" style="padding: 0 0.3rem;">🧪</button>
-              <button type="button" class="btn btn-ghost btn-sm text-muted" title="Delete part" data-del-part="${esc(p.id)}" style="padding: 0 0.3rem;">✕</button>
-            </div>`).join('')}
-        </div>`;
+          <div class="prompt-assembly-part-list">${uncategorized.map(renderPart).join('')}</div>
+        </section>`;
     }
 
     catBox.innerHTML = html || '<p class="text-danger">No categories found.</p>';
   }
 
+  function splitLibraryPrompt(markdown) {
+    const frontmatterMatch = markdown.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/);
+    const frontmatter = frontmatterMatch ? frontmatterMatch[0] : '';
+    const body = frontmatter ? markdown.slice(frontmatter.length) : markdown;
+    const lines = body.split(/\r?\n/);
+    const sections = [];
+    let preamble = [];
+    let current = null;
+
+    for (const line of lines) {
+      const heading = line.match(/^(#{1,6})[ \t]+(.+?)\s*#*\s*$/);
+      if (heading) {
+        if (current) current.content = current.lines.join('\n').replace(/\n+$/, '');
+        current = { level: heading[1].length, title: heading[2].trim(), lines: [] };
+        sections.push(current);
+      } else if (current) {
+        current.lines.push(line);
+      }
+    }
+    if (current) current.content = current.lines.join('\n').replace(/\n+$/, '');
+
+    if (sections.length) {
+      const firstHeadingIndex = lines.findIndex(line => /^(#{1,6})[ \t]+/.test(line));
+      preamble = lines.slice(0, firstHeadingIndex).join('\n').replace(/\n+$/, '');
+    } else {
+      preamble = body.replace(/\n+$/, '');
+    }
+    return {
+      frontmatter,
+      preamble,
+      sections: sections.map(({ level, title, content }) => ({ level, title, content }))
+    };
+  }
+
+  function renderLibraryPromptSections() {
+    const heading = document.createElement('div');
+    heading.className = 'category-head prompt-library-edit-heading';
+    const titleGroup = document.createElement('div');
+    titleGroup.className = 'prompt-library-edit-title';
+    const title = document.createElement('strong');
+    title.textContent = `Editing ${editingLibraryPrompt.name || editingLibraryPrompt.id}`;
+    const path = document.createElement('span');
+    path.className = 'text-muted small';
+    path.textContent = editingLibraryPrompt.path;
+    titleGroup.append(title, path);
+    heading.append(titleGroup);
+
+    const preambleLabel = document.createElement('label');
+    preambleLabel.className = 'prompt-section-preamble';
+    const preambleTitle = document.createElement('strong');
+    preambleTitle.textContent = 'Introduction';
+    const preamble = document.createElement('textarea');
+    preamble.className = 'form-input';
+    preamble.rows = 4;
+    preamble.value = libraryDocument.preamble;
+    preamble.placeholder = 'Optional text before the first section…';
+    preamble.setAttribute('aria-label', 'Prompt introduction');
+    preamble.addEventListener('input', () => { libraryDocument.preamble = preamble.value; });
+    preambleLabel.append(preambleTitle, preamble);
+
+    const sectionNodes = libraryDocument.sections.map((section, index) => {
+      const block = document.createElement('div');
+      block.className = 'prompt-section-card';
+      const top = document.createElement('div');
+      top.className = 'prompt-section-toolbar';
+      const number = document.createElement('span');
+      number.className = 'prompt-section-number';
+      number.textContent = `SECTION ${String(index + 1).padStart(2, '0')}`;
+      const sectionLabel = document.createElement('label');
+      sectionLabel.className = 'prompt-section-title';
+      const sectionTitle = document.createElement('input');
+      sectionTitle.className = 'form-input';
+      sectionTitle.value = section.title;
+      sectionTitle.placeholder = 'Section heading';
+      sectionTitle.setAttribute('aria-label', `Section ${index + 1} heading`);
+      sectionTitle.addEventListener('input', () => { section.title = sectionTitle.value; });
+      sectionLabel.appendChild(sectionTitle);
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn btn-sm btn-ghost prompt-section-delete';
+      remove.textContent = 'Remove';
+      remove.title = `Remove section ${index + 1}`;
+      remove.addEventListener('click', () => {
+        libraryDocument.sections.splice(index, 1);
+        renderLibraryPromptSections();
+      });
+      top.append(number, sectionLabel, remove);
+
+      const content = document.createElement('textarea');
+      content.className = 'form-input prompt-section-content';
+      content.rows = 7;
+      content.value = section.content;
+      content.placeholder = 'Write this section’s prompt instructions…';
+      content.setAttribute('aria-label', `Section ${index + 1} contents`);
+      content.addEventListener('input', () => { section.content = content.value; });
+      block.append(top, content);
+      return block;
+    });
+
+    const actions = document.createElement('div');
+    actions.className = 'toolbar-row prompt-library-section-actions';
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'btn btn-sm';
+    add.textContent = '＋ Add section';
+    add.addEventListener('click', () => {
+      libraryDocument.sections.push({ level: 2, title: 'New section', content: '' });
+      renderLibraryPromptSections();
+      catBox.querySelector('.prompt-section-title input:last-child')?.focus();
+    });
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn btn-sm btn-primary';
+    save.textContent = 'Save changes';
+    save.addEventListener('click', async () => {
+      if (libraryDocument.sections.some(section => !section.title.trim())) {
+        libraryStatus.textContent = 'Each prompt section needs a heading.';
+        libraryStatus.className = 'small text-danger';
+        return;
+      }
+      save.disabled = true;
+      try {
+        const body = [
+          libraryDocument.preamble.trim(),
+          ...libraryDocument.sections.map(section =>
+            `${'#'.repeat(section.level)} ${section.title.trim()}\n\n${section.content.trim()}`
+          )
+        ].filter(Boolean).join('\n\n');
+        const content = `${libraryDocument.frontmatter}${libraryDocument.frontmatter && body ? '\n' : ''}${body}${body ? '\n' : ''}`;
+        await Api.writeFile(editingLibraryPrompt.path, content);
+        libraryStatus.textContent = `Saved ${editingLibraryPrompt.path}`;
+        libraryStatus.className = 'small text-success';
+        await Promise.all([loadPromptLibrary(), loadPromptAgents()]);
+        showMsg(`Saved ${editingLibraryPrompt.path}`);
+      } catch (err) {
+        libraryStatus.textContent = `Could not save prompt: ${err.message}`;
+        libraryStatus.className = 'small text-danger';
+      } finally {
+        save.disabled = false;
+      }
+    });
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'btn btn-sm';
+    close.textContent = 'Done';
+    close.addEventListener('click', () => {
+      editingLibraryPrompt = null;
+      libraryDocument = null;
+      renderCategories(manifest);
+    });
+    actions.append(add, save, close);
+
+    catBox.replaceChildren(
+      heading,
+      ...(libraryDocument.preamble.trim() ? [preambleLabel] : []),
+      ...sectionNodes,
+      actions
+    );
+  }
+
   restoreState();
   loadCoreTools();
   loadManifest();
+  loadPromptLibrary();
   loadPromptAgents();
 
   chatAgentSel.addEventListener('change', () => {
@@ -953,6 +1237,8 @@ export function renderPromptCreationView(container) {
     selectedChatAgent = promptAgents.find(agent =>
       agent.environment === environment && agent.id === agentId
     ) || null;
+    latestAssistantMarkdown = '';
+    latestResponseAdded = false;
     chatMessages.replaceChildren();
     if (selectedChatAgent) {
       appendChatMessage('system', `Chatting with ${selectedChatAgent.name}.`);
@@ -960,18 +1246,11 @@ export function renderPromptCreationView(container) {
     } else {
       chatStatus.textContent = 'Select an agent to start.';
     }
+    updateChatControls();
     loadPromptChatModels();
   });
 
   chatModelSel.addEventListener('change', updateChatControls);
-  titleField.addEventListener('input', () => {
-    markPromptChanged();
-    updatePromptPreview();
-  });
-  descriptionField.addEventListener('input', () => {
-    markPromptChanged();
-    updatePromptPreview();
-  });
   catBox.addEventListener('change', event => {
     if (!event.target.matches('[data-part]')) return;
     markPromptChanged();
@@ -1029,7 +1308,7 @@ export function renderPromptCreationView(container) {
       return;
     }
     const panelClass = 'tool-edit-panel';
-    const row = button.closest('.part-row');
+    const row = button.closest('.prompt-core-tool');
     const existing = row.nextElementSibling;
     if (existing?.classList.contains(panelClass)) {
       existing.remove();
@@ -1037,18 +1316,25 @@ export function renderPromptCreationView(container) {
     }
     const current = () => promptTools.get(tool.name) || tool;
     const panel = document.createElement('div');
-    panel.className = `${panelClass} card bg-elev small`;
-    panel.style.cssText = 'padding: 0.5rem; margin: 0.25rem 0;';
+    panel.className = `${panelClass} prompt-inline-editor`;
     row.after(panel);
 
     panel.innerHTML = `
-      <p class="text-muted small" style="margin: 0 0 0.3rem;"><code>${esc(tool.signature)}</code></p>
-      <textarea class="form-input" rows="4" data-tool-desc aria-label="Tool description" style="width: 100%;">${esc(toolDescription(current()))}</textarea>
-      <div class="toolbar-row" style="margin-top: 0.4rem;">
+      <div class="prompt-inline-editor-heading">
+        <div>
+          <strong>Edit ${esc(tool.name)} description</strong>
+          <p class="text-muted small"><code>${esc(tool.signature)}</code></p>
+        </div>
+      </div>
+      <label class="prompt-inline-editor-field">
+        <span>Description and usage guidance</span>
+        <textarea class="form-input prompt-inline-editor-content" rows="6" data-tool-desc aria-label="Tool description">${esc(toolDescription(current()))}</textarea>
+      </label>
+      <p class="text-muted small prompt-inline-editor-help">Describe what the tool does, when the agent should use it, and any important limitations. Saving includes this tool in the assembled prompt.</p>
+      <div class="toolbar-row prompt-inline-editor-actions">
         <button type="button" class="btn btn-sm btn-primary" data-tool-save>Save</button>
         <button type="button" class="btn btn-sm" data-tool-cancel>Cancel</button>
-      </div>
-      <span class="text-muted small">Describe what it does and when the agent should call it. Saved descriptions apply to this prompt.</span>`;
+      </div>`;
     panel.querySelector('[data-tool-cancel]').addEventListener('click', () => panel.remove());
     panel.querySelector('[data-tool-save]').addEventListener('click', () => {
       const description = panel.querySelector('[data-tool-desc]').value;
@@ -1057,6 +1343,8 @@ export function renderPromptCreationView(container) {
       row.querySelector('[data-tool]').checked = true;
       markPromptChanged();
       updatePromptPreview();
+      row.querySelector('.prompt-core-tool-description').textContent =
+        description.trim() || 'No description provided.';
       panel.remove();
       showMsg(`Description for '${tool.name}' saved and tool added to the prompt.`);
     });
@@ -1067,6 +1355,8 @@ export function renderPromptCreationView(container) {
     const message = chatInput.value.trim();
     if (!message || chatPending || !selectedChatAgent || !chatModelSel.value) return;
 
+    latestAssistantMarkdown = '';
+    latestResponseAdded = false;
     appendChatMessage('user', message);
     chatInput.value = '';
     chatPending = true;
@@ -1081,7 +1371,9 @@ export function renderPromptCreationView(container) {
         sessionId,
         selectedChatAgent.environment
       );
-      appendChatMessage('assistant', response.reply || 'The agent returned an empty response.');
+      latestAssistantMarkdown = String(response.reply || '').trim();
+      latestResponseAdded = false;
+      appendChatMessage('assistant', latestAssistantMarkdown || 'The agent returned an empty response.');
       chatStatus.textContent = `${selectedChatAgent.name} · ${response.model || chatModelSel.value}`;
     } catch (err) {
       appendChatMessage('system', `Request failed: ${err.message}`);
@@ -1111,9 +1403,12 @@ export function renderPromptCreationView(container) {
       }
     }
     chatMessages.replaceChildren();
+    latestAssistantMarkdown = '';
+    latestResponseAdded = false;
     appendChatMessage('system', selectedChatAgent
       ? `Chat cleared. Continue with ${selectedChatAgent.name}.`
       : 'Chat cleared.');
+    updateChatControls();
     chatInput.focus();
   });
 
@@ -1241,8 +1536,8 @@ export function renderPromptCreationView(container) {
       row.after(panel);
       try {
         const result = await Api.evaluatePromptComponents(
-          titleField.value,
-          descriptionField.value,
+          promptTitle,
+          promptDescription,
           [{ id: part.id, title: part.title, category: part.category, content: part.content }],
           []
         );
@@ -1282,12 +1577,24 @@ export function renderPromptCreationView(container) {
       const part = findPromptPart(partId);
       if (!part) return;
       const panel = document.createElement('div');
-      panel.className = 'part-edit-panel card bg-elev';
-      panel.style.cssText = 'padding: 0.5rem; margin: 0.25rem 0;';
+      panel.className = 'part-edit-panel prompt-inline-editor';
       panel.innerHTML = `
-        <input class="form-input" data-edit-title aria-label="Part title" value="${esc(part.title)}">
-        <textarea class="form-input" data-edit-content rows="8" aria-label="Part content" style="width: 100%; margin-top: 0.4rem;">${esc(part.content)}</textarea>
-        <div class="toolbar-row" style="margin-top: 0.4rem;">
+        <div class="prompt-inline-editor-heading">
+          <div>
+            <strong>Edit prompt section</strong>
+            <p class="text-muted small">${esc(part.category)} · ${esc(part.id)}</p>
+          </div>
+        </div>
+        <label class="prompt-inline-editor-field">
+          <span>Section title</span>
+          <input class="form-input" data-edit-title aria-label="Part title" value="${esc(part.title)}">
+        </label>
+        <label class="prompt-inline-editor-field">
+          <span>Section instructions</span>
+          <textarea class="form-input prompt-inline-editor-content" data-edit-content rows="8" aria-label="Part content">${esc(part.content)}</textarea>
+        </label>
+        <p class="small hidden prompt-inline-editor-status" role="status" aria-live="polite"></p>
+        <div class="toolbar-row prompt-inline-editor-actions">
           <button type="button" class="btn btn-sm btn-primary" data-edit-save>Save</button>
           <button type="button" class="btn btn-sm" data-edit-cancel>Cancel</button>
         </div>`;
@@ -1295,9 +1602,14 @@ export function renderPromptCreationView(container) {
       panel.querySelector('[data-edit-content]').focus();
       panel.querySelector('[data-edit-cancel]').addEventListener('click', () => panel.remove());
       panel.querySelector('[data-edit-save]').addEventListener('click', async () => {
+        const saveButton = panel.querySelector('[data-edit-save]');
+        const status = panel.querySelector('.prompt-inline-editor-status');
         const title = panel.querySelector('[data-edit-title]').value.trim();
         const content = panel.querySelector('[data-edit-content]').value.trim();
         if (!title || !content) return showMsg('Part title and content are required.', true);
+        saveButton.disabled = true;
+        status.textContent = 'Saving section…';
+        status.className = 'small prompt-inline-editor-status text-muted';
         try {
           const slug = partId.includes('/') ? partId.split('/').slice(1).join('/') : partId;
           await Api.addPromptPart(part.category, title, content, slug);
@@ -1306,7 +1618,10 @@ export function renderPromptCreationView(container) {
           updatePromptPreview();
           showMsg(`Part '${title}' updated.`);
         } catch (err) {
+          status.textContent = `Could not save section: ${err.message}`;
+          status.className = 'small prompt-inline-editor-status text-danger';
           showMsg(err.message, true);
+          saveButton.disabled = false;
         }
       });
       return;
@@ -1434,13 +1749,8 @@ export function renderPromptCreationView(container) {
           'Return the complete revised prompt as a Markdown document with the same structure.'
         ].join('\n');
         chatForm.requestSubmit();
-        markdownDraft = '';
-        markdownPreview.replaceChildren();
-        markdownDraftCard.classList.add('hidden');
-        markdownStatus.textContent = '';
-        saveState();
         chatMessages.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        showMsg('Failures sent to the chat agent. Use Add to draft, then Parse draft on its reply.');
+        showMsg('Failures sent to the chat agent. Add its revised response to the prompt when ready.');
       });
       actions.appendChild(fixButton);
     }
@@ -1455,14 +1765,14 @@ export function renderPromptCreationView(container) {
       const form = document.createElement('div');
       form.className = result.passed ? 'card bg-elev' : 'card bg-elev hidden';
       form.style.cssText = 'padding: 0.75rem; margin-top: 0.5rem;';
-      const defaultId = slugify(titleField.value) || 'new-agent';
+      const defaultId = slugify(promptTitle) || 'new-agent';
       form.innerHTML = `
         <div class="form-row">
           <input class="form-input" data-new-agent-id aria-label="Agent ID" placeholder="agent-id" value="${esc(defaultId)}">
-          <input class="form-input" data-new-agent-name aria-label="Agent name" placeholder="Agent name" value="${esc(titleField.value.trim())}">
+          <input class="form-input" data-new-agent-name aria-label="Agent name" placeholder="Agent name" value="${esc(promptTitle.trim())}">
         </div>
         <div class="form-row">
-          <input class="form-input" data-new-agent-desc aria-label="Agent description" placeholder="Description" value="${esc(descriptionField.value.trim().split('\n')[0].slice(0, 200))}">
+          <input class="form-input" data-new-agent-desc aria-label="Agent description" placeholder="Description" value="${esc(promptDescription.trim().split('\n')[0].slice(0, 200))}">
           <select class="form-select" data-new-agent-environment aria-label="Agent environment">
             <option value="prompt-creation" selected>Prompt Creation</option>
             <option value="workspace">Workspace</option>
@@ -1522,8 +1832,8 @@ export function renderPromptCreationView(container) {
     testResult.replaceChildren(document.createTextNode('Testing title, description, sections, skills, and tool descriptions…'));
     try {
       const result = await Api.evaluatePromptComponents(
-        titleField.value,
-        descriptionField.value,
+        promptTitle,
+        promptDescription,
         selectedPromptSections(),
         [...promptTools.values()].map(tool => ({
           name: tool.name,
@@ -1560,7 +1870,7 @@ export function renderPromptCreationView(container) {
           testResult.replaceChildren(document.createTextNode(`Structural checks done. Running model test with ${reviewModel}…`));
           try {
             const probe = await Api.probePrompt(
-              reviewModel, titleField.value, descriptionField.value, preview.value,
+              reviewModel, promptTitle, promptDescription, preview.value,
               container.querySelector('#tb-fact-q').value, container.querySelector('#tb-fact-a').value
             );
             mergeComponents(probe.components || []);
@@ -1576,7 +1886,7 @@ export function renderPromptCreationView(container) {
           testResult.replaceChildren(document.createTextNode(`Running AI rubric review with ${reviewModel}…`));
           try {
             const review = await Api.judgePrompt(
-              reviewModel, titleField.value, descriptionField.value, selectedPromptSections(),
+              reviewModel, promptTitle, promptDescription, selectedPromptSections(),
               [...promptTools.values()].map(tool => ({
                 name: tool.name, description: toolDescription(tool), signature: tool.signature
               }))
@@ -1751,7 +2061,7 @@ export function renderPromptCreationView(container) {
     save.addEventListener('click', async () => {
       save.disabled = true;
       try {
-        const title = titleField.value.trim() || 'Untitled prompt';
+        const title = promptTitle.trim() || 'Untitled prompt';
         const markdown = buildReportMarkdown(result, title, notes.value.trim());
         const fileName = `${slugify(title) || 'prompt'}-test-report-${new Date().toISOString().slice(0, 10)}.md`;
         const where = await saveMarkdownFile(fileName, markdown);

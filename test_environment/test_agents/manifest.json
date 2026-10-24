@@ -221,5 +221,33 @@
     "label": "snapshot",
     "snapshot": "chat-assitant__snapshot__20261022-033350",
     "published_at": "2026-10-22T03:33:50.408372+00:00"
+  },
+  {
+    "agent_id": "chat-assitant",
+    "environment": "workspace",
+    "label": "snapshot",
+    "snapshot": "chat-assitant__snapshot__20261024-020631",
+    "published_at": "2026-10-24T02:06:31.655762+00:00"
+  },
+  {
+    "agent_id": "chat-assitant",
+    "environment": "workspace",
+    "label": "snapshot",
+    "snapshot": "chat-assitant__snapshot__20261024-021309",
+    "published_at": "2026-10-24T02:13:09.606498+00:00"
+  },
+  {
+    "agent_id": "chat-assitant",
+    "environment": "workspace",
+    "label": "snapshot",
+    "snapshot": "chat-assitant__snapshot__20261024-021421",
+    "published_at": "2026-10-24T02:14:21.245587+00:00"
+  },
+  {
+    "agent_id": "chat-assitant",
+    "environment": "workspace",
+    "label": "snapshot",
+    "snapshot": "chat-assitant__snapshot__20261024-022557",
+    "published_at": "2026-10-24T02:25:57.709139+00:00"
   }
 ]

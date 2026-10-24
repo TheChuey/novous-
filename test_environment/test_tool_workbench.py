@@ -276,6 +276,33 @@ class ToolWorkbenchTests(unittest.TestCase):
                     tool_catalog.REGISTRY.pop(first_name, None)
                     tool_catalog.REGISTRY.pop(second_name, None)
 
+    def test_promotes_tool_with_top_level_import(self):
+        tool_name = "workbench_test_fraction"
+        source = (
+            "import fractions as workbench_test_fraction_module\n\n"
+            f"def {tool_name}(value: int):\n"
+            "    return str(workbench_test_fraction_module.Fraction(value, 2))\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            promoted_path = Path(directory) / "promoted.py"
+            with patch("tools.interface.PROMOTED_MODULE_PATH", promoted_path):
+                try:
+                    result = api_promote_tool(ToolWorkbenchRequest(
+                        tool_code=source, function_input={"value": 3}
+                    ))
+                    self.assertEqual(result["promoted"]["name"], tool_name)
+                    self.assertEqual(
+                        tool_catalog.REGISTRY[tool_name]["function"](3), "3/2"
+                    )
+                    promoted_source = promoted_path.read_text(encoding="utf-8")
+                    self.assertIn(
+                        "import fractions as workbench_test_fraction_module\n\n"
+                        f"@tool\ndef {tool_name}",
+                        promoted_source,
+                    )
+                finally:
+                    tool_catalog.REGISTRY.pop(tool_name, None)
+
     def test_custom_tool_source_can_be_loaded_and_removed_from_library(self):
         tool_name = "workbench_library_tool"
         remaining_name = "workbench_library_remaining"

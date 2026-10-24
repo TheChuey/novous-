@@ -206,13 +206,20 @@ def list_promoted_tool_names() -> list[str]:
     return names
 
 
-def _decorated_source(first: str, second: str = "") -> str:
-    """Ensure tool source has the @tool decorator."""
-    source = second if second else first
-    src = source.strip()
-    if src.startswith("@tool"):
-        return src + "\n"
-    return f"@tool\n{src}\n"
+def _decorated_source(source: str, function: ast.FunctionDef) -> str:
+    """Ensure the primary function has the @tool decorator."""
+    for decorator in function.decorator_list:
+        target = decorator.func if isinstance(decorator, ast.Call) else decorator
+        if isinstance(target, ast.Name) and target.id == "tool":
+            return source.rstrip() + "\n"
+
+    lines = source.splitlines()
+    start_line = min(
+        (decorator.lineno for decorator in function.decorator_list),
+        default=function.lineno,
+    )
+    lines.insert(start_line - 1, "@tool")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _function_span(source: str, name: str) -> tuple[int, int, ast.FunctionDef]:
@@ -276,7 +283,7 @@ def register_tool(source: str, name: str | None = None) -> dict:
         )
 
     previous_content = PROMOTED_MODULE_PATH.read_text(encoding="utf-8")
-    block = _decorated_source(name, source)
+    block = _decorated_source(source, fn_node)
     sep = "\n" if not previous_content.endswith("\n\n") else ""
     new_content = previous_content + sep + block + "\n"
     PROMOTED_MODULE_PATH.write_text(new_content, encoding="utf-8", newline="\n")

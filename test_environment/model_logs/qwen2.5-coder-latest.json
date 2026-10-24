@@ -1,7 +1,7 @@
 {
   "model": "qwen2.5-coder:latest",
-  "runs": 14,
-  "passes": 7,
+  "runs": 15,
+  "passes": 8,
   "probe_failures": {
     "fact_correct": 1,
     "description_match": 5,
@@ -201,6 +201,19 @@
     {
       "at": "2026-10-21T08:35:57+00:00",
       "title": "Test Agent Prompt",
+      "passed": true,
+      "strengths": [
+        "The model states its role in line with the title.",
+        "The model's summary matches the description.",
+        "The model answers known facts correctly under this prompt.",
+        "The model declines to invent answers it cannot know."
+      ],
+      "weaknesses": [],
+      "improvements": []
+    },
+    {
+      "at": "2026-10-24T02:13:17+00:00",
+      "title": "",
       "passed": true,
       "strengths": [
         "The model states its role in line with the title.",
