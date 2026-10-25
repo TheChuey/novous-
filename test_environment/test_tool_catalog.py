@@ -36,14 +36,15 @@ class TestToolCatalog(unittest.TestCase):
             "editor",
             "delete_file",
             "map_files",
-            "read_agent_memory",
-            "list_knowledge_sources",
-            "search_knowledge_base",
-            "list_knowledge_documents",
+            "read_agent_scratchpad",
+            "get_knowledge_catalog",
+            "search_knowledge_branch",
+            "list_knowledge_branch_documents",
+            "read_knowledge_branch_document",
         }
         for exp in expected:
             self.assertIn(exp, names)
-        self.assertEqual(len(tools), 20)
+        self.assertEqual(len(tools), 21)
 
     def test_tools_directory_contains_only_the_file_tools_and_promoted_module(self):
         files = {path.name for path in tool_catalog.TOOLS_DIR.iterdir() if path.is_file()}

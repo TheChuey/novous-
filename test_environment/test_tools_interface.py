@@ -383,10 +383,11 @@ class TestToolsInterface(unittest.TestCase):
                 "create_folder",
                 "editor",
                 "delete_file",
-                "read_agent_memory",
-                "list_knowledge_sources",
-                "search_knowledge_base",
-                "list_knowledge_documents",
+                "read_agent_scratchpad",
+                "get_knowledge_catalog",
+                "search_knowledge_branch",
+                "list_knowledge_branch_documents",
+                "read_knowledge_branch_document",
             },
         )
         self.assertGreater(len(tool_catalog.list_tools()), len(names))

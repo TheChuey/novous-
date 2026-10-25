@@ -7,9 +7,11 @@ model: qwen2.5-coder:latest
 environment: prompt-creation
 version: 1
 tools:
-  - read_agent_memory
-  - list_knowledge_sources
-  - search_knowledge_base
+  - read_agent_scratchpad
+  - get_knowledge_catalog
+  - search_knowledge_branch
+  - list_knowledge_branch_documents
+  - read_knowledge_branch_document
   - read_file
 ---
 
@@ -55,20 +57,30 @@ Your primary task is to generate prompts that meet the user's requirements while
 ## Tools
 
 
-### read_agent_memory
+### read_agent_scratchpad
 - Provider: agentMemory
 - Signature: (memory_type: str = 'all') -> str
-Read the latest file content copied by read_file and/or the latest directory map copied by map_files.
+Read recent file contents and/or the latest workspace map saved in agent scratchpad memory.
 
-### search_knowledge_base
-- Provider: agentMemory
-- Signature: (query: str, top_k: int = 5, knowledge_base_id: str = '') -> str
-Search a named knowledge source by ID, including archived sources; omit the ID to search the selected source.
-
-### list_knowledge_sources
+### get_knowledge_catalog
 - Provider: agentMemory
 - Signature: () -> str
-List named knowledge sources with their IDs, active/archive status, and indexed document counts.
+Get the live Knowledge TOC: exact branch names, IDs, status, and indexed document/chunk counts. Use this first to find a branch ID.
+
+### search_knowledge_branch
+- Provider: agentMemory
+- Signature: (query: str, top_k: int = 5, knowledge_branch_id: str = '') -> str
+Find relevant passages for a question in one knowledge branch. Get its ID from get_knowledge_catalog and pass it as knowledge_branch_id; results are source text for answering the user.
+
+### list_knowledge_branch_documents
+- Provider: agentMemory
+- Signature: (knowledge_branch_id: str = '') -> str
+List indexed document names, paths, and chunk counts in a branch. Use get_knowledge_catalog first and pass the matching branch ID; this lists metadata, not document contents.
+
+### read_knowledge_branch_document
+- Provider: agentMemory
+- Signature: (document_path: str, knowledge_branch_id: str = '') -> str
+Read the full indexed text of one document. Use get_knowledge_catalog and list_knowledge_branch_documents first, then pass the exact listed path and branch ID.
 
 ### read_file
 - Provider: tools

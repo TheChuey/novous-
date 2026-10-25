@@ -14,10 +14,11 @@ DEFAULT_TOOLS = [
     "create_file",
     "list_directory",
     "project_status",
-    "read_agent_memory",
-    "list_knowledge_sources",
-    "search_knowledge_base",
-    "list_knowledge_documents",
+    "read_agent_scratchpad",
+    "get_knowledge_catalog",
+    "search_knowledge_branch",
+    "list_knowledge_branch_documents",
+    "read_knowledge_branch_document",
 ]
 
 CODEBUILDER_DEFAULT_TOOLS = [
@@ -29,10 +30,11 @@ CODEBUILDER_DEFAULT_TOOLS = [
     "run_python_code",
     "send_code_to_editor",
     "run_code_in_editor",
-    "read_agent_memory",
-    "list_knowledge_sources",
-    "search_knowledge_base",
-    "list_knowledge_documents",
+    "read_agent_scratchpad",
+    "get_knowledge_catalog",
+    "search_knowledge_branch",
+    "list_knowledge_branch_documents",
+    "read_knowledge_branch_document",
 ]
 
 

@@ -7,9 +7,17 @@ No implicit default source is created. Older default-source configuration is
 migrated to a named branch, retaining its legacy index until that branch is
 explicitly deleted.
 
-Agent tools can list knowledge sources and search or list documents by source
-ID. This also works for archived sources: archiving preserves the index, and
-agents can continue to access that branch without restoring it.
+Agent tools expose a live Knowledge TOC with each branch's exact saved name,
+ID, active/archive status, and indexed-document/chunk counts. Agents should
+look up a requested branch by name, then pass its ID to search or document
+tools. Searching returns relevant indexed passages for the agent's context;
+listing documents returns metadata only, while reading a specific indexed
+document returns its extracted text. Archived branches remain accessible by ID
+because archiving preserves the index.
+
+The agent scratchpad is separate from the catalog: it stores recent file reads
+and workspace maps, not the branch list. Use workspace `read_file` for files
+that are not indexed in a knowledge branch.
 
 Sources may point to folders that are currently unavailable; their name and
 path remain saved, and indexing reports that the folder cannot be scanned.
