@@ -1,4 +1,5 @@
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -322,6 +323,51 @@ class TestToolsInterface(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["status"], "healthy")
 
+    def test_rag_branch_rename_and_delete_routes(self):
+        client = TestClient(app)
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder, ignore_errors=True)
+        (folder / "keep.txt").write_text("Keep user files.", encoding="utf-8")
+        config_path = folder / "rag_config.json"
+        index_dir = folder / "indexes"
+        with patch("agentMemory.rag_config.CONFIG_PATH", config_path), \
+                patch("agentMemory.rag_config.DATA_DIR", index_dir), \
+                patch("agentMemory.indexer._SCAN_JOB", {"status": "idle"}):
+            base = agent_memory.add_rag_base("Original branch", str(folder))
+            renamed = client.put(
+                f"/api/rag/bases/{base['id']}",
+                json={"name": "Renamed branch"},
+            )
+            self.assertEqual(renamed.status_code, 200, renamed.text)
+            self.assertEqual(renamed.json()["name"], "Renamed branch")
+
+            deleted = client.delete(f"/api/rag/bases/{base['id']}")
+            self.assertEqual(deleted.status_code, 200, deleted.text)
+            self.assertEqual(deleted.json()["name"], "Renamed branch")
+            self.assertFalse(deleted.json()["folder_deleted"])
+            self.assertEqual((folder / "keep.txt").read_text(encoding="utf-8"), "Keep user files.")
+            self.assertEqual(agent_memory.list_rag_bases(), [])
+
+    def test_open_rag_branch_folder_route(self):
+        client = TestClient(app)
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder, ignore_errors=True)
+        config_path = folder / "rag_config.json"
+        index_dir = folder / "indexes"
+        with patch("agentMemory.rag_config.CONFIG_PATH", config_path), \
+                patch("agentMemory.rag_config.DATA_DIR", index_dir), \
+                patch("agentMemory.indexer._SCAN_JOB", {"status": "idle"}):
+            base = agent_memory.add_rag_base("Local branch", str(folder))
+            with patch("agentMemory.interface.os.startfile", create=True) as open_folder:
+                response = client.post(f"/api/rag/bases/{base['id']}/open-folder")
+
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json(), {"opened": True, "path": str(folder.resolve())})
+            open_folder.assert_called_once_with(str(folder.resolve()))
+
+            missing = client.post("/api/rag/bases/unknown/open-folder")
+            self.assertEqual(missing.status_code, 404)
+
     def test_registered_tool_library_shows_only_tools_package_functions(self):
         client = TestClient(app)
         response = client.get("/api/tools/library")
@@ -334,9 +380,11 @@ class TestToolsInterface(unittest.TestCase):
                 "map_files",
                 "read_file",
                 "write_file",
+                "create_folder",
                 "editor",
                 "delete_file",
                 "read_agent_memory",
+                "list_knowledge_sources",
                 "search_knowledge_base",
                 "list_knowledge_documents",
             },

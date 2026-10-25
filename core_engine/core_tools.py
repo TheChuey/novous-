@@ -45,10 +45,20 @@ def calculator(expression: str) -> str:
 
 
 @tool(provider="core_engine")
-def rag_agent_tool(query: str, relative_path: str = "", top_k: int = 3) -> str:
-    """Query workspace knowledge base or parse a document via Docling for relevant passages."""
+def rag_agent_tool(
+    query: str,
+    relative_path: str = "",
+    top_k: int = 3,
+    knowledge_base_id: str = "",
+) -> str:
+    """Query a named knowledge source by ID, including archived sources, for relevant passages."""
     return langgraph_tools.rag_agent_tool.invoke(
-        {"query": query, "relative_path": relative_path, "top_k": top_k}
+        {
+            "query": query,
+            "relative_path": relative_path,
+            "top_k": top_k,
+            "knowledge_base_id": knowledge_base_id,
+        }
     )
 
 

@@ -87,21 +87,66 @@ export function renderChatView(container) {
       </div>
       <div id="chat-scratchpad-content" class="scratchpad-content"></div>
     </dialog>
+    <dialog id="chat-knowledge-catalog-dialog" class="scratchpad-dialog">
+      <div class="scratchpad-dialog-head">
+        <div>
+          <h2>Knowledge TOC</h2>
+          <p class="text-muted small">Live catalog of saved knowledge branches. Expand a branch to see its indexed documents.</p>
+        </div>
+        <div class="root-management-actions">
+          <button type="button" class="btn btn-sm" data-catalog-refresh>Refresh</button>
+          <button type="button" class="btn btn-sm" data-catalog-close aria-label="Close">Close</button>
+        </div>
+      </div>
+      <div id="chat-knowledge-catalog-content" class="scratchpad-content" aria-live="polite"></div>
+    </dialog>
     <dialog id="chat-rag-dialog" class="scratchpad-dialog">
       <div class="scratchpad-dialog-head">
         <div>
-          <h2>RAG Index</h2>
-          <p class="text-muted small">Documents embedded in the knowledge base, and manual text you add.</p>
+          <h2>Knowledge sources</h2>
+          <p class="text-muted small">Each named branch links one folder to its own searchable index. Deleting a branch removes its saved index, not the folder or its files.</p>
         </div>
         <button type="button" class="btn btn-sm" data-rag-close aria-label="Close">Close</button>
       </div>
+      <section class="scratchpad-section">
+        <label class="chat-field-label" for="chat-rag-base">Choose a source</label>
+        <select id="chat-rag-base" class="form-select"></select>
+        <form id="chat-rag-base-form" class="rag-add-form">
+          <h3>Add a folder</h3>
+          <label class="small" for="chat-rag-base-name">Source name</label>
+          <input id="chat-rag-base-name" class="form-input" type="text" placeholder="Business decisions" required>
+          <label class="small" for="chat-rag-base-path">Folder to search</label>
+          <textarea id="chat-rag-base-path" class="form-input root-path-input" rows="2" placeholder="E:\\BUSN410\\Critical Thinking Strategies\\week 1" required></textarea>
+          <button type="submit" class="btn btn-sm">Save source</button>
+          <button id="chat-rag-archive" type="button" class="btn btn-sm btn-danger">Archive source</button>
+          <button id="chat-rag-rename" type="button" class="btn btn-sm">Rename source</button>
+          <button id="chat-rag-delete" type="button" class="btn btn-sm btn-danger">Delete branch</button>
+        </form>
+        <p id="chat-rag-job" class="small text-muted" role="status" aria-live="polite"></p>
+        <div id="chat-rag-error-actions" class="root-management-actions" hidden>
+          <span class="small">Retry this file, skip just this one and ask again, or skip all remaining errors?</span>
+          <button id="chat-rag-error-retry" type="button" class="btn btn-sm">Retry file</button>
+          <button id="chat-rag-error-skip" type="button" class="btn btn-sm">Skip this file</button>
+          <button id="chat-rag-error-skip-all" type="button" class="btn btn-sm btn-danger">Skip all errors</button>
+        </div>
+        <div class="root-management-actions">
+          <button id="chat-rag-scan" type="button" class="btn btn-sm btn-primary">Index selected source</button>
+          <button id="chat-rag-pause" type="button" class="btn btn-sm">Pause</button>
+          <button id="chat-rag-resume" type="button" class="btn btn-sm">Resume</button>
+        </div>
+        <div class="root-management-actions">
+          <label class="small" for="chat-rag-resume-at">Resume at</label>
+          <input id="chat-rag-resume-at" class="form-input" type="datetime-local">
+          <button id="chat-rag-schedule" type="button" class="btn btn-sm">Schedule resume</button>
+        </div>
+      </section>
       <div id="chat-rag-content" class="scratchpad-content"></div>
       <form id="chat-rag-form" class="rag-add-form">
-        <h3>Add text to the vector database</h3>
-        <input id="chat-rag-title" class="form-input" type="text" placeholder="Title (adding the same title replaces it)" required>
-        <textarea id="chat-rag-text" class="form-input" rows="4" placeholder="Text to embed" required></textarea>
+        <h3>Add text to this source</h3>
+        <input id="chat-rag-title" class="form-input" type="text" placeholder="Text title (same title replaces it)" required>
+        <textarea id="chat-rag-text" class="form-input" rows="4" placeholder="Text to add to this source" required></textarea>
         <div class="root-management-actions">
-          <button type="submit" class="btn btn-sm btn-primary">Add to RAG</button>
+          <button type="submit" class="btn btn-sm btn-primary">Add text</button>
           <button type="button" class="btn btn-sm" data-rag-refresh>Refresh</button>
         </div>
         <p class="small" id="chat-rag-status" role="status" aria-live="polite"></p>
@@ -242,10 +287,98 @@ export function renderChatView(container) {
     scratchpadDialog.close();
   });
 
+  const knowledgeCatalogDialog = container.querySelector('#chat-knowledge-catalog-dialog');
+  const knowledgeCatalogContent = container.querySelector('#chat-knowledge-catalog-content');
+
+  async function loadKnowledgeCatalog() {
+    knowledgeCatalogContent.textContent = 'Loading knowledge catalog…';
+    try {
+      const { bases } = await Api.getRagBases();
+      knowledgeCatalogContent.replaceChildren();
+      if (!bases.length) {
+        const empty = document.createElement('p');
+        empty.className = 'text-muted';
+        empty.textContent = 'No knowledge branches have been saved yet.';
+        knowledgeCatalogContent.appendChild(empty);
+        return;
+      }
+      const list = document.createElement('div');
+      list.className = 'knowledge-catalog-list';
+      bases.forEach(base => {
+        const branch = document.createElement('details');
+        branch.className = 'knowledge-catalog-branch';
+        const summary = document.createElement('summary');
+        summary.textContent = base.name;
+        const metadata = document.createElement('div');
+        metadata.className = 'knowledge-catalog-meta small text-muted';
+        metadata.textContent = `${base.active ? 'Active' : 'Archived'}${base.selected ? ' · Selected' : ''} · ${base.documents} document(s) · ${base.chunks} chunks`;
+        const id = document.createElement('code');
+        id.className = 'knowledge-catalog-id';
+        id.textContent = `Branch ID: ${base.id}`;
+        const documents = document.createElement('ul');
+        documents.className = 'knowledge-catalog-documents';
+        let loaded = false;
+        branch.addEventListener('toggle', async () => {
+          if (!branch.open || loaded) return;
+          loaded = true;
+          const loading = document.createElement('li');
+          loading.className = 'text-muted small';
+          loading.textContent = 'Loading indexed documents…';
+          documents.replaceChildren(loading);
+          try {
+            const overview = await Api.getRagDocuments(base.id);
+            documents.replaceChildren();
+            if (!overview.files?.length) {
+              const empty = document.createElement('li');
+              empty.className = 'text-muted small';
+              empty.textContent = 'No indexed documents.';
+              documents.appendChild(empty);
+            } else {
+              overview.files.forEach(file => {
+                const item = document.createElement('li');
+                item.textContent = `${file.name} · ${file.chunks} chunk(s)`;
+                item.title = file.path;
+                documents.appendChild(item);
+              });
+            }
+          } catch (error) {
+            loaded = false;
+            documents.replaceChildren();
+            const failure = document.createElement('li');
+            failure.className = 'text-danger small';
+            failure.textContent = `Could not load documents: ${error.message}`;
+            documents.appendChild(failure);
+          }
+        });
+        branch.append(summary, metadata, id, documents);
+        list.appendChild(branch);
+      });
+      knowledgeCatalogContent.appendChild(list);
+    } catch (error) {
+      knowledgeCatalogContent.textContent = `Could not load knowledge catalog: ${error.message}`;
+    }
+  }
+
+  async function openKnowledgeCatalog() {
+    knowledgeCatalogDialog.showModal();
+    await loadKnowledgeCatalog();
+  }
+
+  container.querySelector('[data-catalog-close]')
+    .addEventListener('click', () => knowledgeCatalogDialog.close());
+  container.querySelector('[data-catalog-refresh]')
+    .addEventListener('click', loadKnowledgeCatalog);
+
   const ragDialog = container.querySelector('#chat-rag-dialog');
   const ragContent = container.querySelector('#chat-rag-content');
   const ragStatus = container.querySelector('#chat-rag-status');
   const ragForm = container.querySelector('#chat-rag-form');
+  const ragBaseSelect = container.querySelector('#chat-rag-base');
+  const ragJobStatus = container.querySelector('#chat-rag-job');
+  let activeRagBaseId = null;
+  let ragBases = [];
+  let viewingArchivedBase = false;
+  let ragPollInterval = null;
 
   function showRagStatus(message, kind = 'muted') {
     ragStatus.textContent = message;
@@ -258,17 +391,17 @@ export function renderChatView(container) {
     const typeText = Object.entries(overview.types || {})
       .sort((a, b) => b[1] - a[1])
       .map(([type, count]) => `${type}: ${count}`).join(', ') || 'none';
-    summary.textContent = `${overview.documents} document(s), ${overview.chunks} chunk(s). Types — ${typeText}.`;
+    summary.textContent = `${overview.name || 'Selected source'} — ${overview.documents} document(s), ${overview.chunks} chunks. Types: ${typeText}.`;
     const folder = document.createElement('p');
     folder.className = 'text-muted small';
-    folder.textContent = `Folder: ${overview.path}${overview.exists ? '' : ' (missing)'}`;
+    folder.textContent = `${overview.path}${overview.exists ? '' : ' (folder unavailable)'}`;
     ragContent.append(summary, folder);
 
     const files = overview.files || [];
     if (!files.length) {
       const empty = document.createElement('p');
       empty.className = 'text-muted';
-      empty.textContent = 'Nothing is indexed yet.';
+      empty.textContent = 'No information has been indexed from this folder yet.';
       ragContent.appendChild(empty);
       return;
     }
@@ -287,10 +420,11 @@ export function renderChatView(container) {
       remove.type = 'button';
       remove.className = 'btn btn-sm btn-danger';
       remove.textContent = 'Delete';
+      remove.disabled = viewingArchivedBase;
       remove.addEventListener('click', async () => {
         if (!confirm(`Remove "${file.name}" from the RAG index? Files on disk are not touched.`)) return;
         try {
-          await Api.deleteRagDocument(file.path);
+          await Api.deleteRagDocument(file.path, activeRagBaseId);
           showRagStatus(`Removed ${file.name}.`, 'success');
           await loadRag();
         } catch (error) {
@@ -305,9 +439,107 @@ export function renderChatView(container) {
 
   async function loadRag() {
     try {
-      renderRag(await Api.getRagDocuments());
+      const { bases } = await Api.getRagBases();
+      ragBases = bases;
+      const selected = bases.find(base => base.selected && base.active);
+      activeRagBaseId = selected?.id || bases.find(base => base.active)?.id || bases[0]?.id || null;
+      viewingArchivedBase = Boolean(
+        activeRagBaseId && !bases.find(base => base.id === activeRagBaseId)?.active
+      );
+      container.querySelector('#chat-rag-form [type="submit"]').disabled =
+        !activeRagBaseId || viewingArchivedBase;
+      ragBaseSelect.replaceChildren();
+      if (!bases.length) {
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.textContent = 'No sources yet';
+        ragBaseSelect.appendChild(emptyOption);
+      }
+      bases.forEach(base => {
+        const option = document.createElement('option');
+        option.value = base.id;
+        option.textContent = `${base.name}${base.active ? '' : ' (archived)'}`;
+        option.selected = base.id === activeRagBaseId;
+        ragBaseSelect.appendChild(option);
+      });
+      updateRagBaseAction();
+      if (activeRagBaseId) {
+        renderRag(await Api.getRagDocuments(activeRagBaseId));
+      } else {
+        ragContent.textContent = 'No knowledge branches yet. Add a named source folder to create one.';
+      }
     } catch (error) {
       ragContent.textContent = `Could not load the RAG index: ${error.message}`;
+    }
+    await loadRagScan();
+  }
+
+  function updateRagBaseAction() {
+    const button = container.querySelector('#chat-rag-archive');
+    const selected = ragBases.find(base => base.id === ragBaseSelect.value);
+    const restoring = selected && !selected.active;
+    button.textContent = restoring ? 'Restore source' : 'Archive source';
+    button.disabled = !selected;
+    container.querySelector('#chat-rag-rename').disabled = !selected;
+    container.querySelector('#chat-rag-delete').disabled = !selected;
+  }
+
+  async function loadRagScan() {
+    try {
+      const job = await Api.getRagScan();
+      const isActive = ['queued', 'running', 'pausing'].includes(job.status);
+      const blocksMutation = ['queued', 'running', 'pausing', 'paused', 'awaiting_decision'].includes(job.status);
+      const progress = `${job.completed || 0}/${job.discovered || 0} checked · ` +
+        `${job.indexed || 0} indexed · ${job.unchanged || 0} unchanged · ` +
+        `${job.skipped?.length || 0} skipped · ${job.errors?.length || 0} errors`;
+      const current = job.current ? ` — ${job.current}` : '';
+      const firstError = job.errors?.[0];
+      const errorSummary = job.errors?.length
+        ? `; ${job.errors.length} error(s), e.g. ${firstError.path || ''} — ${firstError.error || 'see server log'}`
+        : '';
+      const pending = job.pending_error
+        ? ` Needs your choice for ${job.pending_error.path}: ${job.pending_error.error}`
+        : '';
+      const schedule = job.resume_at
+        ? `; scheduled to resume ${new Date(job.resume_at).toLocaleString()}`
+        : '';
+      const state = {
+        queued: 'Starting',
+        running: 'Indexing',
+        pausing: 'Pausing after current file',
+        awaiting_decision: 'Waiting for your choice',
+        paused: 'Paused',
+        completed: 'Complete',
+        completed_with_skips: 'Complete (files skipped by choice)',
+        completed_with_errors: 'Complete with errors',
+        unavailable: 'Folder unavailable',
+        failed: 'Failed'
+      }[job.status] || job.status;
+      ragJobStatus.textContent = job.status === 'idle'
+        ? 'Index status: Waiting to start.'
+        : `${job.base_name || 'Source'}: ${state} — ${progress}${pending || errorSummary}${schedule}${current}`;
+      ragJobStatus.className = `small ${
+        ['completed', 'completed_with_skips', 'running', 'queued'].includes(job.status) ? 'text-success'
+          : ['paused', 'pausing', 'awaiting_decision'].includes(job.status) ? 'text-warning'
+            : ['failed', 'completed_with_errors', 'unavailable'].includes(job.status) ? 'text-danger'
+              : 'text-muted'
+      }`;
+      container.querySelector('#chat-rag-pause').disabled = !isActive;
+      container.querySelector('#chat-rag-resume').disabled =
+        job.status !== 'paused' && job.status !== 'unavailable' && job.status !== 'failed';
+      container.querySelector('#chat-rag-scan').disabled =
+        !activeRagBaseId || viewingArchivedBase || isActive;
+      container.querySelector('#chat-rag-schedule').disabled = job.status !== 'paused';
+      const errorActions = container.querySelector('#chat-rag-error-actions');
+      errorActions.hidden = job.status !== 'awaiting_decision';
+      errorActions.querySelectorAll('button').forEach(button => {
+        button.disabled = job.status !== 'awaiting_decision';
+      });
+      const selectedBase = ragBases.find(base => base.id === ragBaseSelect.value);
+      container.querySelector('#chat-rag-delete').disabled =
+        !selectedBase || (blocksMutation && job.base_id === selectedBase.id);
+    } catch (error) {
+      ragJobStatus.textContent = `Could not load indexing status: ${error.message}`;
     }
   }
 
@@ -315,20 +547,183 @@ export function renderChatView(container) {
     ragDialog.showModal();
     ragContent.textContent = 'Loading RAG index…';
     showRagStatus('');
+    const resumeInput = container.querySelector('#chat-rag-resume-at');
+    const suggestedResume = new Date(Date.now() + 60 * 60 * 1000);
+    suggestedResume.setMinutes(suggestedResume.getMinutes() - suggestedResume.getTimezoneOffset());
+    resumeInput.value = suggestedResume.toISOString().slice(0, 16);
     await loadRag();
+    if (ragPollInterval) clearInterval(ragPollInterval);
+    ragPollInterval = setInterval(() => {
+      if (ragDialog.open) {
+        loadRagScan();
+      } else {
+        clearInterval(ragPollInterval);
+        ragPollInterval = null;
+      }
+    }, 1500);
   }
 
   container.querySelector('[data-rag-close]').addEventListener('click', () => ragDialog.close());
-  container.querySelector('[data-rag-refresh]').addEventListener('click', loadRag);
+  ragDialog.addEventListener('close', () => {
+    if (ragPollInterval) clearInterval(ragPollInterval);
+    ragPollInterval = null;
+  });
+  ragBaseSelect.addEventListener('change', async () => {
+    const selected = ragBases.find(base => base.id === ragBaseSelect.value);
+    if (selected && !selected.active) {
+      activeRagBaseId = selected.id;
+      updateRagBaseAction();
+      showRagStatus(`"${selected.name}" is archived. Its index is preserved and can still be searched by agents.`, 'muted');
+      viewingArchivedBase = true;
+      container.querySelector('#chat-rag-form [type="submit"]').disabled = true;
+      container.querySelector('#chat-rag-scan').disabled = true;
+      renderRag(await Api.getRagDocuments(selected.id));
+      return;
+    }
+    try {
+      await Api.selectRagBase(ragBaseSelect.value);
+      activeRagBaseId = ragBaseSelect.value;
+      viewingArchivedBase = false;
+      container.querySelector('#chat-rag-form [type="submit"]').disabled = false;
+      await loadRag();
+    } catch (error) {
+      showRagStatus(`Could not select source: ${error.message}`, 'danger');
+    }
+  });
+  container.querySelector('#chat-rag-base-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const name = container.querySelector('#chat-rag-base-name');
+    const path = container.querySelector('#chat-rag-base-path');
+    try {
+      const base = await Api.addRagBase(name.value, path.value);
+      name.value = '';
+      path.value = '';
+      activeRagBaseId = base.id;
+      showRagStatus(`Added "${base.name}".`, 'success');
+      await loadRag();
+    } catch (error) {
+      showRagStatus(`Could not save source: ${error.message}`, 'danger');
+    }
+  });
+  container.querySelector('#chat-rag-archive').addEventListener('click', async () => {
+    const selectedBase = ragBases.find(base => base.id === ragBaseSelect.value);
+    if (!selectedBase) return;
+    try {
+      if (selectedBase.active) {
+        if (!confirm(`Archive "${selectedBase.name}"? Its folder and indexed information will be kept.`)) return;
+        await Api.archiveRagBase(selectedBase.id);
+        showRagStatus('Source archived. Its folder and indexed information were kept.', 'success');
+      } else {
+        await Api.restoreRagBase(selectedBase.id);
+        showRagStatus('Source restored with its saved folder and indexed information.', 'success');
+      }
+      await loadRag();
+    } catch (error) {
+      showRagStatus(`Could not update source: ${error.message}`, 'danger');
+    }
+  });
+  container.querySelector('#chat-rag-rename').addEventListener('click', async () => {
+    const selectedBase = ragBases.find(base => base.id === ragBaseSelect.value);
+    if (!selectedBase) return;
+    const name = prompt('New knowledge source name:', selectedBase.name);
+    if (name === null || !name.trim()) return;
+    try {
+      await Api.renameRagBase(selectedBase.id, name);
+      showRagStatus(`Renamed source to "${name.trim()}".`, 'success');
+      await loadRag();
+    } catch (error) {
+      showRagStatus(`Could not rename source: ${error.message}`, 'danger');
+    }
+  });
+  container.querySelector('#chat-rag-delete').addEventListener('click', async () => {
+    const selectedBase = ragBases.find(base => base.id === ragBaseSelect.value);
+    if (!selectedBase) return;
+    if (!confirm(`Delete "${selectedBase.name}" and its indexed documents/vectors? The branch will be removed, but its folder and files will NOT be deleted.`)) return;
+    try {
+      const result = await Api.deleteRagBase(selectedBase.id);
+      showRagStatus(`Deleted "${result.name}" and ${result.documents_removed} indexed document(s). Folder files were left untouched.`, 'success');
+      await loadRag();
+    } catch (error) {
+      showRagStatus(`Could not delete branch: ${error.message}`, 'danger');
+      await loadRagScan();
+    }
+  });
+  container.querySelector('#chat-rag-scan').addEventListener('click', async () => {
+    try {
+      await Api.reindexRag();
+      await loadRagScan();
+    } catch (error) {
+      showRagStatus(`Could not start indexing: ${error.message}`, 'danger');
+      await loadRagScan();
+    }
+  });
+  container.querySelector('#chat-rag-pause').addEventListener('click', async () => {
+    try {
+      await Api.pauseRagScan();
+      await loadRagScan();
+    } catch (error) {
+      showRagStatus(`Could not pause indexing: ${error.message}`, 'danger');
+    }
+  });
+  container.querySelector('#chat-rag-resume').addEventListener('click', async () => {
+    try {
+      await Api.resumeRagScan();
+      await loadRagScan();
+    } catch (error) {
+      showRagStatus(`Could not resume indexing: ${error.message}`, 'danger');
+      await loadRagScan();
+    }
+  });
+  [
+    ['#chat-rag-error-retry', 'retry'],
+    ['#chat-rag-error-skip', 'skip'],
+    ['#chat-rag-error-skip-all', 'skip_all']
+  ].forEach(([selector, decision]) => {
+    container.querySelector(selector).addEventListener('click', async event => {
+      event.currentTarget.disabled = true;
+      try {
+        await Api.decideRagScanError(decision);
+        showRagStatus(
+          decision === 'retry' ? 'Retrying the failed file.'
+            : decision === 'skip' ? 'Skipped this file; Novous will ask again if another file fails.'
+              : 'Skipping all remaining file errors automatically.',
+          'success'
+        );
+        await loadRagScan();
+      } catch (error) {
+        showRagStatus(`Could not apply scan choice: ${error.message}`, 'danger');
+        await loadRagScan();
+      }
+    });
+  });
+  container.querySelector('#chat-rag-schedule').addEventListener('click', async () => {
+    const value = container.querySelector('#chat-rag-resume-at').value;
+    if (!value) {
+      showRagStatus('Choose a time to resume indexing.', 'danger');
+      return;
+    }
+    try {
+      await Api.scheduleRagResume(new Date(value).toISOString());
+      showRagStatus('Indexing will resume at the scheduled time while Novous is running.', 'success');
+      await loadRagScan();
+    } catch (error) {
+      showRagStatus(`Could not schedule resume: ${error.message}`, 'danger');
+    }
+  });
+  container.querySelector('[data-rag-refresh]').addEventListener('click', async () => {
+    await loadRag();
+    showRagStatus('Index and scan status refreshed.', 'muted');
+  });
   ragForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (viewingArchivedBase) return;
     const submit = ragForm.querySelector('[type="submit"]');
     submit.disabled = true;
     showRagStatus('Embedding…');
     try {
       const title = container.querySelector('#chat-rag-title');
       const text = container.querySelector('#chat-rag-text');
-      const result = await Api.addRagText(title.value, text.value);
+      const result = await Api.addRagText(title.value, text.value, activeRagBaseId);
       showRagStatus(`Added "${title.value.trim()}" (${result.chunks} chunk(s)).`, 'success');
       title.value = '';
       text.value = '';
@@ -731,6 +1126,7 @@ export function renderChatView(container) {
     wipeChat,
     runTestSuite: openTodoSuite,
     viewScratchpad: openScratchpad,
+    viewKnowledgeCatalog: openKnowledgeCatalog,
     saveScratchpad,
     clearScratchpad,
     viewRag: openRag

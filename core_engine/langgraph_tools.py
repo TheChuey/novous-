@@ -148,13 +148,21 @@ def search_workspace_tool(query: str, extension: str = ".py") -> str:
 # --- 9. Docling-Enhanced RAG Agent Tool ---
 @tool
 def rag_agent_tool(
-    query: str, relative_path: Optional[str] = None, top_k: int = 3
+    query: str,
+    relative_path: Optional[str] = None,
+    top_k: int = 3,
+    knowledge_base_id: Optional[str] = None,
 ) -> str:
-    """Search indexed Knowledge Base documents using semantic Ollama embeddings."""
+    """Search a named knowledge source by ID, including archived sources, using semantic Ollama embeddings."""
     from agentMemory import interface as agent_memory
 
     return json.dumps(
-        agent_memory.search_knowledge_base(query, top_k, relative_path or ""),
+        agent_memory.search_knowledge_base(
+            query,
+            top_k,
+            relative_path or "",
+            knowledge_base_id or None,
+        ),
         ensure_ascii=False,
         indent=2,
     )

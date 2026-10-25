@@ -445,14 +445,106 @@ def api_clear_agent_scratchpad():
 def api_get_rag_config():
     from agentMemory import interface as memory
 
-    return memory.get_rag_status()
+    try:
+        return memory.get_rag_status()
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/api/rag/documents")
-def api_list_rag_documents():
+def api_list_rag_documents(base_id: str | None = None):
     from agentMemory import interface as memory
 
-    return memory.get_rag_overview()
+    try:
+        return memory.get_rag_overview(base_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/api/rag/bases")
+def api_list_rag_bases():
+    from agentMemory import interface as memory
+
+    return {"bases": memory.list_rag_bases()}
+
+
+@router.post("/api/rag/bases/{base_id}/open-folder")
+def api_open_rag_base_folder(base_id: str):
+    from agentMemory import interface as memory
+
+    try:
+        return memory.open_rag_base_folder(base_id)
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+
+
+@router.post("/api/rag/bases")
+def api_add_rag_base(payload: dict):
+    from agentMemory import interface as memory
+
+    try:
+        return memory.add_rag_base(
+            str(payload.get("name", "")),
+            str(payload.get("path", "")),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/api/rag/bases/{base_id}")
+def api_rename_rag_base(base_id: str, payload: dict):
+    from agentMemory import interface as memory
+
+    try:
+        return memory.rename_rag_base(base_id, str(payload.get("name", "")))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/api/rag/bases/{base_id}")
+def api_delete_rag_base(base_id: str):
+    from agentMemory import interface as memory
+
+    try:
+        return memory.delete_rag_base(base_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.put("/api/rag/bases/{base_id}/select")
+def api_select_rag_base(base_id: str):
+    from agentMemory import interface as memory
+
+    try:
+        return memory.select_rag_base(base_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/api/rag/bases/{base_id}/archive")
+def api_archive_rag_base(base_id: str):
+    from agentMemory import interface as memory
+
+    try:
+        return memory.archive_rag_base(base_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/api/rag/bases/{base_id}/restore")
+def api_restore_rag_base(base_id: str):
+    from agentMemory import interface as memory
+
+    try:
+        return memory.restore_rag_base(base_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/api/rag/documents")
@@ -460,7 +552,11 @@ def api_add_rag_text(payload: dict):
     from agentMemory import interface as memory
 
     try:
-        return memory.add_text_document(str(payload.get("title", "")), str(payload.get("text", "")))
+        return memory.add_text_document(
+            str(payload.get("title", "")),
+            str(payload.get("text", "")),
+            str(payload.get("base_id") or "") or None,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -474,8 +570,13 @@ def api_delete_rag_document(payload: dict):
     from agentMemory import interface as memory
 
     try:
-        return memory.delete_document(str(payload.get("path", "")))
+        return memory.delete_document(
+            str(payload.get("path", "")),
+            str(payload.get("base_id") or "") or None,
+        )
     except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
@@ -490,21 +591,75 @@ def api_set_rag_config(payload: dict):
 
 
 @router.post("/api/rag/reindex")
-def api_reindex_rag():
+def api_reindex_rag(base_id: str | None = None):
     from agentMemory import interface as memory
 
     try:
-        result = memory.refresh_knowledge_base()
+        return memory.start_rag_scan(base_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {**result, **memory.get_rag_status()}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/rag/scan")
+def api_get_rag_scan():
+    from agentMemory import interface as memory
+
+    return memory.get_rag_scan_job()
+
+
+@router.post("/api/rag/scan/pause")
+def api_pause_rag_scan():
+    from agentMemory import interface as memory
+
+    return memory.pause_rag_scan()
+
+
+@router.post("/api/rag/scan/resume")
+def api_resume_rag_scan():
+    from agentMemory import interface as memory
+
+    try:
+        return memory.resume_rag_scan()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/api/rag/scan/decision")
+def api_decide_rag_scan_error(payload: dict):
+    from agentMemory import indexer
+
+    try:
+        return indexer.decide_scan_error(str(payload.get("decision", "")))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/api/rag/scan/schedule")
+def api_schedule_rag_scan(payload: dict):
+    from agentMemory import interface as memory
+
+    try:
+        return memory.schedule_rag_scan_resume(str(payload.get("resume_at", "")))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.delete("/api/rag/index")
-def api_clear_rag_index():
+def api_clear_rag_index(base_id: str | None = None):
     from agentMemory import interface as memory
 
-    return memory.clear_rag_index()
+    try:
+        return memory.clear_rag_index(base_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/api/tools")

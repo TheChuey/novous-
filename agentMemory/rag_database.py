@@ -3,17 +3,30 @@
 import json
 import sqlite3
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 
 DATABASE_PATH = Path(__file__).resolve().parent / "data" / "knowledge.sqlite3"
+_ACTIVE_DATABASE_PATH: ContextVar[Path | None] = ContextVar("rag_database_path", default=None)
+
+
+@contextmanager
+def use_database(path: Path) -> Iterator[None]:
+    """Route database operations in this context to a named knowledge-base index."""
+    token = _ACTIVE_DATABASE_PATH.set(Path(path))
+    try:
+        yield
+    finally:
+        _ACTIVE_DATABASE_PATH.reset(token)
 
 
 @contextmanager
 def connect() -> Iterator[sqlite3.Connection]:
-    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DATABASE_PATH, timeout=30)
+    database_path = _ACTIVE_DATABASE_PATH.get() or DATABASE_PATH
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(database_path, timeout=30)
     try:
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")

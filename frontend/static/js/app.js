@@ -11,7 +11,8 @@ export const AppState = {
   agents: [],
   project: null,
   health: null,
-  currentPath: ''
+  currentPath: '',
+  ragScanJob: null
 };
 
 const views = {
@@ -135,14 +136,29 @@ function renderDashboardView(container) {
             <ul class="root-path-list" id="dash-root-list" aria-label="Configured Workspace folders"></ul>
           </div>
           <div class="root-management">
-            <h4>RAG Knowledge Base</h4>
-            <p class="text-muted small">Folder scanned and indexed for agent search. Leave empty to use the default workspace folder.</p>
-            <label class="small" for="dash-rag-path">RAG folder path</label>
-            <input id="dash-rag-path" class="form-input" type="text" placeholder="E:\\Novous_notes\\Knowledge Base">
+            <h4>Knowledge sources</h4>
+            <p class="text-muted small">Each named source connects one folder to its own index. Rename sources as needed. Deleting a branch removes its saved index and entry, but never the folder or its files.</p>
+            <label class="small" for="dash-rag-name">Source name</label>
+            <input id="dash-rag-name" class="form-input" type="text" placeholder="Business decisions">
+            <label class="small" for="dash-rag-path">Folder to search</label>
+            <textarea id="dash-rag-path" class="form-input root-path-input" rows="3"
+              placeholder="E:\\BUSN410\\Critical Thinking Strategies\\week 1"></textarea>
             <div class="root-management-actions">
-              <button class="btn btn-sm btn-primary" type="button" data-rag-action="save">Save path</button>
-              <button class="btn btn-sm" type="button" data-rag-action="read">Read / Re-index</button>
-              <button class="btn btn-sm btn-danger" type="button" data-rag-action="clear">Clear RAG data</button>
+              <button class="btn btn-sm btn-primary" type="button" data-rag-action="add">Save knowledge source</button>
+            </div>
+            <ul class="root-path-list rag-base-list" id="dash-rag-bases" aria-label="Saved knowledge sources"></ul>
+            <div class="root-management-actions">
+              <button class="btn btn-sm" type="button" data-rag-action="read">Index selected source</button>
+              <button class="btn btn-sm" type="button" data-rag-action="pause">Pause</button>
+              <button class="btn btn-sm" type="button" data-rag-action="resume">Resume</button>
+              <button class="btn btn-sm btn-danger" type="button" data-rag-action="clear">Clear selected source index</button>
+            </div>
+            <p class="small" id="dash-rag-job" role="status" aria-live="polite">Loading indexing status…</p>
+            <div class="root-management-actions" id="dash-rag-error-actions" hidden>
+              <span class="small" id="dash-rag-error-question"></span>
+              <button class="btn btn-sm" type="button" data-rag-action="error-retry">Retry this file</button>
+              <button class="btn btn-sm" type="button" data-rag-action="error-skip">Skip this file</button>
+              <button class="btn btn-sm btn-danger" type="button" data-rag-action="error-skip-all">Skip all remaining errors</button>
             </div>
             <p class="small" id="dash-rag-status" role="status" aria-live="polite"></p>
           </div>
@@ -370,46 +386,307 @@ function renderDashboardView(container) {
   });
 
   const ragPathInput = container.querySelector('#dash-rag-path');
+  const ragNameInput = container.querySelector('#dash-rag-name');
   const ragStatus = container.querySelector('#dash-rag-status');
+  const ragJobStatus = container.querySelector('#dash-rag-job');
+  const ragBaseList = container.querySelector('#dash-rag-bases');
   const ragButtons = [...container.querySelectorAll('[data-rag-action]')];
+  let ragBases = [];
+  let selectedRagBaseId = null;
+
   function showRagStatus(message, kind = 'muted') {
     ragStatus.textContent = message;
     ragStatus.className = `small text-${kind}`;
   }
+
   function describeRag(status) {
-    return `Folder: ${status.path}${status.exists ? '' : ' (missing)'} — ${status.documents} document(s), ${status.chunks} chunk(s).`;
+    return `${status.documents} document(s), ${status.chunks} chunk(s).`;
   }
-  Api.getRagConfig().then(status => {
-    ragPathInput.value = status.configured_path;
-    ragPathInput.placeholder = status.default_path;
-    showRagStatus(describeRag(status));
-  }).catch(err => showRagStatus(`Could not load RAG settings: ${err.message}`, 'danger'));
+
+  function renderRagBases() {
+    ragBaseList.replaceChildren();
+    ragBases.forEach(base => {
+      const item = document.createElement('li');
+      item.className = 'rag-base-item';
+      item.dataset.baseId = base.id;
+      const heading = document.createElement('strong');
+      heading.textContent = `${base.name}${base.active ? '' : ' (archived)'}`;
+      const path = document.createElement('button');
+      path.type = 'button';
+      path.className = 'rag-folder-link';
+      path.setAttribute('aria-label', `Open folder in File Explorer: ${base.path}`);
+      path.title = base.path;
+      const pathCode = document.createElement('code');
+      pathCode.textContent = base.path;
+      path.appendChild(pathCode);
+      path.disabled = !base.exists;
+      path.addEventListener('click', async () => {
+        try {
+          await Api.openRagBaseFolder(base.id);
+          showRagStatus(`Opened folder for "${base.name}" in File Explorer.`, 'success');
+        } catch (error) {
+          showRagStatus(`Could not open folder: ${error.message}`, 'danger');
+        }
+      });
+      const detail = document.createElement('span');
+      detail.className = 'small text-muted';
+      detail.textContent = `${base.selected ? 'Selected · ' : ''}${base.exists ? 'Folder available' : 'Folder unavailable'} · ${base.documents} document(s) · ${base.chunks} chunks`;
+      const actions = document.createElement('div');
+      actions.className = 'root-management-actions';
+      const select = document.createElement('button');
+      select.type = 'button';
+      select.className = 'btn btn-sm';
+      select.textContent = base.selected ? 'Selected source' : 'Select source';
+      select.disabled = base.selected || !base.active;
+      select.addEventListener('click', async () => {
+        try {
+          await Api.selectRagBase(base.id);
+          selectedRagBaseId = base.id;
+          await loadRagBases();
+          showRagStatus(`Selected "${base.name}".`, 'success');
+        } catch (error) {
+          showRagStatus(`Could not select source: ${error.message}`, 'danger');
+        }
+      });
+      actions.appendChild(select);
+
+      const rename = document.createElement('button');
+      rename.type = 'button';
+      rename.className = 'btn btn-sm';
+      rename.textContent = 'Rename';
+      rename.addEventListener('click', async () => {
+        const name = prompt('New knowledge source name:', base.name);
+        if (name === null || !name.trim()) return;
+        try {
+          await Api.renameRagBase(base.id, name);
+          await loadRagBases();
+          showRagStatus(`Renamed source to "${name.trim()}".`, 'success');
+        } catch (error) {
+          showRagStatus(`Could not rename source: ${error.message}`, 'danger');
+        }
+      });
+      actions.appendChild(rename);
+
+      const archive = document.createElement('button');
+      archive.type = 'button';
+      archive.className = base.active ? 'btn btn-sm btn-danger' : 'btn btn-sm';
+      archive.textContent = base.active ? 'Archive source (keep saved)' : 'Restore source';
+      archive.addEventListener('click', async () => {
+        try {
+          if (base.active) {
+            if (!confirm(`Archive "${base.name}"? Its name, folder, and index will be kept.`)) return;
+            await Api.archiveRagBase(base.id);
+            showRagStatus(`Archived "${base.name}". Its folder and index are still saved.`, 'success');
+          } else {
+            await Api.restoreRagBase(base.id);
+            selectedRagBaseId = base.id;
+            showRagStatus(`Restored "${base.name}" with its saved folder and index.`, 'success');
+          }
+          await loadRagBases();
+        } catch (error) {
+          showRagStatus(`Could not update source: ${error.message}`, 'danger');
+        }
+      });
+      actions.appendChild(archive);
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn btn-sm btn-danger';
+      remove.textContent = 'Delete branch';
+      remove.addEventListener('click', async () => {
+        if (!confirm(`Delete "${base.name}" and its indexed documents/vectors? The saved branch will be removed, but the folder and its files will NOT be deleted.`)) return;
+        try {
+          const result = await Api.deleteRagBase(base.id);
+          await loadRagBases();
+          showRagStatus(`Deleted "${result.name}" and ${result.documents_removed} indexed document(s). Folder files were left untouched.`, 'success');
+        } catch (error) {
+          showRagStatus(`Could not delete branch: ${error.message}`, 'danger');
+        }
+      });
+      remove.dataset.ragDelete = 'true';
+      remove.disabled = AppState.ragScanJob?.base_id === base.id &&
+        ['queued', 'running', 'pausing', 'paused'].includes(AppState.ragScanJob.status);
+      actions.appendChild(remove);
+      item.append(heading, path, detail, actions);
+      if (base.selected) item.classList.add('rag-base-selected');
+      ragBaseList.appendChild(item);
+    });
+    if (!ragBases.length) {
+      const empty = document.createElement('li');
+      empty.className = 'text-muted small';
+      empty.textContent = 'No saved knowledge sources yet.';
+      ragBaseList.appendChild(empty);
+    }
+  }
+
+  async function loadRagBases() {
+    const response = await Api.getRagBases();
+    ragBases = response.bases || [];
+    const current = ragBases.find(base => base.selected && base.active);
+    selectedRagBaseId = current?.id || ragBases.find(base => base.active)?.id || null;
+    renderRagBases();
+    const selected = ragBases.find(base => base.id === selectedRagBaseId);
+    if (selected) {
+      showRagStatus(`Selected source: ${selected.name} — ${selected.path}${selected.exists ? '' : ' (folder unavailable)'}`);
+    } else {
+      showRagStatus('No knowledge sources yet. Save a named source to create the first branch.');
+    }
+  }
+
+  function renderRagJob(job) {
+    AppState.ragScanJob = job;
+    const base = ragBases.find(entry => entry.id === job.base_id);
+    const baseName = job.base_name || base?.name || 'Knowledge source';
+    const progress = `${job.completed || 0}/${job.discovered || 0} file(s) checked · ` +
+      `${job.indexed || 0} indexed · ${job.unchanged || 0} unchanged · ` +
+      `${job.skipped?.length || 0} skipped · ${job.errors?.length || 0} errors`;
+    const current = job.current ? ` — ${job.current}` : '';
+    const firstError = job.errors?.[0];
+    const errors = job.errors?.length
+      ? `; ${job.errors.length} error(s), e.g. ${firstError.path || ''} — ${firstError.error || 'see server log'}`
+      : '';
+    const pending = job.pending_error
+      ? `File needs your choice: ${job.pending_error.path} — ${job.pending_error.error}`
+      : '';
+    const schedule = job.resume_at
+      ? `; scheduled resume ${new Date(job.resume_at).toLocaleString()}`
+      : '';
+    const state = {
+      queued: 'Starting',
+      running: 'Indexing',
+      pausing: 'Pausing after current file',
+      awaiting_decision: 'Waiting for your choice',
+      paused: 'Paused',
+      completed: 'Complete',
+      completed_with_skips: 'Complete (files skipped by choice)',
+      completed_with_errors: 'Complete with errors',
+      unavailable: 'Folder unavailable'
+    }[job.status] || job.status;
+    ragJobStatus.textContent = job.status === 'idle'
+      ? 'Index status: Waiting to start.'
+      : `${baseName}: ${state} — ${progress}${pending ? ` — ${pending}` : errors}${schedule}${current}`;
+    ragJobStatus.className = `small ${
+      ['completed', 'completed_with_skips', 'running', 'queued'].includes(job.status) ? 'text-success'
+        : ['paused', 'pausing', 'awaiting_decision'].includes(job.status) ? 'text-warning'
+          : ['failed', 'completed_with_errors', 'unavailable'].includes(job.status) ? 'text-danger'
+            : 'text-muted'
+    }`;
+    const active = ['queued', 'running', 'pausing'].includes(job.status);
+    const blocksMutation = ['queued', 'running', 'pausing', 'paused', 'awaiting_decision'].includes(job.status);
+    const selectedJob = !job.base_id || job.base_id === selectedRagBaseId;
+    container.querySelector('[data-rag-action="read"]').disabled = active;
+    container.querySelector('[data-rag-action="pause"]').disabled = !active || job.status === 'pausing';
+    container.querySelector('[data-rag-action="resume"]').disabled =
+      !selectedJob || !['paused', 'unavailable', 'failed'].includes(job.status);
+    container.querySelector('[data-rag-action="clear"]').disabled =
+      !selectedRagBaseId || blocksMutation;
+    const errorActions = container.querySelector('#dash-rag-error-actions');
+    errorActions.hidden = job.status !== 'awaiting_decision';
+    container.querySelector('#dash-rag-error-question').textContent = job.pending_error
+      ? `Retry this file, skip only it (ask again next time), or skip all remaining errors?`
+      : '';
+    errorActions.querySelectorAll('button').forEach(button => {
+      button.disabled = job.status !== 'awaiting_decision';
+    });
+    ragBaseList.querySelectorAll('.rag-base-item').forEach(item => {
+      const button = item.querySelector('[data-rag-delete]');
+      if (button) {
+        button.disabled = blocksMutation && job.base_id === item.dataset.baseId;
+      }
+    });
+  }
+
+  async function refreshRagJob() {
+    try {
+      renderRagJob(await Api.getRagScan());
+    } catch (error) {
+      ragJobStatus.textContent = `Could not load indexing status: ${error.message}`;
+      ragJobStatus.className = 'small text-danger';
+    }
+  }
+
+  loadRagBases().then(refreshRagJob).catch(error => {
+    showRagStatus(`Could not load RAG settings: ${error.message}`, 'danger');
+  });
+
   ragButtons.forEach(button => {
     button.addEventListener('click', async () => {
       const action = button.dataset.ragAction;
-      if (action === 'clear' && !confirm('Delete all indexed RAG data? Your files are not touched.')) return;
-      ragButtons.forEach(item => { item.disabled = true; });
-      showRagStatus(action === 'read' ? 'Indexing… this can take a while.' : 'Working…');
+      if (!selectedRagBaseId) {
+        showRagStatus('Save or select a knowledge source first.', 'warning');
+        return;
+      }
+      const base = ragBases.find(item => item.id === selectedRagBaseId);
+      if (action === 'clear' &&
+          !confirm(`Clear only the saved index for "${base?.name}"? The saved name, folder, and files will remain.`)) return;
+      if (['read', 'pause', 'resume', 'clear', 'error-retry', 'error-skip', 'error-skip-all'].includes(action)) {
+        button.disabled = true;
+      }
       try {
-        if (action === 'save') {
-          const status = await Api.setRagConfig(ragPathInput.value);
-          showRagStatus(`Saved. ${describeRag(status)} Use Read / Re-index to index it now.`, 'success');
+        if (action === 'add') {
+          const name = ragNameInput.value.trim();
+          const path = ragPathInput.value.trim();
+          if (!name || !path) {
+            showRagStatus('Enter a source name and the complete folder path.', 'warning');
+            return;
+          }
+          const added = await Api.addRagBase(name, path);
+          ragNameInput.value = '';
+          ragPathInput.value = '';
+          selectedRagBaseId = added.id;
+          await loadRagBases();
+          showRagStatus(`Saved source "${added.name}" for ${added.path}.`, 'success');
         } else if (action === 'read') {
-          const result = await Api.reindexRag();
-          const errors = result.errors?.length ? ` ${result.errors.length} error(s).` : '';
-          showRagStatus(`Indexed ${result.indexed}, unchanged ${result.unchanged}, removed ${result.removed.length}.${errors} ${describeRag(result)}`,
-            errors ? 'warning' : 'success');
-        } else {
-          const result = await Api.clearRagIndex();
-          showRagStatus(`Cleared ${result.removed} document(s). The next scan re-indexes the folder.`, 'success');
+          const job = await Api.reindexRag(selectedRagBaseId);
+          renderRagJob(job);
+          if (job.status === 'paused') {
+            showRagStatus(
+              `The previous scan for "${base?.name}" is still paused. Resume it to retry unfinished files.`,
+              'warning'
+            );
+          } else if (['queued', 'running'].includes(job.status)) {
+            showRagStatus(`Indexing started for "${base?.name}".`, 'success');
+          } else {
+            showRagStatus(`The scan was not started (status: ${job.status}).`, 'warning');
+          }
+        } else if (action === 'pause') {
+          renderRagJob(await Api.pauseRagScan());
+          showRagStatus('Indexing paused after the current file finishes.', 'success');
+        } else if (action === 'resume') {
+          renderRagJob(await Api.resumeRagScan());
+          showRagStatus('Indexing resumed.', 'success');
+        } else if (action.startsWith('error-')) {
+          const decision = {
+            'error-retry': 'retry',
+            'error-skip': 'skip',
+            'error-skip-all': 'skip_all'
+          }[action];
+          renderRagJob(await Api.decideRagScanError(decision));
+          showRagStatus(
+            decision === 'retry' ? 'Retrying the failed file.'
+              : decision === 'skip' ? 'Skipped this file; Novous will ask again if another file fails.'
+                : 'Skipping all remaining file errors automatically.',
+            'success'
+          );
+        } else if (action === 'clear') {
+          const result = await Api.clearRagIndex(selectedRagBaseId);
+          await loadRagBases();
+          showRagStatus(`Cleared ${result.removed} indexed document(s) from "${base?.name}".`, 'success');
         }
       } catch (err) {
         showRagStatus(err.message, 'danger');
       } finally {
-        ragButtons.forEach(item => { item.disabled = false; });
+        await refreshRagJob();
       }
     });
   });
+  const ragRefreshInterval = setInterval(() => {
+    if (!container.isConnected) {
+      clearInterval(ragRefreshInterval);
+      return;
+    }
+    refreshRagJob();
+  }, 1500);
 
   const healthBox = container.querySelector('#dash-health');
   Api.getHealth().then(h => {

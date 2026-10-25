@@ -10,9 +10,10 @@ const TEST_FUNCTIONS = [
   { id: 'diagnostics', label: 'Diagnostics', icon: 'activity', action: null },
   { id: 'wipeChat', label: 'Wipe Chat', icon: 'trash-2', action: null },
   { id: 'viewScratchpad', label: 'View Scratchpad', icon: 'file-code', action: null },
+  { id: 'viewKnowledgeCatalog', label: 'Knowledge TOC', icon: 'database', action: null },
   { id: 'saveScratchpad', label: 'Save Scratchpad', icon: 'save', action: null },
   { id: 'clearScratchpad', label: 'Clear Scratchpad', icon: 'trash-2', action: null },
-  { id: 'viewRag', label: 'RAG Index', icon: 'database', action: null }
+  { id: 'viewRag', label: 'Knowledge Sources', icon: 'database', action: null }
 ];
 
 export function buildTestPanel(containerId, actions = {}) {

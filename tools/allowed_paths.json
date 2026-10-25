@@ -2,26 +2,18 @@
   "map_roots": [
     "E:\\Novous_notes"
   ],
-  "file_manager_root": "E:\\Novous_notes",
+  "file_manager_root": "C:\\Users\\43319\\OneDrive\\Desktop\\chat logs",
   "file_manager_roots": [
-    {
-      "name": "Novous Notes",
-      "path": "E:\\Novous_notes"
-    },
-    {
-      "name": "Prompts AI",
-      "path": "C:\\Users\\43319\\OneDrive\\Prompts AI"
-    },
-    {
-      "name": "Novous2_Note",
-      "path": "E:\\Novous2_Note"
-    },
     {
       "name": "chat logs",
       "path": "C:\\Users\\43319\\OneDrive\\Desktop\\chat logs"
+    },
+    {
+      "name": "AI_NOTES",
+      "path": "E:\\AI_NOTES"
     }
   ],
-  "active_file_manager_root": "E:\\Novous_notes",
+  "active_file_manager_root": "C:\\Users\\43319\\OneDrive\\Desktop\\chat logs",
   "sandbox_root": "E:\\Novous_notes",
   "sandbox_roots": [
     "E:\\Novous_notes"

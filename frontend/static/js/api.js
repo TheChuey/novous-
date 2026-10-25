@@ -93,16 +93,49 @@ export const Api = {
     return send('DELETE', '/api/agent-memory/scratchpad');
   },
 
-  async getRagDocuments() {
-    return get('/api/rag/documents');
+  async getRagDocuments(baseId) {
+    const query = baseId ? `?base_id=${encodeURIComponent(baseId)}` : '';
+    return get(`/api/rag/documents${query}`);
   },
 
-  async addRagText(title, text) {
-    return send('POST', '/api/rag/documents', { title, text });
+  async addRagText(title, text, baseId) {
+    return send('POST', '/api/rag/documents', { title, text, base_id: baseId });
   },
 
-  async deleteRagDocument(path) {
-    return send('POST', '/api/rag/documents/delete', { path });
+  async deleteRagDocument(path, baseId) {
+    return send('POST', '/api/rag/documents/delete', { path, base_id: baseId });
+  },
+
+  async getRagBases() {
+    return get('/api/rag/bases');
+  },
+
+  async openRagBaseFolder(baseId) {
+    return send('POST', `/api/rag/bases/${encodeURIComponent(baseId)}/open-folder`);
+  },
+
+  async addRagBase(name, path) {
+    return send('POST', '/api/rag/bases', { name, path });
+  },
+
+  async renameRagBase(baseId, name) {
+    return send('PUT', `/api/rag/bases/${encodeURIComponent(baseId)}`, { name });
+  },
+
+  async deleteRagBase(baseId) {
+    return send('DELETE', `/api/rag/bases/${encodeURIComponent(baseId)}`);
+  },
+
+  async selectRagBase(baseId) {
+    return send('PUT', `/api/rag/bases/${encodeURIComponent(baseId)}/select`);
+  },
+
+  async archiveRagBase(baseId) {
+    return send('POST', `/api/rag/bases/${encodeURIComponent(baseId)}/archive`);
+  },
+
+  async restoreRagBase(baseId) {
+    return send('POST', `/api/rag/bases/${encodeURIComponent(baseId)}/restore`);
   },
 
   async getRagConfig() {
@@ -113,12 +146,34 @@ export const Api = {
     return send('PUT', '/api/rag/config', { path });
   },
 
-  async reindexRag() {
-    return send('POST', '/api/rag/reindex');
+  async reindexRag(baseId) {
+    const query = baseId ? `?base_id=${encodeURIComponent(baseId)}` : '';
+    return send('POST', `/api/rag/reindex${query}`);
   },
 
-  async clearRagIndex() {
-    return send('DELETE', '/api/rag/index');
+  async getRagScan() {
+    return get('/api/rag/scan');
+  },
+
+  async pauseRagScan() {
+    return send('POST', '/api/rag/scan/pause');
+  },
+
+  async resumeRagScan() {
+    return send('POST', '/api/rag/scan/resume');
+  },
+
+  async decideRagScanError(decision) {
+    return send('POST', '/api/rag/scan/decision', { decision });
+  },
+
+  async scheduleRagResume(resumeAt) {
+    return send('POST', '/api/rag/scan/schedule', { resume_at: resumeAt });
+  },
+
+  async clearRagIndex(baseId) {
+    const query = baseId ? `?base_id=${encodeURIComponent(baseId)}` : '';
+    return send('DELETE', `/api/rag/index${query}`);
   },
 
   async streamMessage(

@@ -1,6 +1,7 @@
 """The public doorway to agent scratchpad memory and the document knowledge base."""
 
 import math
+import os
 from pathlib import Path
 from typing import Any
 
@@ -24,25 +25,28 @@ def read_memory(memory_type: str = "all") -> dict[str, Any]:
     return scratchpad.read_memory(memory_type)
 
 
-def list_documents() -> list[dict[str, Any]]:
+def list_documents(base_id: str | None = None) -> list[dict[str, Any]]:
     """List documents currently indexed in the SQLite knowledge base."""
-    rag_database.initialize()
-    return rag_database.list_documents()
+    with rag_config.database_context(base_id):
+        rag_database.initialize()
+        return rag_database.list_documents()
 
 
-def get_document(path: str) -> dict[str, Any]:
+def get_document(path: str, base_id: str | None = None) -> dict[str, Any]:
     """Read the indexed chunks for one document."""
-    rag_database.initialize()
-    metadata = next((item for item in rag_database.list_documents() if item["path"] == path), None)
-    if metadata is None:
-        raise FileNotFoundError(f"Knowledge-base document is not indexed: {path}")
-    metadata["chunks_data"] = rag_database.get_document_chunks(path)
-    return metadata
+    with rag_config.database_context(base_id):
+        rag_database.initialize()
+        metadata = next((item for item in rag_database.list_documents() if item["path"] == path), None)
+        if metadata is None:
+            raise FileNotFoundError(f"Knowledge-base document is not indexed: {path}")
+        metadata["chunks_data"] = rag_database.get_document_chunks(path)
+        return metadata
 
 
 def index_document(relative_path: str, force: bool = False) -> dict:
     """Index one file inside the Knowledge Base folder."""
-    root = indexer.knowledge_base_folder()
+    base_id = rag_config.selected_knowledge_base_id()
+    root = indexer.knowledge_base_folder(base_id)
     requested_path = root / relative_path
     if requested_path.is_symlink():
         raise ValueError("Symbolic links cannot be indexed.")
@@ -51,30 +55,35 @@ def index_document(relative_path: str, force: bool = False) -> dict:
         candidate.relative_to(root.resolve())
     except ValueError:
         raise ValueError("Document path must stay inside the Knowledge Base folder.") from None
-    return indexer.index_file(candidate, force=force)
+    with rag_config.database_context(base_id):
+        return indexer.index_file(candidate, force=force)
 
 
-def get_rag_status() -> dict[str, Any]:
-    """Describe the configured folder and what is currently indexed."""
-    rag_database.initialize()
-    folder = indexer.knowledge_base_folder()
-    documents = rag_database.list_documents()
+def get_rag_status(base_id: str | None = None) -> dict[str, Any]:
+    """Describe the selected or specified folder and its isolated index."""
+    selected_id = base_id or rag_config.selected_knowledge_base_id()
+    with rag_config.database_context(selected_id):
+        rag_database.initialize()
+        folder = indexer.knowledge_base_folder(selected_id)
+        documents = rag_database.list_documents()
+    base = rag_config.get_knowledge_base(selected_id)
     return {
+        "base_id": base["id"],
+        "name": base["name"],
         "path": str(folder),
-        "configured_path": rag_config.configured_path(),
-        "default_path": str(rag_config.DEFAULT_KNOWLEDGE_BASE),
+        "configured_path": str(base["path"]),
         "exists": folder.is_dir(),
         "documents": len(documents),
         "chunks": sum(item["chunks"] for item in documents),
     }
 
 
-def get_rag_overview() -> dict[str, Any]:
+def get_rag_overview(base_id: str | None = None) -> dict[str, Any]:
     """Status plus every indexed document with its type, for the Chat Console dialog."""
-    status = get_rag_status()
+    status = get_rag_status(base_id)
     documents = []
     types: dict[str, int] = {}
-    for item in rag_database.list_documents():
+    for item in list_documents(base_id):
         manual = item["path"].startswith(indexer.MANUAL_PREFIX)
         kind = "manual" if manual else (Path(item["path"]).suffix.lower().lstrip(".") or "none")
         types[kind] = types.get(kind, 0) + 1
@@ -82,31 +91,154 @@ def get_rag_overview() -> dict[str, Any]:
     return {**status, "types": types, "files": documents}
 
 
-def add_text_document(title: str, text: str) -> dict:
+def add_text_document(title: str, text: str, base_id: str | None = None) -> dict:
     """Embed pasted text into the vector database."""
     with indexer._SCAN_LOCK:
-        return indexer.index_text(title, text)
+        with rag_config.database_context(base_id):
+            return indexer.index_text(title, text)
 
 
 def set_rag_folder(path: str) -> dict[str, Any]:
-    """Point the Knowledge Base at a folder; empty restores the default."""
+    """Change the selected named source folder."""
     rag_config.set_knowledge_base_path(path)
     return get_rag_status()
 
 
-def clear_rag_index() -> dict[str, Any]:
+def list_rag_bases() -> list[dict[str, Any]]:
+    bases = rag_config.list_knowledge_bases()
+    for base in bases:
+        base["exists"] = Path(base["path"]).is_dir()
+        with rag_config.database_context(str(base["id"])):
+            rag_database.initialize()
+            documents = rag_database.list_documents()
+        base["documents"] = len(documents)
+        base["chunks"] = sum(item["chunks"] for item in documents)
+    return bases
+
+
+def open_rag_base_folder(base_id: str) -> dict[str, Any]:
+    """Open a saved knowledge-source folder in the local Windows file manager."""
+    path = rag_config.knowledge_base_path(base_id)
+    if not path.is_dir():
+        raise FileNotFoundError(f"Knowledge-source folder is unavailable: {path}")
+    if os.name != "nt":
+        raise RuntimeError("Opening knowledge-source folders is supported only on Windows.")
+    os.startfile(str(path))
+    return {"opened": True, "path": str(path)}
+
+
+def add_rag_base(name: str, path: str) -> dict[str, Any]:
+    base = rag_config.add_knowledge_base(name, path)
+    return {**base, **get_rag_status(str(base["id"]))}
+
+
+def rename_rag_base(base_id: str, name: str) -> dict[str, Any]:
+    return rag_config.rename_knowledge_base(base_id, name)
+
+
+def delete_rag_base(base_id: str) -> dict[str, Any]:
+    with indexer._SCAN_LOCK:
+        job = indexer.get_scan_job()
+        if job.get("base_id") == base_id and job.get("status") in {
+            "queued", "running", "pausing", "paused"
+        }:
+            raise RuntimeError("Pause or finish indexing before deleting this knowledge source.")
+
+        rag_config.get_knowledge_base(base_id)
+        database_file = rag_config.database_path(base_id)
+        legacy_database_file = rag_database.DATABASE_PATH if database_file is None else None
+        if legacy_database_file and any(
+            str(other["id"]) != str(base_id) and other.get("legacy_index")
+            for other in rag_config.list_knowledge_bases()
+        ):
+            raise RuntimeError(
+                "This legacy index is shared by another source and cannot be deleted independently."
+            )
+        with rag_config.database_context(base_id):
+            rag_database.initialize()
+            documents = rag_database.list_documents()
+            if database_file is None:
+                rag_database.clear_all()
+
+        deleted = rag_config.delete_knowledge_base(base_id)
+        index_file = database_file or legacy_database_file
+        if index_file is not None:
+            for suffix in ("", "-wal", "-shm"):
+                Path(f"{index_file}{suffix}").unlink(missing_ok=True)
+            try:
+                index_file.parent.rmdir()
+            except OSError:
+                pass
+        return {
+            "deleted": True,
+            "id": deleted["id"],
+            "name": deleted["name"],
+            "documents_removed": len(documents),
+            "folder_deleted": False,
+        }
+
+
+def select_rag_base(base_id: str) -> dict[str, Any]:
+    rag_config.select_knowledge_base(base_id)
+    return get_rag_status(base_id)
+
+
+def archive_rag_base(base_id: str) -> dict[str, Any]:
+    job = indexer.get_scan_job()
+    if job.get("base_id") == base_id and (
+        job.get("status") in {"queued", "running", "pausing"}
+        or (job.get("status") == "paused" and job.get("resume_at"))
+    ):
+        raise RuntimeError("Pause or finish indexing and clear its scheduled resume before archiving.")
+    return rag_config.archive_knowledge_base(base_id)
+
+
+def restore_rag_base(base_id: str) -> dict[str, Any]:
+    base = rag_config.restore_knowledge_base(base_id)
+    return {**base, **get_rag_status(base_id)}
+
+
+def get_rag_scan_job() -> dict[str, Any]:
+    job = indexer.get_scan_job()
+    if job.get("base_id"):
+        try:
+            job["base_name"] = rag_config.get_knowledge_base(job["base_id"])["name"]
+        except ValueError:
+            job["base_name"] = "Unknown knowledge base"
+    return job
+
+
+def start_rag_scan(base_id: str | None = None, force: bool = False) -> dict[str, Any]:
+    return indexer.start_scan_job(base_id, force=force)
+
+
+def pause_rag_scan() -> dict[str, Any]:
+    return indexer.pause_scan_job()
+
+
+def resume_rag_scan() -> dict[str, Any]:
+    return indexer.resume_scan_job()
+
+
+def schedule_rag_scan_resume(resume_at: str) -> dict[str, Any]:
+    return indexer.schedule_scan_resume(resume_at)
+
+
+def clear_rag_index(base_id: str | None = None) -> dict[str, Any]:
     """Delete all indexed RAG data; source files are untouched."""
     with indexer._SCAN_LOCK:
-        rag_database.initialize()
-        removed = rag_database.clear_all()
-    return {"removed": removed, **get_rag_status()}
+        with rag_config.database_context(base_id):
+            rag_database.initialize()
+            removed = rag_database.clear_all()
+    return {"removed": removed, **get_rag_status(base_id)}
 
 
-def delete_document(path: str) -> dict[str, Any]:
+def delete_document(path: str, base_id: str | None = None) -> dict[str, Any]:
     """Remove one indexed document and its chunks."""
-    rag_database.initialize()
-    if not rag_database.delete_document(path):
-        raise FileNotFoundError(f"Knowledge-base document is not indexed: {path}")
+    with rag_config.database_context(base_id):
+        rag_database.initialize()
+        if not rag_database.delete_document(path):
+            raise FileNotFoundError(f"Knowledge-base document is not indexed: {path}")
     return {"deleted": True, "path": path}
 
 
@@ -129,6 +261,7 @@ def search_knowledge_base(
     query: str,
     top_k: int = 5,
     relative_path: str = "",
+    base_id: str | None = None,
 ) -> dict[str, Any]:
     """Return semantically relevant document passages and their source paths."""
     clean_query = str(query or "").strip()
@@ -137,7 +270,11 @@ def search_knowledge_base(
     if isinstance(top_k, bool) or not 1 <= int(top_k) <= 20:
         raise ValueError("top_k must be between 1 and 20.")
 
-    rag_database.initialize()
+    selected_id = base_id or rag_config.selected_knowledge_base_id()
+    base = rag_config.get_knowledge_base(selected_id)
+    with rag_config.database_context(selected_id):
+        rag_database.initialize()
+        chunks = rag_database.list_chunks()
     selected_path = ""
     if relative_path.strip():
         from editor.editor_operations import resolve_project_path
@@ -146,18 +283,20 @@ def search_knowledge_base(
         if not source_path.is_file():
             raise FileNotFoundError(f"Knowledge-base document not found: {source_path}")
         selected_path = source_path.resolve().as_posix()
-        indexer.index_file(source_path, selected_path)
-
-    chunks = rag_database.list_chunks()
+        with rag_config.database_context(selected_id):
+            indexer.index_file(source_path, selected_path)
+            chunks = rag_database.list_chunks()
     if selected_path:
         chunks = [chunk for chunk in chunks if chunk["path"] == selected_path]
     if not chunks:
         return {
             "query": clean_query,
+            "knowledge_base": base["name"],
+            "knowledge_base_id": selected_id,
             "results": [],
             "message": (
                 "No documents are indexed yet. Place supported files in "
-                f"'{indexer.knowledge_base_folder()}' and wait for the automatic scan."
+                f"'{indexer.knowledge_base_folder(selected_id)}' and wait for the automatic scan."
             ),
         }
 
@@ -184,6 +323,8 @@ def search_knowledge_base(
     ranked.sort(key=lambda item: item["score"], reverse=True)
     return {
         "query": clean_query,
+        "knowledge_base": base["name"],
+        "knowledge_base_id": selected_id,
         "model": indexer.EMBEDDING_MODEL,
         "results": ranked[:int(top_k)],
     }

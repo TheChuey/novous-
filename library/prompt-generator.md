@@ -8,6 +8,7 @@ environment: prompt-creation
 version: 1
 tools:
   - read_agent_memory
+  - list_knowledge_sources
   - search_knowledge_base
   - read_file
 ---
@@ -61,8 +62,13 @@ Read the latest file content copied by read_file and/or the latest directory map
 
 ### search_knowledge_base
 - Provider: agentMemory
-- Signature: (query: str, top_k: int = 5) -> str
-Search documents in the workspace/Knowledge Base using semantic Ollama embeddings; returns passages with source paths and similarity scores.
+- Signature: (query: str, top_k: int = 5, knowledge_base_id: str = '') -> str
+Search a named knowledge source by ID, including archived sources; omit the ID to search the selected source.
+
+### list_knowledge_sources
+- Provider: agentMemory
+- Signature: () -> str
+List named knowledge sources with their IDs, active/archive status, and indexed document counts.
 
 ### read_file
 - Provider: tools
