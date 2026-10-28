@@ -41,6 +41,7 @@ _DOC_CONVERTER = None
 _JOB_PATH = Path(__file__).resolve().parent / "data" / "rag_scan_job.json"
 _JOB_LOCK = threading.RLock()
 _JOB_THREAD: threading.Thread | None = None
+_STOP_REQUESTED = threading.Event()
 _PAUSE_REQUESTED = threading.Event()
 _RESUME_EVENT = threading.Event()
 _RESUME_EVENT.set()
@@ -50,6 +51,15 @@ try:
     _SCAN_JOB = json.loads(_JOB_PATH.read_text(encoding="utf-8"))
     if _SCAN_JOB.get("status") in {"running", "awaiting_decision"}:
         _SCAN_JOB["status"] = "paused"
+    elif _SCAN_JOB.get("status") == "stopping":
+        _SCAN_JOB["status"] = "stopped"
+        _SCAN_JOB["resume_at"] = None
+        _SCAN_JOB["current"] = ""
+        _SCAN_JOB["pending_error"] = None
+    if _SCAN_JOB.get("status") == "stopped" and _SCAN_JOB.get("base_id"):
+        stopped_base_ids = set(_SCAN_JOB.get("stopped_base_ids", []))
+        stopped_base_ids.add(_SCAN_JOB["base_id"])
+        _SCAN_JOB["stopped_base_ids"] = sorted(stopped_base_ids)
 except (OSError, json.JSONDecodeError, AttributeError):
     _SCAN_JOB = {"status": "idle"}
 
@@ -78,10 +88,35 @@ def _update_job(**changes) -> None:
         _save_job()
 
 
+class _ScanStopped(Exception):
+    pass
+
+
+def _mark_scan_stopped() -> None:
+    with _JOB_LOCK:
+        base_id = _SCAN_JOB.get("base_id")
+        stopped_base_ids = set(_SCAN_JOB.get("stopped_base_ids", []))
+        if base_id:
+            stopped_base_ids.add(base_id)
+        _SCAN_JOB.update(
+            status="stopped",
+            current="",
+            pending_error=None,
+            resume_at=None,
+            finished_at=datetime.now(timezone.utc).isoformat(),
+            stopped_base_ids=sorted(stopped_base_ids),
+        )
+        _save_job()
+
+
 def _pause_point() -> None:
+    if _STOP_REQUESTED.is_set():
+        raise _ScanStopped()
     if _PAUSE_REQUESTED.is_set():
         _update_job(status="paused", current="")
         _RESUME_EVENT.wait()
+        if _STOP_REQUESTED.is_set():
+            raise _ScanStopped()
         _PAUSE_REQUESTED.clear()
         _update_job(status="running")
 
@@ -105,7 +140,11 @@ def decide_scan_error(decision: str) -> dict:
 
 def _await_error_decision(path: Path, error: Exception) -> str:
     global _ERROR_DECISION
+    if _STOP_REQUESTED.is_set():
+        raise _ScanStopped()
     with _JOB_LOCK:
+        if _STOP_REQUESTED.is_set():
+            raise _ScanStopped()
         if _SCAN_JOB.get("error_mode") == "skip_all":
             return "skip"
         _ERROR_DECISION = None
@@ -117,6 +156,8 @@ def _await_error_decision(path: Path, error: Exception) -> str:
         )
         _save_job()
     _ERROR_DECISION_EVENT.wait()
+    if _STOP_REQUESTED.is_set():
+        raise _ScanStopped()
     with _JOB_LOCK:
         decision = _ERROR_DECISION
         _ERROR_DECISION = None
@@ -130,7 +171,7 @@ def _run_scan_job(base_id: str, force: bool) -> None:
     try:
         _update_job(
             base_id=base_id,
-            status="running",
+            status="stopping" if _STOP_REQUESTED.is_set() else "running",
             current="",
             discovered=0,
             completed=0,
@@ -167,6 +208,8 @@ def _run_scan_job(base_id: str, force: bool) -> None:
             pending_error=None,
             finished_at=datetime.now(timezone.utc).isoformat(),
         )
+    except _ScanStopped:
+        _mark_scan_stopped()
     except FileNotFoundError as exc:
         LOGGER.warning("Knowledge-base scan skipped: %s", exc)
         _update_job(
@@ -220,6 +263,10 @@ def start_scan_job(
                 raise RuntimeError("Resume or finish the paused knowledge-base scan first.")
             if not resume_paused:
                 return dict(_SCAN_JOB)
+        stopped_base_ids = set(_SCAN_JOB.get("stopped_base_ids", []))
+        stopped_base_ids.discard(selected_id)
+        _SCAN_JOB["stopped_base_ids"] = sorted(stopped_base_ids)
+        _STOP_REQUESTED.clear()
         _PAUSE_REQUESTED.clear()
         _RESUME_EVENT.set()
         _SCAN_JOB["resume_at"] = None
@@ -249,6 +296,28 @@ def pause_scan_job() -> dict:
         _RESUME_EVENT.clear()
         _SCAN_JOB["status"] = "pausing"
         _save_job()
+        return dict(_SCAN_JOB)
+
+
+def stop_scan_job() -> dict:
+    """Stop the current scan after its current file finishes."""
+    with _JOB_LOCK:
+        status = _SCAN_JOB.get("status")
+        if status not in {
+            "queued", "running", "pausing", "paused", "awaiting_decision", "stopping"
+        }:
+            return dict(_SCAN_JOB)
+        _STOP_REQUESTED.set()
+        _PAUSE_REQUESTED.clear()
+        _RESUME_EVENT.set()
+        _ERROR_DECISION_EVENT.set()
+        _SCAN_JOB["resume_at"] = None
+        thread = _JOB_THREAD
+        if thread is None or not thread.is_alive():
+            _mark_scan_stopped()
+        else:
+            _SCAN_JOB["status"] = "stopping"
+            _save_job()
         return dict(_SCAN_JOB)
 
 
@@ -524,9 +593,15 @@ def _scanner_loop() -> None:
                         resume_scan_job()
                 except ValueError:
                     LOGGER.warning("Ignoring invalid scheduled RAG resume time: %s", job["resume_at"])
-            elif job.get("status") not in {"running", "queued", "pausing", "paused"}:
+            elif job.get("status") not in {
+                "running", "queued", "pausing", "paused", "stopping", "awaiting_decision"
+            }:
                 bases = rag_config.list_knowledge_bases(include_archived=False)
-                base_ids = [str(base["id"]) for base in bases]
+                stopped_base_ids = set(job.get("stopped_base_ids", []))
+                base_ids = [
+                    str(base["id"]) for base in bases
+                    if str(base["id"]) not in stopped_base_ids
+                ]
                 if base_ids:
                     last_id = job.get("last_auto_base_id")
                     if last_id in base_ids:

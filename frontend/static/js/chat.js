@@ -60,6 +60,12 @@ export function renderChatView(container) {
             <div id="agent-meta-card" class="card chat-agent-meta">
               <p class="text-muted">Select an agent to begin chatting.</p>
             </div>
+            <details class="agent-tool-descriptions">
+              <summary>Agent tool descriptions</summary>
+              <div id="agent-tool-description-list" class="agent-tool-description-list">
+                <p class="text-muted small">Loading registered tool descriptions…</p>
+              </div>
+            </details>
             <label class="checkbox-row">
               <input type="checkbox" id="chat-use-tools" checked>
               <span>Attach tools (agent mode)</span>
@@ -132,6 +138,7 @@ export function renderChatView(container) {
         <div class="root-management-actions">
           <button id="chat-rag-scan" type="button" class="btn btn-sm btn-primary">Index selected source</button>
           <button id="chat-rag-pause" type="button" class="btn btn-sm">Pause</button>
+          <button id="chat-rag-stop" type="button" class="btn btn-sm btn-danger">Stop indexing</button>
           <button id="chat-rag-resume" type="button" class="btn btn-sm">Resume</button>
         </div>
         <div class="root-management-actions">
@@ -155,6 +162,7 @@ export function renderChatView(container) {
 
   const agentSelect = container.querySelector('#chat-agent-select');
   const metaCard = container.querySelector('#agent-meta-card');
+  const agentToolDescriptionList = container.querySelector('#agent-tool-description-list');
   const messagesBox = container.querySelector('#chat-messages');
   const chatForm = container.querySelector('#chat-form');
   const chatInput = container.querySelector('#chat-input');
@@ -487,8 +495,8 @@ export function renderChatView(container) {
   async function loadRagScan() {
     try {
       const job = await Api.getRagScan();
-      const isActive = ['queued', 'running', 'pausing'].includes(job.status);
-      const blocksMutation = ['queued', 'running', 'pausing', 'paused', 'awaiting_decision'].includes(job.status);
+      const isActive = ['queued', 'running', 'pausing', 'stopping'].includes(job.status);
+      const blocksMutation = ['queued', 'running', 'pausing', 'paused', 'stopping', 'awaiting_decision'].includes(job.status);
       const progress = `${job.completed || 0}/${job.discovered || 0} checked · ` +
         `${job.indexed || 0} indexed · ${job.unchanged || 0} unchanged · ` +
         `${job.skipped?.length || 0} skipped · ${job.errors?.length || 0} errors`;
@@ -507,6 +515,8 @@ export function renderChatView(container) {
         queued: 'Starting',
         running: 'Indexing',
         pausing: 'Pausing after current file',
+        stopping: 'Stopping after current file',
+        stopped: 'Stopped',
         awaiting_decision: 'Waiting for your choice',
         paused: 'Paused',
         completed: 'Complete',
@@ -525,6 +535,8 @@ export function renderChatView(container) {
               : 'text-muted'
       }`;
       container.querySelector('#chat-rag-pause').disabled = !isActive;
+      container.querySelector('#chat-rag-stop').disabled =
+        !['queued', 'running', 'pausing', 'paused', 'awaiting_decision'].includes(job.status);
       container.querySelector('#chat-rag-resume').disabled =
         job.status !== 'paused' && job.status !== 'unavailable' && job.status !== 'failed';
       container.querySelector('#chat-rag-scan').disabled =
@@ -537,7 +549,9 @@ export function renderChatView(container) {
       });
       const selectedBase = ragBases.find(base => base.id === ragBaseSelect.value);
       container.querySelector('#chat-rag-delete').disabled =
-        !selectedBase || (blocksMutation && job.base_id === selectedBase.id);
+        !selectedBase || (
+          blocksMutation && job.status !== 'paused' && job.base_id === selectedBase.id
+        );
     } catch (error) {
       ragJobStatus.textContent = `Could not load indexing status: ${error.message}`;
     }
@@ -663,6 +677,15 @@ export function renderChatView(container) {
       await loadRagScan();
     } catch (error) {
       showRagStatus(`Could not pause indexing: ${error.message}`, 'danger');
+    }
+  });
+  container.querySelector('#chat-rag-stop').addEventListener('click', async () => {
+    try {
+      await Api.stopRagScan();
+      showRagStatus('Stopping indexing after the current file finishes. You can delete the branch when its status is Stopped.', 'success');
+      await loadRagScan();
+    } catch (error) {
+      showRagStatus(`Could not stop indexing: ${error.message}`, 'danger');
     }
   });
   container.querySelector('#chat-rag-resume').addEventListener('click', async () => {
@@ -948,10 +971,57 @@ export function renderChatView(container) {
       <p class="text-muted small">Environment: ${esc(environmentLabels[agent.environment] || 'Workspace')}<br>
       Model: ${esc(currentModel)}<br>
       Tools: ${esc((agent.tools || []).join(', ') || 'none')}</p>`;
+    renderAgentToolDescriptions(agent);
     toolsToggle.disabled = agent.mode !== 'agent';
     toolsToggle.checked = agent.mode === 'agent';
     sessionInfo.textContent = `Session: chat-${agent.id}`;
   }
+
+  let registeredTools = null;
+  function renderAgentToolDescriptions(agent) {
+    agentToolDescriptionList.replaceChildren();
+    if (!registeredTools) {
+      const loading = document.createElement('p');
+      loading.className = 'text-muted small';
+      loading.textContent = 'Loading registered tool descriptions…';
+      agentToolDescriptionList.appendChild(loading);
+      return;
+    }
+    const allowedNames = Array.isArray(agent.tools) ? agent.tools : [];
+    const tools = registeredTools.filter(tool => allowedNames.includes(tool.name));
+    if (!tools.length) {
+      const empty = document.createElement('p');
+      empty.className = 'text-muted small';
+      empty.textContent = 'No registered tools are assigned to this agent.';
+      agentToolDescriptionList.appendChild(empty);
+      return;
+    }
+    tools.forEach(tool => {
+      const entry = document.createElement('section');
+      entry.className = 'agent-tool-description';
+      const title = document.createElement('strong');
+      title.textContent = tool.name;
+      const signature = document.createElement('code');
+      signature.textContent = tool.signature || '';
+      const description = document.createElement('p');
+      description.className = 'small text-muted';
+      description.textContent = Array.isArray(tool.description)
+        ? tool.description.join(' ')
+        : String(tool.description || 'No description provided.');
+      entry.append(title, signature, description);
+      agentToolDescriptionList.appendChild(entry);
+    });
+  }
+
+  Api.getTools().then(({ tools }) => {
+    registeredTools = tools || [];
+    const agent = agents.find(item => item.id === agentSelect.value);
+    if (agent) renderAgentToolDescriptions(agent);
+  }).catch(error => {
+    registeredTools = [];
+    agentToolDescriptionList.textContent =
+      `Could not load tool descriptions: ${error.message}`;
+  });
 
   async function resetSession(message = 'Session reset. Send a message to start fresh.') {
     const agentId = agentSelect.value;

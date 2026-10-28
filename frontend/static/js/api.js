@@ -159,6 +159,10 @@ export const Api = {
     return send('POST', '/api/rag/scan/pause');
   },
 
+  async stopRagScan() {
+    return send('POST', '/api/rag/scan/stop');
+  },
+
   async resumeRagScan() {
     return send('POST', '/api/rag/scan/resume');
   },

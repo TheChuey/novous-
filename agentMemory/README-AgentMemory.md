@@ -27,10 +27,16 @@ index. Archived sources can be restored later.
 Branches can be renamed without changing their folder or index. Deleting a
 branch removes its saved source entry and indexed vectors; it never deletes
 files from the linked folder. A branch cannot be deleted while its scan is
-queued, running, pausing, or paused.
+queued, running, pausing, stopping, awaiting a file-error decision, or paused.
+Deleting a paused branch cancels any scheduled resume and stops its paused
+worker before removing the branch. For other active scans, use **Stop
+indexing** to stop after the current file finishes; wait until the job status
+is **Stopped** before deleting the branch. A stopped source is excluded from
+automatic scans until indexing is manually started again.
 
 Indexing runs as a background job. The dialog shows progress and document
-errors, and supports pausing between files, resuming, and scheduling a resume.
+errors, and supports pausing or stopping between files, resuming, and
+scheduling a resume.
 Scheduled resumes use the local time selected in the browser and require the
 Novous server and computer to remain running and awake. Completed files remain
 indexed; on resume, unchanged files are skipped. Stale-document cleanup occurs

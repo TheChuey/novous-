@@ -150,6 +150,7 @@ function renderDashboardView(container) {
             <div class="root-management-actions">
               <button class="btn btn-sm" type="button" data-rag-action="read">Index selected source</button>
               <button class="btn btn-sm" type="button" data-rag-action="pause">Pause</button>
+              <button class="btn btn-sm btn-danger" type="button" data-rag-action="stop">Stop indexing</button>
               <button class="btn btn-sm" type="button" data-rag-action="resume">Resume</button>
               <button class="btn btn-sm btn-danger" type="button" data-rag-action="clear">Clear selected source index</button>
             </div>
@@ -505,7 +506,7 @@ function renderDashboardView(container) {
       });
       remove.dataset.ragDelete = 'true';
       remove.disabled = AppState.ragScanJob?.base_id === base.id &&
-        ['queued', 'running', 'pausing', 'paused'].includes(AppState.ragScanJob.status);
+        ['queued', 'running', 'pausing', 'stopping', 'awaiting_decision'].includes(AppState.ragScanJob.status);
       actions.appendChild(remove);
       item.append(heading, path, detail, actions);
       if (base.selected) item.classList.add('rag-base-selected');
@@ -555,6 +556,8 @@ function renderDashboardView(container) {
       queued: 'Starting',
       running: 'Indexing',
       pausing: 'Pausing after current file',
+      stopping: 'Stopping after current file',
+      stopped: 'Stopped',
       awaiting_decision: 'Waiting for your choice',
       paused: 'Paused',
       completed: 'Complete',
@@ -571,11 +574,13 @@ function renderDashboardView(container) {
           : ['failed', 'completed_with_errors', 'unavailable'].includes(job.status) ? 'text-danger'
             : 'text-muted'
     }`;
-    const active = ['queued', 'running', 'pausing'].includes(job.status);
-    const blocksMutation = ['queued', 'running', 'pausing', 'paused', 'awaiting_decision'].includes(job.status);
+    const active = ['queued', 'running', 'pausing', 'stopping'].includes(job.status);
+    const blocksMutation = ['queued', 'running', 'pausing', 'paused', 'stopping', 'awaiting_decision'].includes(job.status);
     const selectedJob = !job.base_id || job.base_id === selectedRagBaseId;
     container.querySelector('[data-rag-action="read"]').disabled = active;
     container.querySelector('[data-rag-action="pause"]').disabled = !active || job.status === 'pausing';
+    container.querySelector('[data-rag-action="stop"]').disabled =
+      !['queued', 'running', 'pausing', 'paused', 'awaiting_decision'].includes(job.status);
     container.querySelector('[data-rag-action="resume"]').disabled =
       !selectedJob || !['paused', 'unavailable', 'failed'].includes(job.status);
     container.querySelector('[data-rag-action="clear"]').disabled =
@@ -591,7 +596,8 @@ function renderDashboardView(container) {
     ragBaseList.querySelectorAll('.rag-base-item').forEach(item => {
       const button = item.querySelector('[data-rag-delete]');
       if (button) {
-        button.disabled = blocksMutation && job.base_id === item.dataset.baseId;
+        button.disabled = blocksMutation && job.status !== 'paused' &&
+          job.base_id === item.dataset.baseId;
       }
     });
   }
@@ -619,7 +625,7 @@ function renderDashboardView(container) {
       const base = ragBases.find(item => item.id === selectedRagBaseId);
       if (action === 'clear' &&
           !confirm(`Clear only the saved index for "${base?.name}"? The saved name, folder, and files will remain.`)) return;
-      if (['read', 'pause', 'resume', 'clear', 'error-retry', 'error-skip', 'error-skip-all'].includes(action)) {
+      if (['read', 'pause', 'stop', 'resume', 'clear', 'error-retry', 'error-skip', 'error-skip-all'].includes(action)) {
         button.disabled = true;
       }
       try {
@@ -652,6 +658,9 @@ function renderDashboardView(container) {
         } else if (action === 'pause') {
           renderRagJob(await Api.pauseRagScan());
           showRagStatus('Indexing paused after the current file finishes.', 'success');
+        } else if (action === 'stop') {
+          renderRagJob(await Api.stopRagScan());
+          showRagStatus('Stopping indexing after the current file finishes. You can delete the branch when its status is Stopped.', 'success');
         } else if (action === 'resume') {
           renderRagJob(await Api.resumeRagScan());
           showRagStatus('Indexing resumed.', 'success');

@@ -125,7 +125,7 @@ def read_file(path: str, request: str = "") -> str:
         "scratchpad": {
             "path": scratchpad_result["path"],
             "updated_at": scratchpad_result["updated_at"],
-            "context": "Latest read mirrored to agent memory. Use read_agent_memory to retrieve it.",
+            "context": "Latest read mirrored to agent scratchpad. Use read_agent_scratchpad to retrieve it.",
         },
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)

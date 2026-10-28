@@ -137,12 +137,21 @@ def rename_rag_base(base_id: str, name: str) -> dict[str, Any]:
 
 
 def delete_rag_base(base_id: str) -> dict[str, Any]:
+    job = indexer.get_scan_job()
+    if job.get("base_id") == base_id and job.get("status") in {
+        "paused", "awaiting_decision"
+    }:
+        indexer.stop_scan_job()
+        worker = indexer._JOB_THREAD
+        if worker and worker.is_alive():
+            worker.join()
+
     with indexer._SCAN_LOCK:
         job = indexer.get_scan_job()
         if job.get("base_id") == base_id and job.get("status") in {
-            "queued", "running", "pausing", "paused"
+            "queued", "running", "pausing", "paused", "stopping", "awaiting_decision"
         }:
-            raise RuntimeError("Pause or finish indexing before deleting this knowledge source.")
+            raise RuntimeError("Stop or finish indexing before deleting this knowledge source.")
 
         rag_config.get_knowledge_base(base_id)
         database_file = rag_config.database_path(base_id)
@@ -161,6 +170,13 @@ def delete_rag_base(base_id: str) -> dict[str, Any]:
                 rag_database.clear_all()
 
         deleted = rag_config.delete_knowledge_base(base_id)
+        indexer._update_job(
+            stopped_base_ids=[
+                stopped_id
+                for stopped_id in indexer.get_scan_job().get("stopped_base_ids", [])
+                if stopped_id != base_id
+            ]
+        )
         index_file = database_file or legacy_database_file
         if index_file is not None:
             for suffix in ("", "-wal", "-shm"):
@@ -186,7 +202,7 @@ def select_rag_base(base_id: str) -> dict[str, Any]:
 def archive_rag_base(base_id: str) -> dict[str, Any]:
     job = indexer.get_scan_job()
     if job.get("base_id") == base_id and (
-        job.get("status") in {"queued", "running", "pausing"}
+        job.get("status") in {"queued", "running", "pausing", "stopping", "awaiting_decision"}
         or (job.get("status") == "paused" and job.get("resume_at"))
     ):
         raise RuntimeError("Pause or finish indexing and clear its scheduled resume before archiving.")
@@ -214,6 +230,10 @@ def start_rag_scan(base_id: str | None = None, force: bool = False) -> dict[str,
 
 def pause_rag_scan() -> dict[str, Any]:
     return indexer.pause_scan_job()
+
+
+def stop_rag_scan() -> dict[str, Any]:
+    return indexer.stop_scan_job()
 
 
 def resume_rag_scan() -> dict[str, Any]:

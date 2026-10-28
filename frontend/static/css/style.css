@@ -366,6 +366,12 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .chat-field-label { margin-bottom: -0.45rem; font-size: 0.78rem; color: var(--text-muted); }
 .chat-agent-meta { padding: 0.7rem; font-size: 0.82rem; }
 .chat-agent-meta p { margin: 0; }
+.agent-tool-descriptions { font-size: 0.8rem; }
+.agent-tool-descriptions > summary { cursor: pointer; color: var(--text-muted); }
+.agent-tool-description-list { display: grid; gap: 0.55rem; margin-top: 0.45rem; }
+.agent-tool-description { padding: 0.45rem; overflow-wrap: anywhere; background: var(--bg-elev); border: 1px solid var(--border-color); border-radius: 5px; }
+.agent-tool-description code { display: block; margin-top: 0.2rem; color: var(--text-muted); overflow-wrap: anywhere; }
+.agent-tool-description p { margin: 0.25rem 0 0; }
 .chat-session-buttons { display: flex; flex-direction: column; gap: 0.5rem; }
 .chat-session-buttons .btn { justify-content: center; }
 

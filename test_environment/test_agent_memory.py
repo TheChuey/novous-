@@ -359,6 +359,29 @@ class TestAgentMemory(unittest.TestCase):
         self.assertFalse(database_file.exists())
         self.assertNotIn(base["id"], {entry["id"] for entry in interface.list_rag_bases()})
 
+    def test_deleting_paused_branch_cancels_scheduled_resume(self):
+        folder = self.temp_path / "paused-branch"
+        folder.mkdir()
+        base = interface.add_rag_base("Paused source", str(folder))
+        job = {
+            "status": "paused",
+            "base_id": base["id"],
+            "resume_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+        }
+        with patch.object(indexer, "_JOB_PATH", self.temp_path / "paused_job.json"), \
+                patch.object(indexer, "_SCAN_JOB", job), \
+                patch.object(indexer, "_JOB_THREAD", None), \
+                patch.object(indexer, "_STOP_REQUESTED", threading.Event()), \
+                patch.object(indexer, "_PAUSE_REQUESTED", threading.Event()), \
+                patch.object(indexer, "_RESUME_EVENT", threading.Event()), \
+                patch.object(indexer, "_ERROR_DECISION_EVENT", threading.Event()):
+            result = interface.delete_rag_base(base["id"])
+
+            self.assertTrue(result["deleted"])
+            self.assertEqual(indexer.get_scan_job()["status"], "stopped")
+            self.assertIsNone(indexer.get_scan_job()["resume_at"])
+            self.assertNotIn(base["id"], indexer.get_scan_job()["stopped_base_ids"])
+
     def test_scan_error_choice_can_skip_one_file_or_skip_all(self):
         folder = self.temp_path / "error-policy"
         folder.mkdir()
@@ -486,6 +509,49 @@ class TestAgentMemory(unittest.TestCase):
                 thread.join(2)
             self.assertEqual(indexer.get_scan_job()["status"], "completed")
             self.assertIsNone(indexer.get_scan_job()["resume_at"])
+
+    def test_stopping_scan_wakes_worker_and_blocks_automatic_restarts(self):
+        folder = self.temp_path / "stopping"
+        folder.mkdir()
+        entered_scan = threading.Event()
+        stop_gate = threading.Event()
+
+        def controlled_scan(**kwargs):
+            entered_scan.set()
+            stop_gate.wait(2)
+            kwargs["pause_point"]()
+            self.fail("scan continued after it was stopped")
+
+        with patch.object(rag_config, "CONFIG_PATH", self.temp_path / "stop_config.json"), \
+                patch.object(indexer, "_JOB_PATH", self.temp_path / "rag_scan_job.json"), \
+                patch.object(indexer, "_SCAN_JOB", {"status": "idle"}), \
+                patch.object(indexer, "_JOB_THREAD", None), \
+                patch.object(indexer, "_STOP_REQUESTED", threading.Event()), \
+                patch.object(indexer, "_PAUSE_REQUESTED", threading.Event()), \
+                patch.object(indexer, "_RESUME_EVENT", threading.Event()), \
+                patch.object(indexer, "_ERROR_DECISION_EVENT", threading.Event()), \
+                patch.object(indexer, "scan_knowledge_base", side_effect=controlled_scan), \
+                patch.object(rag_config, "DATA_DIR", self.temp_path / "rag-data"), \
+                patch.object(rag_config, "list_knowledge_bases", return_value=[
+                    {"id": "stopping", "active": True}
+                ]):
+            indexer._RESUME_EVENT.set()
+            base = rag_config.add_knowledge_base("Stopping", str(folder))
+            indexer.start_scan_job(base["id"])
+            self.assertTrue(entered_scan.wait(2))
+            result = indexer.stop_scan_job()
+            stop_gate.set()
+            thread = indexer._JOB_THREAD
+            if thread:
+                thread.join(2)
+
+            self.assertEqual(result["status"], "stopping")
+            self.assertEqual(indexer.get_scan_job()["status"], "stopped")
+            self.assertIn(base["id"], indexer.get_scan_job()["stopped_base_ids"])
+            self.assertFalse(thread and thread.is_alive())
+            deleted = interface.delete_rag_base(base["id"])
+            self.assertTrue(deleted["deleted"])
+            self.assertNotIn(base["id"], indexer.get_scan_job()["stopped_base_ids"])
 
 if __name__ == "__main__":
     unittest.main()

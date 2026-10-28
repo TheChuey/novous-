@@ -618,6 +618,13 @@ def api_pause_rag_scan():
     return memory.pause_rag_scan()
 
 
+@router.post("/api/rag/scan/stop")
+def api_stop_rag_scan():
+    from agentMemory import interface as memory
+
+    return memory.stop_rag_scan()
+
+
 @router.post("/api/rag/scan/resume")
 def api_resume_rag_scan():
     from agentMemory import interface as memory
