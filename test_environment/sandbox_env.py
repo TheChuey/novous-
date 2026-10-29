@@ -70,7 +70,8 @@ IMPORT_TO_PACKAGE = {
 
 
 def exists() -> bool:
-    return python_path().exists()
+    # A venv without pyvenv.cfg cannot start ("failed to locate pyvenv.cfg"); treat it as missing.
+    return python_path().exists() and (SANDBOX_DIR / "pyvenv.cfg").is_file()
 
 
 def python_path() -> Path:

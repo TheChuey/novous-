@@ -23,25 +23,23 @@ _EVENT_DATA_KEYS = {
     "CODE_CHANGE_APPLIED": {"path", "changed_lines", "file_exists"},
     "EDITOR_CODE_PREVIEW": {"changed_lines"},
     "EDITOR_CODE_EXECUTION": {"status", "diagnostic_lines"},
+    "EDITOR_CODE_UPDATE": {"content", "changed_lines"},
+    "AGENT_STARTED": {"agent_id", "step", "attempt"},
+    "AGENT_TOKEN": {"agent_id", "text"},
+    "AGENT_DONE": {"agent_id", "step", "text"},
+    "STEP_STATUS": {"step", "status", "attempt", "summary"},
 }
 _EVENT_TYPES = frozenset(_EVENT_DATA_KEYS)
+# Streamed token chunks are delivered to live listeners only; AGENT_DONE carries
+# the full text, so keeping them out of history stops them evicting real events.
+_LIVE_ONLY_EVENTS = frozenset({"AGENT_TOKEN"})
 _SAFE_STATUSES = {
     "running", "success", "nothing_found", "error", "no_context_found",
-    "healthy", "degraded", "failing",
+    "healthy", "degraded", "failing", "skipped", "cancelled",
 }
-_SAFE_SUMMARIES = {
-    "Sub-agent phase started",
-    "Sub-agent phase completed",
-    "Code Tester skipped because builder did not succeed",
-    "Code Troubleshooter skipped because no upstream error was reported",
-    "Implementation plan started",
-    "Implementation plan completed",
-    "Primary synthesis started",
-    "Primary synthesis completed",
-}
-_SAFE_ERRORS = {
-    "Sub-agent execution failed",
-    "Orchestration execution failed",
+_MULTILINE_LIMITS = {
+    "text": 20_000,
+    "content": 1_000_000,
 }
 _TRACE_CONTEXT: ContextVar[tuple[str, str] | None] = ContextVar(
     "orchestration_trace_context", default=None
@@ -55,6 +53,21 @@ def _bounded_text(value: Any, limit: int = 300) -> str:
 def _safe_identifier(value: Any, limit: int = 80) -> str:
     text = _bounded_text(value, limit)
     return text if re.fullmatch(r"[A-Za-z0-9_.-]+", text) else "unknown"
+
+
+def _sse_frame(trace_id: str, event: dict[str, Any]) -> str:
+    payload = f"event: telemetry\ndata: {json.dumps(event)}\n\n"
+    if event["event_type"] in _LIVE_ONLY_EVENTS:
+        return payload
+    return f"id: {trace_id}:{event['sequence']}\n{payload}"
+
+
+def parse_last_event_id(value: str | None) -> int:
+    """Read the sequence number from an SSE Last-Event-ID such as 'tr_x:12'."""
+    try:
+        return max(0, int(str(value or "").rsplit(":", 1)[-1]))
+    except ValueError:
+        return 0
 
 
 class TelemetryBus:
@@ -105,9 +118,9 @@ class TelemetryBus:
             value = data[key]
             if key == "duration_ms":
                 safe_data[key] = max(0, int(value))
-            elif key == "result_count":
+            elif key in {"result_count", "attempt"}:
                 safe_data[key] = max(0, int(value))
-            elif key in {"tool_name", "subagent_id", "squad_id"}:
+            elif key in {"tool_name", "subagent_id", "squad_id", "agent_id", "step"}:
                 safe_data[key] = _safe_identifier(value)
             elif key == "path":
                 path = _bounded_text(value, 512).replace("\\", "/")
@@ -131,16 +144,10 @@ class TelemetryBus:
             elif key == "status":
                 status = _bounded_text(value, 40)
                 safe_data[key] = status if status in _SAFE_STATUSES else "unknown"
-            elif key == "summary":
-                summary = _bounded_text(value)
-                safe_data[key] = (
-                    summary if summary in _SAFE_SUMMARIES else "Agent phase update"
-                )
-            elif key == "error":
-                error = _bounded_text(value)
-                safe_data[key] = (
-                    error if error in _SAFE_ERRORS else "Execution failed"
-                )
+            elif key in {"summary", "error"}:
+                safe_data[key] = _bounded_text(value, 500)
+            elif key in _MULTILINE_LIMITS:
+                safe_data[key] = str(value or "")[: _MULTILINE_LIMITS[key]]
             elif key == "pattern":
                 pattern = _bounded_text(value, 40)
                 safe_data[key] = (
@@ -154,6 +161,7 @@ class TelemetryBus:
                 )
             else:
                 safe_data[key] = _bounded_text(value)
+        live_only = event_type in _LIVE_ONLY_EVENTS
         with self._lock:
             events = self._traces.get(trace_id)
             if events is None:
@@ -161,7 +169,8 @@ class TelemetryBus:
                 self._traces[trace_id] = events
                 self._sequence[trace_id] = 0
             self._traces.move_to_end(trace_id)
-            self._sequence[trace_id] += 1
+            if not live_only:
+                self._sequence[trace_id] += 1
             event = {
                 "trace_id": trace_id,
                 "sequence": self._sequence[trace_id],
@@ -171,7 +180,8 @@ class TelemetryBus:
                 "data": safe_data,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
-            events.append(event)
+            if not live_only:
+                events.append(event)
             listeners = tuple(self._listeners.get(trace_id, ()))
             while len(self._traces) > self._max_traces:
                 old_trace_id, _ = self._traces.popitem(last=False)
@@ -220,7 +230,8 @@ class TelemetryBus:
                         pass
                     listener.put_nowait(None)
 
-    def subscribe(self, trace_id: str) -> Iterator[str]:
+    def subscribe(self, trace_id: str, after: int = 0) -> Iterator[str]:
+        """Stream events newer than ``after`` so a reconnect does not replay history."""
         listener: queue.Queue = queue.Queue(maxsize=100)
         with self._lock:
             if trace_id not in self._traces:
@@ -236,14 +247,15 @@ class TelemetryBus:
             history = list(self._traces[trace_id])
             finished = trace_id in self._finished
 
-        sequence = 0
+        sequence = max(0, int(after or 0))
         try:
             for event in history:
-                sequence = max(sequence, event["sequence"])
-                yield (
-                    f"id: {trace_id}:{event['sequence']}\n"
-                    f"event: telemetry\ndata: {json.dumps(event)}\n\n"
-                )
+                if event["sequence"] <= sequence:
+                    if event["event_type"] == "RUN_COMPLETE":
+                        return
+                    continue
+                sequence = event["sequence"]
+                yield _sse_frame(trace_id, event)
                 if event["event_type"] == "RUN_COMPLETE":
                     return
             if finished:
@@ -265,13 +277,13 @@ class TelemetryBus:
                         if trace_id in self._finished:
                             return
                     continue
+                if event["event_type"] in _LIVE_ONLY_EVENTS:
+                    yield _sse_frame(trace_id, event)
+                    continue
                 if event["sequence"] <= sequence:
                     continue
                 sequence = event["sequence"]
-                yield (
-                    f"id: {trace_id}:{event['sequence']}\n"
-                    f"event: telemetry\ndata: {json.dumps(event)}\n\n"
-                )
+                yield _sse_frame(trace_id, event)
                 if event["event_type"] == "RUN_COMPLETE":
                     return
         finally:

@@ -450,6 +450,25 @@ def api_clear_agent_scratchpad():
     return scratchpad.clear_memory()
 
 
+@router.get("/api/agent-memory/code-scratchpad")
+def api_read_code_scratchpad(limit: int = 200, kind: str = "", author: str = "", run_id: str = ""):
+    """Return the coding agents' shared scratchpad, newest first, for the Code Builder."""
+    from agentMemory import code_scratchpad
+
+    return {
+        "entries": code_scratchpad.entries(min(max(limit, 1), 200), kind, author, run_id),
+        "total": code_scratchpad.count(),
+    }
+
+
+@router.delete("/api/agent-memory/code-scratchpad")
+def api_clear_code_scratchpad():
+    """Remove every coding scratchpad entry."""
+    from agentMemory import code_scratchpad
+
+    return code_scratchpad.clear()
+
+
 @router.get("/api/rag/config")
 def api_get_rag_config():
     from agentMemory import interface as memory

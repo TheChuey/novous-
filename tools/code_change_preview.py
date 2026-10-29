@@ -75,12 +75,6 @@ def _publish_change_event(
 
 def preview_code_change(path: str, proposed_content: str) -> dict:
     """Compare proposed code with the current workspace file and notify the editor."""
-    from orchestration.codebuilder_run_state import codebuilder_run_state
-    from orchestration.orchestration_telemetry import telemetry_bus
-
-    context = telemetry_bus.current_context()
-    if context is not None:
-        codebuilder_run_state.assert_code_changes_allowed(context[0])
     if not isinstance(proposed_content, str):
         raise ValueError("Proposed file content must be text.")
     if len(proposed_content.encode("utf-8")) > _MAX_PREVIEW_CONTENT_BYTES:

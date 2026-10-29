@@ -2,11 +2,19 @@ import json
 import inspect
 import re
 import time
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Callable, List, Any
 import ollama
 
 MAX_NUM_CTX = 32768
+
+# The agent whose tool call is running, so shared tools can record who wrote what.
+_CURRENT_AGENT_ID: ContextVar[str] = ContextVar("current_agent_id", default="")
+
+
+def current_agent_id() -> str:
+    return _CURRENT_AGENT_ID.get()
 
 @dataclass
 class AgentProfile:
@@ -31,11 +39,13 @@ class Agent:
         self.tools = {getattr(f, "name", None) or f.__name__: f for f in (tools or [])}
         self.messages: List[dict] = []
         self.session = session
+        # Agents may raise the tool-round budget with `max_tool_rounds` in their definition.
+        try:
+            self.max_tool_rounds = max(1, int(profile.extras.get("max_tool_rounds", self.MAX_TOOL_ROUNDS)))
+        except (AttributeError, TypeError, ValueError):
+            self.max_tool_rounds = self.MAX_TOOL_ROUNDS
         self.tool_events: List[dict] = []
         self.tool_stats: dict[str, dict] = {}
-
-    def _is_code_subagent(self) -> bool:
-        return self.profile.id in {"code-builder", "tester", "code-troubleshooter"}
 
     def _text_tool_call(self, item: dict) -> dict | None:
         """Accept both flat and function-wrapped text tool-call objects."""
@@ -89,39 +99,6 @@ class Agent:
             index = end if found_call else index + 1
         return calls
 
-    def _looks_like_malformed_code_tool_call(self, content: str) -> bool:
-        if not self._is_code_subagent():
-            return False
-        text = content or ""
-        if not any(name in text for name in self.tools):
-            return False
-        return bool(
-            re.search(r'"name"\s*:', text)
-            or re.search(r'"(?:arguments|parameters|args)"\s*:', text)
-            or "```json" in text.lower()
-        )
-
-    def _handoff_nudge(self) -> dict:
-        return {
-            "role": "system",
-            "content": (
-                "You have not written the required handoff yet. Before finishing, "
-                "call write_agent_scratchpad exactly once with your canonical "
-                "subagent ID, the requested task_type, an accurate status, and a "
-                "concise JSON payload. Do not answer with prose alone."
-            ),
-        }
-
-    def _malformed_call_nudge(self) -> dict:
-        return {
-            "role": "system",
-            "content": (
-                "Your previous tool-call JSON could not be parsed. Resend the tool "
-                "call as valid JSON. For preview_editor_code, pass the complete "
-                "proposed_content string without triple quotes."
-            ),
-        }
-
     def _format_rag_presenter_reply(self, content: str) -> str:
         if self.profile.id != "rag-presenter":
             return content
@@ -162,13 +139,6 @@ class Agent:
                 )
             return formatted
         return content
-
-    def _is_code_subagent_handoff(self, tool_name: str) -> bool:
-        return (
-            tool_name == "write_agent_scratchpad"
-            and self.profile.id
-            in {"code-builder", "tester", "code-troubleshooter"}
-        )
 
     def act(self, tool_call: dict, origin: str) -> Any:
         fn_info = tool_call.get("function", {})
@@ -216,27 +186,11 @@ class Agent:
         try:
             if isinstance(args, str):
                 args = json.loads(args)
-            result = tool_func(**args) if isinstance(args, dict) else tool_func(args)
-            if self._is_code_subagent_handoff(name) and trace_context:
-                from orchestration.code_handoffs import TASK_TYPE_BY_AGENT
-                from orchestration.codebuilder_run_state import codebuilder_run_state
-
-                trace_id, agent_id = trace_context
-                payload = args.get("payload", "") if isinstance(args, dict) else ""
-                if isinstance(payload, str) and payload.strip().startswith(("{", "[")):
-                    try:
-                        payload = json.loads(payload)
-                    except json.JSONDecodeError:
-                        pass
-                codebuilder_run_state.save_handoff(
-                    trace_id,
-                    agent_id,
-                    TASK_TYPE_BY_AGENT[agent_id],
-                    str(args.get("status", "success"))
-                    if isinstance(args, dict)
-                    else "success",
-                    payload,
-                )
+            agent_token = _CURRENT_AGENT_ID.set(self.profile.id)
+            try:
+                result = tool_func(**args) if isinstance(args, dict) else tool_func(args)
+            finally:
+                _CURRENT_AGENT_ID.reset(agent_token)
             stats["successes"] += 1
             stats["success_rate"] = stats["successes"] / stats["calls"]
             event = {"tool": name, "args": args, "status": "success", "origin": origin}
@@ -362,9 +316,7 @@ class Agent:
             self.messages.append({"role": "assistant", "content": reply})
             return reply
 
-        malformed_nudged = False
-        handoff_nudged = False
-        for _ in range(self.MAX_TOOL_ROUNDS):
+        for _ in range(self.max_tool_rounds):
             res = ollama.chat(
                 model=self.model,
                 messages=self.messages,
@@ -379,29 +331,13 @@ class Agent:
             tool_calls = native_calls or text_calls
 
             if not tool_calls:
-                content = msg.get("content", "")
-                if (
-                    self._looks_like_malformed_code_tool_call(content)
-                    and not malformed_nudged
-                ):
-                    self.messages.append(self._malformed_call_nudge())
-                    malformed_nudged = True
-                    continue
-                if self._is_code_subagent() and not handoff_nudged:
-                    self.messages.append(self._handoff_nudge())
-                    handoff_nudged = True
-                    continue
-                return self._format_rag_presenter_reply(content)
+                return self._format_rag_presenter_reply(msg.get("content", ""))
 
             origin = "native" if native_calls else "text_json"
             for call in tool_calls:
                 tool_name = call["function"]["name"]
                 result = self.act(call, origin)
                 self.observe(tool_name, result)
-                if self._is_code_subagent_handoff(tool_name):
-                    if isinstance(result, str) and result.startswith("Error executing tool"):
-                        return result
-                    return "Code sub-agent scratchpad handoff recorded."
 
         return "(Executed maximum tool rounds without final text summary.)"
 
@@ -414,10 +350,8 @@ class Agent:
         use_tools = self.profile.mode != "chat" and bool(self.tools)
         extra = {"tools": [self._ollama_schema(t) for t in self.tools.values()]} if use_tools else {}
         final_text = ""
-        malformed_nudged = False
-        handoff_nudged = False
 
-        for _ in range(self.MAX_TOOL_ROUNDS if use_tools else 1):
+        for _ in range(self.max_tool_rounds if use_tools else 1):
             content = ""
             native_calls: List[dict] = []
             for chunk in ollama.chat(model=self.model, messages=self.messages, stream=True,
@@ -438,17 +372,6 @@ class Agent:
             text_calls = [] if native_calls or not use_tools else self._extract_text_tool_calls(content)
             tool_calls = native_calls or text_calls
             if not tool_calls:
-                if (
-                    self._looks_like_malformed_code_tool_call(content)
-                    and not malformed_nudged
-                ):
-                    self.messages.append(self._malformed_call_nudge())
-                    malformed_nudged = True
-                    continue
-                if self._is_code_subagent() and not handoff_nudged:
-                    self.messages.append(self._handoff_nudge())
-                    handoff_nudged = True
-                    continue
                 if content:
                     content = self._format_rag_presenter_reply(content)
                     self.messages[-1]["content"] = content
@@ -457,7 +380,6 @@ class Agent:
                 break
 
             origin = "native" if native_calls else "text_json"
-            handoff_attempted = False
             for call in tool_calls:
                 name = call["function"]["name"]
                 before = len(self.tool_events)
@@ -465,17 +387,6 @@ class Agent:
                 self.observe(name, result)
                 for event in self.tool_events[before:]:
                     yield {"type": "tool_event", "event": event}
-                if self._is_code_subagent_handoff(name):
-                    final_text = (
-                        result
-                        if isinstance(result, str)
-                        and result.startswith("Error executing tool")
-                        else "Code sub-agent scratchpad handoff recorded."
-                    )
-                    handoff_attempted = True
-                    break
-            if handoff_attempted:
-                break
         else:
             final_text = "(Executed maximum tool rounds without final text summary.)"
 

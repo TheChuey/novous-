@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import BoundedSemaphore
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import StreamingResponse
 
 from orchestration.orchestration_schemas import (
@@ -13,7 +13,7 @@ from orchestration.orchestration_schemas import (
     SquadCreateRequest,
 )
 from orchestration.orchestration_service import run_orchestration
-from orchestration.orchestration_telemetry import telemetry_bus
+from orchestration.orchestration_telemetry import parse_last_event_id, telemetry_bus
 from orchestration.orchestration_run_results import run_results
 from orchestration.codebuilder_run_state import (
     MAX_EDITOR_CONTENT_BYTES,
@@ -75,7 +75,7 @@ def run_orchestration_endpoint(request: OrchestrationRequest):
     if request.workflow_action != "all" and request.squad_id != "code-squad":
         raise HTTPException(
             status_code=400,
-            detail="Plan, Build, and Troubleshoot actions require code-squad.",
+            detail="Plan, Build, Test, and Fix actions require code-squad.",
         )
     try:
         return run_orchestration(request)
@@ -129,7 +129,7 @@ def start_orchestration_run(request: OrchestrationRequest):
     if request.workflow_action != "all" and squad["squad_id"] != "code-squad":
         raise HTTPException(
             status_code=400,
-            detail="Plan, Build, and Troubleshoot actions are only available for code-squad.",
+            detail="Plan, Build, Test, and Fix actions are only available for code-squad.",
         )
     editor_code = request.parameters.get("editor_code", "")
     if not isinstance(editor_code, str):
@@ -172,6 +172,13 @@ def get_orchestration_run_result(trace_id: str):
     return result
 
 
+@router.post("/runs/{trace_id}/cancel")
+def cancel_orchestration_run(trace_id: str):
+    if not codebuilder_run_state.cancel(trace_id):
+        raise HTTPException(status_code=404, detail="Workflow run not found.")
+    return {"cancelled": True, "trace_id": trace_id}
+
+
 @router.get("/runs/{trace_id}/editor-preview")
 def get_orchestration_editor_preview(trace_id: str):
     preview = codebuilder_run_state.get_preview(trace_id)
@@ -202,13 +209,17 @@ def get_orchestration_run_scratchpad(trace_id: str):
 
 
 @router.get("/stream/{trace_id}")
-def stream_orchestration_trace(trace_id: str):
+def stream_orchestration_trace(
+    trace_id: str,
+    after: int = 0,
+    last_event_id: str | None = Header(default=None),
+):
     if not telemetry_bus.has_trace(trace_id):
         raise HTTPException(status_code=404, detail="Trace not found.")
     if not telemetry_bus.has_listener_capacity(trace_id):
         raise HTTPException(status_code=429, detail="Trace stream capacity is full.")
     return StreamingResponse(
-        telemetry_bus.subscribe(trace_id),
+        telemetry_bus.subscribe(trace_id, max(after, parse_last_event_id(last_event_id))),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

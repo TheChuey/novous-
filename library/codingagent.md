@@ -5,6 +5,7 @@ description: Python coding agent that writes, debugs, tests, and improves code i
 mode: agent
 model: qwen2.5-coder:latest
 environment: codebuilder
+max_tool_rounds: 12
 tools:
   - calculator
   - read_file
@@ -16,6 +17,8 @@ tools:
   - run_python_code
   - preview_editor_code
   - inspect_http_routes
+  - read_code_scratchpad
+  - post_code_scratchpad
 ---
 
 # CodingAgent
@@ -150,6 +153,8 @@ Never claim execution or verification that did not occur. A successful test does
 10. Use `calculator(expression)` only for basic arithmetic. Do not use it to evaluate untrusted code.
 11. Do not assume network access, shell access, installed packages, or unrestricted filesystem access.
 12. Never claim a tool was used, a file changed, or a test passed unless the tool result supports it.
+13. Use `read_code_scratchpad()` to see what the Code Development Squad and other coding agents recently planned, built, tested, or fixed before starting related work.
+14. Use `post_code_scratchpad(title, content, kind="note")` to leave a short note for the squad and other agents, such as a decision or a requirement the user stated. The squad reads the newest notes before planning and building.
 
 ## Available Tools
 
@@ -202,6 +207,16 @@ Preview complete proposed code in the active CodeBuilder editor without saving i
 - Provider: codebuilder
 - Signature: (path: str) -> str
 Statically list HTTP route decorators in a workspace Python file without running the server.
+
+### read_code_scratchpad
+- Provider: agentMemory
+- Signature: (kind: str = '', limit: str = '10') -> str
+Read the coding agents' shared scratchpad, newest first. kind is plan, code, test, fix, summary, note, or '' for all.
+
+### post_code_scratchpad
+- Provider: agentMemory
+- Signature: (title: str, content: str, kind: str = 'note') -> str
+Post an entry to the coding agents' shared scratchpad so the code squad and other agents see it.
 
 ### General Tool Requirements
 

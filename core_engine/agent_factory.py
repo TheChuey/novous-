@@ -261,7 +261,7 @@ def load_agent_definition_from_md(md_path: Path) -> AgentProfile:
         boundaries=sections.get("boundaries", ""),
         model=str(meta.get("model") or ""),
         tools=list(meta.get("tools") or []),
-        extras=sections,
+        extras={**sections, **({"max_tool_rounds": meta["max_tool_rounds"]} if "max_tool_rounds" in meta else {})},
     )
 
     prompt_parts = [

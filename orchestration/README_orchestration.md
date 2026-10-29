@@ -106,6 +106,22 @@ it fails explicitly if no indexed vectors are compatible with the query embeddin
 
 All patterns emit a colorized terminal trace with one step per sub-agent, a scratchpad inspection step, and a primary synthesis step.
 
+## Code Development Squad pipeline
+
+`code-squad` runs through `orchestration/code_squad_pipeline.py`, not the patterns above. It powers the CodeBuilder buttons:
+
+| Action | What happens |
+| :--- | :--- |
+| `plan` | `code-planer` streams a plan (reused by a later `build`). |
+| `build` | `code-builder` returns one complete ```python module; the orchestrator applies it to the editor. |
+| `test` | The orchestrator compiles the buffer, import-runs it with `__name__` overridden (so the main guard does not run), then runs the `tester`'s assert snippet after the module. |
+| `fix` | `code-troubleshooter` gets the real stderr/traceback and returns the corrected module; fix → test repeats up to `MAX_FIX_ATTEMPTS` (3). `troubleshoot` is an alias. |
+| `all` | plan → build → test → fix loop. |
+
+The code sub-agents have no tools: they answer with text and a fenced code block, and the orchestrator applies code, runs checks, and records factual handoffs. That keeps small local models from having to emit large tool-call arguments.
+
+Telemetry for the editor: `AGENT_STARTED`, `AGENT_TOKEN` (live only, not replayed), `AGENT_DONE`, `STEP_STATUS`, `EDITOR_CODE_UPDATE` (full content and changed lines), and `EDITOR_CODE_EXECUTION`. The SSE stream resumes from `Last-Event-ID` or `?after=<sequence>`. `POST /api/orchestration/runs/{trace_id}/cancel` stops a run between steps or mid-stream.
+
 ## Live Squad Observability
 
 The dashboard's **Registered agent squads** panel is separate from the existing

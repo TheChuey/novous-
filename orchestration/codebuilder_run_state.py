@@ -1,7 +1,6 @@
 """Bounded, trace-scoped CodeBuilder editor previews and execution results."""
 
 from collections import OrderedDict
-import re
 import threading
 from typing import Any
 
@@ -38,50 +37,11 @@ class CodeBuilderRunState:
                 "execution": None,
                 "handoff": None,
                 "handoffs": [],
+                "cancelled": False,
             }
             self._states.move_to_end(trace_id)
             while len(self._states) > self._max_traces:
                 self._states.popitem(last=False)
-
-    def code_change_block_reason(self, trace_id: str) -> str | None:
-        with self._lock:
-            state = self._states.get(trace_id)
-            if state is None:
-                return None
-            query = str(state.get("user_query") or "")
-            action = state.get("workflow_action")
-
-        if action not in {"build", "troubleshoot", "all"} or not re.search(
-            r"\b404\b", query, re.IGNORECASE
-        ):
-            return None
-
-        has_url_or_path = bool(
-            re.search(
-                r"https?://\S+|(?:^|\s)/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+",
-                query,
-                re.IGNORECASE,
-            )
-        )
-        has_http_method = bool(
-            re.search(
-                r"\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b",
-                query,
-                re.IGNORECASE,
-            )
-        )
-        if has_url_or_path and has_http_method:
-            return None
-        return (
-            "Code changes are blocked for this 404 workflow until the request "
-            "includes both the exact URL/path and HTTP method. No editor preview "
-            "or workspace write was applied."
-        )
-
-    def assert_code_changes_allowed(self, trace_id: str) -> None:
-        reason = self.code_change_block_reason(trace_id)
-        if reason:
-            raise ValueError(reason)
 
     def save_preview(self, trace_id: str, content: str, changed_lines: list[int]) -> bool:
         if not isinstance(content, str):
@@ -211,6 +171,19 @@ class CodeBuilderRunState:
         with self._lock:
             state = self._states.get(trace_id)
             return state.get("editor_code") if state else None
+
+    def cancel(self, trace_id: str) -> bool:
+        with self._lock:
+            state = self._states.get(trace_id)
+            if state is None:
+                return False
+            state["cancelled"] = True
+            return True
+
+    def is_cancelled(self, trace_id: str) -> bool:
+        with self._lock:
+            state = self._states.get(trace_id)
+            return bool(state and state.get("cancelled"))
 
     def discard(self, trace_id: str) -> None:
         with self._lock:

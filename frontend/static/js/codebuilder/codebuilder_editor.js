@@ -78,6 +78,8 @@ function createTextareaEditor(element, initialValue) {
       textarea.setSelectionRange(lineStart, lineStart);
     },
     focus: () => textarea.focus(),
+    setReadOnly: (readOnly) => { textarea.readOnly = !!readOnly; },
+    revealEnd: () => { textarea.scrollTop = textarea.scrollHeight; },
     dispose: () => textarea.remove(),
   };
 }
@@ -235,6 +237,11 @@ export async function attachCodeBuilderEditor(
           }
         }
         editor.setHiddenAreas(hidden);
+      },
+      setReadOnly: (readOnly) => editor.updateOptions({ readOnly: !!readOnly }),
+      revealEnd: () => {
+        const model = editor.getModel();
+        if (model) editor.revealLine(model.getLineCount());
       },
       dispose: () => editor.dispose(),
     };

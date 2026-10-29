@@ -35,9 +35,9 @@ class OrchestrationRequest(BaseModel):
     subagents: List[str] = Field(
         default_factory=list, description="Ordered sub-agent IDs from subAgentLibrary/"
     )
-    workflow_action: Literal["all", "plan", "build", "troubleshoot"] = Field(
+    workflow_action: Literal["all", "plan", "build", "test", "fix", "troubleshoot"] = Field(
         default="all",
-        description="Optional registered Code Development Squad action.",
+        description="Code Development Squad action; 'troubleshoot' is an alias for 'fix'.",
     )
     user_query: str = Field(..., description="User query or task prompt")
     parameters: dict[str, Any] = Field(default_factory=dict, description="Custom parameters")

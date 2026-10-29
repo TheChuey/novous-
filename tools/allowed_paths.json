@@ -2,7 +2,7 @@
   "map_roots": [
     "E:\\Novous_notes"
   ],
-  "file_manager_root": "C:\\Users\\43319\\OneDrive\\Desktop\\chat logs",
+  "file_manager_root": "E:\\AI_NOTES",
   "file_manager_roots": [
     {
       "name": "chat logs",
@@ -13,7 +13,7 @@
       "path": "E:\\AI_NOTES"
     }
   ],
-  "active_file_manager_root": "C:\\Users\\43319\\OneDrive\\Desktop\\chat logs",
+  "active_file_manager_root": "E:\\AI_NOTES",
   "sandbox_root": "E:\\Novous_notes",
   "sandbox_roots": [
     "E:\\Novous_notes"

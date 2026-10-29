@@ -93,6 +93,18 @@ export const Api = {
     return send('DELETE', '/api/agent-memory/scratchpad');
   },
 
+  async getCodeScratchpad(filters = {}) {
+    const params = new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => value !== undefined && value !== '')
+    );
+    const query = params.toString();
+    return get(`/api/agent-memory/code-scratchpad${query ? `?${query}` : ''}`);
+  },
+
+  async clearCodeScratchpad() {
+    return send('DELETE', '/api/agent-memory/code-scratchpad');
+  },
+
   async getRagDocuments(baseId) {
     const query = baseId ? `?base_id=${encodeURIComponent(baseId)}` : '';
     return get(`/api/rag/documents${query}`);

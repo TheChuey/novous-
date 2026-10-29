@@ -2,7 +2,8 @@
 
 from pathlib import Path
 from contextlib import nullcontext
-from typing import Any, Tuple
+import time
+from typing import Any, Callable, Tuple
 
 from agentMemory import interface as memory_interface
 from core_engine import agent_factory, runtime, tool_catalog
@@ -73,6 +74,72 @@ def _build_profile(agent_id: str, meta: dict[str, Any], body: str) -> AgentProfi
         model=str(meta.get("model") or ""),
         tools=[str(tool) for tool in tools],
     )
+
+
+TOKEN_FLUSH_SECONDS = 0.15
+
+
+class AgentTurnCancelled(Exception):
+    """Raised when a streamed agent turn is stopped by the user."""
+
+
+def run_agent_turn_stream(
+    agent_id: str,
+    prompt_input: str,
+    trace_id: str,
+    model: str | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> str:
+    """Run one text-only agent turn, streaming batched AGENT_TOKEN telemetry.
+
+    Code-squad agents answer with prose and fenced code; the orchestrator applies
+    the code itself, so no tool calls are offered to the model here.
+    """
+    import ollama
+
+    from orchestration.orchestration_telemetry import telemetry_bus
+
+    meta, body = load_agent(agent_id)
+    profile = _build_profile(agent_id, meta, body)
+    messages = [
+        {"role": "system", "content": profile.system_prompt},
+        {"role": "user", "content": prompt_input},
+    ]
+    text = ""
+    pending = ""
+    last_flush = time.monotonic()
+    stream = ollama.chat(
+        model=model or profile.model or "qwen2.5-coder:latest",
+        messages=messages,
+        stream=True,
+        options={"num_ctx": runtime.MAX_NUM_CTX},
+    )
+    try:
+        for chunk in stream:
+            if should_stop and should_stop():
+                raise AgentTurnCancelled(agent_id)
+            piece = (chunk.get("message") or {}).get("content") or ""
+            if not piece:
+                continue
+            text += piece
+            pending += piece
+            if time.monotonic() - last_flush >= TOKEN_FLUSH_SECONDS:
+                telemetry_bus.log_event(
+                    trace_id, "AGENT_TOKEN", agent_id, "orchestrator",
+                    {"agent_id": agent_id, "text": pending},
+                )
+                pending = ""
+                last_flush = time.monotonic()
+    finally:
+        close = getattr(stream, "close", None)
+        if close:
+            close()
+    if pending:
+        telemetry_bus.log_event(
+            trace_id, "AGENT_TOKEN", agent_id, "orchestrator",
+            {"agent_id": agent_id, "text": pending},
+        )
+    return text
 
 
 def run_agent_turn(

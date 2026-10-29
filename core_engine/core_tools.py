@@ -195,7 +195,6 @@ def preview_editor_code(proposed_content: str) -> str:
         raise ValueError(
             "The original CodeBuilder editor buffer is unavailable for this workflow."
         )
-    codebuilder_run_state.assert_code_changes_allowed(trace_id)
     lines = changed_line_numbers(original, proposed_content, "after")
     if not codebuilder_run_state.save_preview(trace_id, proposed_content, lines):
         raise ValueError("The CodeBuilder workflow preview could not be saved.")

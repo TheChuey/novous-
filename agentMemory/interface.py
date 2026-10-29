@@ -7,7 +7,7 @@ from typing import Any
 
 import ollama
 
-from agentMemory import indexer, rag_config, rag_database, scratchpad
+from agentMemory import code_scratchpad, indexer, rag_config, rag_database, scratchpad
 
 
 def store_read(path: str, content: str, request: str = "") -> dict[str, str]:
@@ -30,6 +30,28 @@ def store_subagent_result(
 def read_memory(memory_type: str = "all") -> dict[str, Any]:
     """Read scratchpad memory, including the latest sub-agent result."""
     return scratchpad.read_memory(memory_type)
+
+
+def post_code_note(author: str, kind: str, title: str, content: str, run_id: str = "") -> dict[str, Any]:
+    """Add an entry to the coding agents' shared scratchpad."""
+    return code_scratchpad.post(author, kind, title, content, run_id)
+
+
+def read_code_scratchpad(
+    limit: int = 50, kind: str = "", author: str = "", run_id: str = ""
+) -> list[dict[str, Any]]:
+    """Read coding scratchpad entries, newest first."""
+    return code_scratchpad.entries(limit, kind, author, run_id)
+
+
+def latest_code_note(kind: str) -> dict[str, Any] | None:
+    """Return the newest coding scratchpad entry of one kind."""
+    return code_scratchpad.latest(kind)
+
+
+def clear_code_scratchpad() -> dict[str, Any]:
+    """Remove every coding scratchpad entry."""
+    return code_scratchpad.clear()
 
 
 def list_documents(base_id: str | None = None) -> list[dict[str, Any]]:
