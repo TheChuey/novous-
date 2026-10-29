@@ -20,8 +20,15 @@ def store_map(tree: dict[str, Any], requested_path: str = "") -> dict[str, str]:
     return scratchpad.store_map(tree, requested_path)
 
 
+def store_subagent_result(
+    subagent_id: str, task_type: str, status: str, payload: Any
+) -> dict[str, Any]:
+    """Store a sub-agent execution result in the shared agent scratchpad."""
+    return scratchpad.store_subagent_result(subagent_id, task_type, status, payload)
+
+
 def read_memory(memory_type: str = "all") -> dict[str, Any]:
-    """Read the latest file read and/or file structure map."""
+    """Read scratchpad memory, including the latest sub-agent result."""
     return scratchpad.read_memory(memory_type)
 
 
@@ -331,6 +338,16 @@ def search_knowledge_base(
         raise RuntimeError(f"Embedding model '{indexer.EMBEDDING_MODEL}' returned no query vector.")
     query_vector = [float(value) for value in vectors[0]]
 
+    compatible_chunks = [
+        chunk for chunk in chunks if len(chunk["embedding"]) == len(query_vector)
+    ]
+    skipped_chunks = len(chunks) - len(compatible_chunks)
+    if not compatible_chunks:
+        raise RuntimeError(
+            "No indexed chunks have embeddings compatible with the query embedding "
+            f"({len(query_vector)} dimensions). Reindex this knowledge base."
+        )
+
     ranked = [
         {
             "path": chunk["path"],
@@ -338,7 +355,7 @@ def search_knowledge_base(
             "score": _cosine_similarity(query_vector, chunk["embedding"]),
             "content": chunk["content"],
         }
-        for chunk in chunks
+        for chunk in compatible_chunks
     ]
     ranked.sort(key=lambda item: item["score"], reverse=True)
     return {
@@ -346,6 +363,7 @@ def search_knowledge_base(
         "knowledge_base": base["name"],
         "knowledge_base_id": selected_id,
         "model": indexer.EMBEDDING_MODEL,
+        "skipped_incompatible_chunks": skipped_chunks,
         "results": ranked[:int(top_k)],
     }
 

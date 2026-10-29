@@ -51,6 +51,107 @@ class TestToolsInterface(unittest.TestCase):
         self.assertEqual(failure["status"], "error")
         self.assertEqual(failure["error"], "write failed")
 
+    def test_agent_executes_tool_json_embedded_in_explanatory_text(self):
+        calls = []
+
+        def read_agent_scratchpad(memory_type="all"):
+            calls.append(memory_type)
+            return '{"latest_subagent_result":{"status":"success"}}'
+
+        agent = Agent(
+            model="test-model",
+            tools=[read_agent_scratchpad],
+            profile=AgentProfile(mode="agent"),
+        )
+        responses = [
+            {
+                "message": {
+                    "content": (
+                        "Here is the JSON for a function call:\n"
+                        '{"name": "read_agent_scratchpad", "parameters": '
+                        '{"memory_type": "latest_subagent_result"}}'
+                    )
+                }
+            },
+            {"message": {"content": "Scratchpad retrieval succeeded."}},
+        ]
+        with patch("core_engine.runtime.ollama.chat", side_effect=responses):
+            reply = agent.think("Check the latest sub-agent result")
+
+        self.assertEqual(calls, ["latest_subagent_result"])
+        self.assertEqual(reply, "Scratchpad retrieval succeeded.")
+        self.assertEqual(agent.tool_events[0]["tool"], "read_agent_scratchpad")
+        self.assertEqual(agent.tool_events[0]["origin"], "text_json")
+
+    def test_rag_presenter_format_answer_json_becomes_markdown(self):
+        agent = Agent(
+            model="test-model",
+            tools=[],
+            profile=AgentProfile(id="rag-presenter", mode="agent"),
+        )
+        response = (
+            "Here is the response:\n"
+            '{"name":"format_answer","parameters":{"query":"leadership",'
+            '"answer":"The plan emphasizes servant leadership.",'
+            '"evidence":[{"path":"leadership-plan.docx","content":"Evidence"}]}}'
+        )
+        with patch(
+            "core_engine.runtime.ollama.chat",
+            return_value={"message": {"content": response}},
+        ):
+            reply = agent.think("Tell me about the leadership plan")
+
+        self.assertEqual(
+            reply,
+            "The plan emphasizes servant leadership.\n\n"
+            "**Sources**\n- leadership-plan.docx",
+        )
+
+    def test_streaming_agent_does_not_emit_embedded_tool_call_as_chat_text(self):
+        calls = []
+
+        def read_agent_scratchpad(memory_type="all"):
+            calls.append(memory_type)
+            return '{"latest_subagent_result":{"status":"success"}}'
+
+        agent = Agent(
+            model="test-model",
+            tools=[read_agent_scratchpad],
+            profile=AgentProfile(mode="agent"),
+        )
+        stream_responses = [
+            [
+                {"message": {"content": "Here is the JSON for a function call:\n"}},
+                {
+                    "message": {
+                        "content": (
+                            '{"name": "read_agent_scratchpad", "parameters": '
+                            '{"memory_type": "latest_subagent_result"}}'
+                        )
+                    }
+                },
+            ],
+            [{"message": {"content": "Scratchpad retrieval succeeded."}}],
+        ]
+        with patch(
+            "core_engine.runtime.ollama.chat",
+            side_effect=[
+                iter(stream_responses[0]),
+                iter(stream_responses[1]),
+            ],
+        ):
+            events = list(agent.think_stream("Check the latest result"))
+
+        self.assertEqual(calls, ["latest_subagent_result"])
+        self.assertEqual(
+            [event["text"] for event in events if event["type"] == "token"],
+            ["Scratchpad retrieval succeeded."],
+        )
+        self.assertEqual(
+            [event["event"]["tool"] for event in events if event["type"] == "tool_event"],
+            ["read_agent_scratchpad"],
+        )
+
     def test_scratchpad_api_reads_and_clears_saved_memory(self):
         from agentMemory import scratchpad
 
@@ -384,6 +485,8 @@ class TestToolsInterface(unittest.TestCase):
                 "editor",
                 "delete_file",
                 "read_agent_scratchpad",
+                "call_subagent",
+                "write_agent_scratchpad",
                 "get_knowledge_catalog",
                 "search_knowledge_branch",
                 "list_knowledge_branch_documents",

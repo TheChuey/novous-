@@ -70,6 +70,53 @@ def _get_agent(agent_id: str, model: str | None, session_id: str | None, environ
     return agent, session_key, profile
 
 
+class RequiredDelegationError(RuntimeError):
+    pass
+
+
+def _prepare_agent_message(agent: Agent, profile: AgentProfile, message: str) -> str:
+    if profile.id != "rag-presenter":
+        return message
+
+    required_tools = ("call_subagent", "read_agent_scratchpad")
+    missing_tools = [name for name in required_tools if name not in agent.tools]
+    if missing_tools:
+        raise RequiredDelegationError(
+            "RAG Presenter is missing required tools: " + ", ".join(missing_tools)
+        )
+
+    handoff = {
+        "subagent_id": "rag-retriever",
+        "task_prompt": message,
+        "parameters": "{}",
+    }
+    retrieval_result = agent.act(
+        {"function": {"name": "call_subagent", "arguments": handoff}},
+        origin="orchestrator",
+    )
+    if str(retrieval_result).startswith("Error executing tool 'call_subagent'"):
+        scratchpad_result = "Not read because the required sub-agent call failed."
+    else:
+        scratchpad_result = agent.act(
+            {
+                "function": {
+                    "name": "read_agent_scratchpad",
+                    "arguments": {"memory_type": "latest_subagent_result"},
+                }
+            },
+            origin="orchestrator",
+        )
+
+    return (
+        f"{message}\n\n"
+        "Required RAG retrieval handoff (already executed for this turn). "
+        "Do not invoke the sub-agent again. Treat errors or missing evidence "
+        "as retrieval failures and report them honestly.\n"
+        f"call_subagent result:\n{retrieval_result}\n"
+        f"latest_subagent_result:\n{scratchpad_result}"
+    )
+
+
 def run_single_agent(agent_id: str, message: str, model: str | None = None,
                      session_id: str | None = None,
                      environment: str = "workspace") -> dict:
@@ -91,7 +138,10 @@ def run_single_agent(agent_id: str, message: str, model: str | None = None,
 
     agent.tool_events = []
     try:
-        reply = agent.think(message)
+        prepared_message = _prepare_agent_message(agent, profile, message)
+        reply = agent.think(prepared_message)
+    except RequiredDelegationError as exc:
+        reply = f"[engine] Could not complete required agent setup: {exc}"
     except Exception as exc:  # Ollama down / model missing -> graceful error reply
         reply = (f"[engine] Could not reach the model runtime: {exc}\n"
                  f"Start Ollama (e.g. `ollama serve`) and pull the model "
@@ -208,7 +258,11 @@ def api_chat_stream(req: ChatRequest):
     def events():
         agent.tool_events = []
         try:
-            for item in agent.think_stream(message):
+            prepared_message = _prepare_agent_message(agent, profile, message)
+            for event in agent.tool_events:
+                _publish_tool_event(event, session_key)
+                yield sse({"type": "tool_event", "event": event})
+            for item in agent.think_stream(prepared_message):
                 if item["type"] == "tool_event":
                     _publish_tool_event(item["event"], session_key)
                 elif item["type"] == "done":

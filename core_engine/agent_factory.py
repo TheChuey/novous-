@@ -1,9 +1,13 @@
 import json
 from pathlib import Path
+
+import yaml
+
 from core_engine.runtime import AgentProfile
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIBRARY_ROOT = REPO_ROOT / "library"
+SUBAGENT_LIBRARY_ROOT = REPO_ROOT / "subAgentLibrary"
 AGENT_ENVIRONMENTS = {
     "workspace": LIBRARY_ROOT,
     "codebuilder": LIBRARY_ROOT,
@@ -198,6 +202,22 @@ def find_agent_file(agent_id: str, environment: str = "workspace") -> Path | Non
 def _library_file_for(agent_id: str) -> Path:
     clean = _normalize_agent_id(agent_id)
     return LIBRARY_ROOT / f"{clean}.md"
+
+
+def parse_subagent_yaml(subagent_id: str) -> tuple[dict, str]:
+    """Load a pure-YAML sub-agent definition from subAgentLibrary/."""
+    clean = _normalize_agent_id(subagent_id)
+    subagent_file = SUBAGENT_LIBRARY_ROOT / f"{clean}.yaml"
+    if not subagent_file.is_file():
+        raise FileNotFoundError(f"Sub-agent definition not found: {subagent_file}")
+    data = yaml.safe_load(subagent_file.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"Sub-agent definition must be a YAML mapping: {subagent_file}")
+    body = data.pop("prompt", "")
+    data.setdefault("id", clean)
+    if not data.get("type"):
+        data["type"] = "subagent"
+    return data, str(body or "")
 
 
 def _read_agent_markdown(md_path: Path) -> tuple[str, str]:

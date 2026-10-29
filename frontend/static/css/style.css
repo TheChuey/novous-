@@ -408,6 +408,11 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 }
 .chat-main .message,
 .chat-main .tool-badge { font-size: var(--chat-console-font-size, 14px); }
+.assistant-msg .msg-body p { margin: 0 0 0.65rem; }
+.assistant-msg .msg-body p:last-child { margin-bottom: 0; }
+.assistant-msg .msg-body h3 { margin: 0 0 0.5rem; font-size: 1.05em; }
+.assistant-msg .msg-body ul { margin: 0.25rem 0 0.65rem; padding-left: 1.3rem; }
+.assistant-msg .msg-body li + li { margin-top: 0.25rem; }
 .chat-main #chat-input { font-size: var(--chat-console-font-size, 14px); }
 .msg-copy-btn {
   align-self: flex-end;
@@ -450,6 +455,7 @@ a.nav-btn { display: inline-flex; align-items: center; text-decoration: none; }
 .knowledge-catalog-documents { display: grid; gap: 0.25rem; max-height: 300px; overflow: auto; margin: 0.55rem 0 0; padding-left: 1.2rem; }
 .knowledge-catalog-documents li { overflow-wrap: anywhere; }
 .scratchpad-section h3 { margin: 0 0 0.5rem; font-size: 0.92rem; }
+.scratchpad-result-query { margin: 0.6rem 0; font-weight: 600; }
 .scratchpad-read { padding: 0.65rem; margin-bottom: 0.5rem; background: var(--bg-elev); border: 1px solid var(--border-color); border-radius: 6px; }
 .scratchpad-read summary { cursor: pointer; font-weight: 600; }
 .scratchpad-read pre,

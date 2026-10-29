@@ -15,9 +15,9 @@ listing documents returns metadata only, while reading a specific indexed
 document returns its extracted text. Archived branches remain accessible by ID
 because archiving preserves the index.
 
-The agent scratchpad is separate from the catalog: it stores recent file reads
-and workspace maps, not the branch list. Use workspace `read_file` for files
-that are not indexed in a knowledge branch.
+The agent scratchpad is separate from the catalog: it stores recent file reads,
+workspace maps, and the latest sub-agent execution result, not the branch list.
+Use workspace `read_file` for files that are not indexed in a knowledge branch.
 
 Sources may point to folders that are currently unavailable; their name and
 path remain saved, and indexing reports that the folder cannot be scanned.

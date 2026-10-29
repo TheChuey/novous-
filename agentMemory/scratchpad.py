@@ -1,4 +1,4 @@
-"""Atomic, single-file storage for the latest agent memory snapshots."""
+"""Atomic, single-file storage for agent memory snapshots and sub-agent results."""
 
 import json
 import tempfile
@@ -11,6 +11,7 @@ from typing import Any
 DATA_DIR = Path(__file__).resolve().parent / "data"
 SCRATCHPAD_PATH = DATA_DIR / "scratchpad.json"
 MAX_READ_HISTORY = 20
+SUBAGENT_STATUSES = {"success", "nothing_found", "error"}
 _LOCK = threading.RLock()
 
 
@@ -85,14 +86,55 @@ def store_map(tree: dict[str, Any], requested_path: str = "") -> dict[str, Any]:
     return {"path": "agentMemory/data/scratchpad.json", "updated_at": entry["updated_at"]}
 
 
+def store_subagent_result(
+    subagent_id: str, task_type: str, status: str, payload: Any
+) -> dict[str, Any]:
+    """Store generic sub-agent task execution payloads in the shared agent scratchpad."""
+    if status not in SUBAGENT_STATUSES:
+        raise ValueError(
+            "Sub-agent status must be one of: "
+            + ", ".join(sorted(SUBAGENT_STATUSES))
+        )
+    entry = {
+        "subagent_id": subagent_id,
+        "task_type": task_type,
+        "status": status,
+        "payload": payload,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    with _LOCK:
+        data = _read()
+        history = data.get("subagent_history")
+        if not isinstance(history, list):
+            history = []
+        history.append(entry)
+        data["subagent_history"] = history[-MAX_READ_HISTORY:]
+        data["latest_subagent_result"] = entry
+        _write(data)
+    return {"path": "agentMemory/data/scratchpad.json", "updated_at": entry["updated_at"]}
+
+
 def read_memory(memory_type: str = "all") -> dict[str, Any]:
-    """Read all, the latest file read, or the latest map snapshot."""
-    if memory_type not in {"all", "latest_read", "latest_map"}:
-        raise ValueError("memory_type must be 'all', 'latest_read', or 'latest_map'.")
+    """Read saved scratchpad entries with backward compatibility for legacy keys."""
+    valid_types = {
+        "all",
+        "latest_read",
+        "latest_map",
+        "latest_subagent_result",
+        "latest_rag_result",
+    }
+    if memory_type not in valid_types:
+        raise ValueError(f"memory_type must be one of {valid_types}.")
     with _LOCK:
         data = _read()
     if memory_type == "all":
         return data
+    if memory_type in ("latest_subagent_result", "latest_rag_result"):
+        return {
+            "latest_subagent_result": data.get(
+                "latest_subagent_result", data.get("latest_rag_result", {})
+            )
+        }
     return {memory_type: data[memory_type]} if memory_type in data else {}
 
 

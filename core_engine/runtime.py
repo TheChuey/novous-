@@ -34,26 +34,82 @@ class Agent:
 
     def _extract_text_tool_calls(self, content: str) -> List[dict]:
         text = (content or "").strip()
-        if text.startswith("```"):
-            text = text.strip("`")
-            if text.lower().startswith("json"):
-                text = text[4:]
-            text = text.strip()
-
-        try:
-            parsed = json.loads(text)
-        except Exception:
-            return []
-
         calls = []
-        items = parsed if isinstance(parsed, list) else [parsed]
-        for item in items:
-            if isinstance(item, dict) and "name" in item:
-                tool_name = item["name"]
-                if tool_name in self.tools:
-                    args = item.get("parameters") or item.get("arguments") or item.get("args") or {}
-                    calls.append({"function": {"name": tool_name, "arguments": args}})
+        decoder = json.JSONDecoder()
+        index = 0
+        while index < len(text):
+            if text[index] not in "[{":
+                index += 1
+                continue
+            try:
+                parsed, end = decoder.raw_decode(text, index)
+            except json.JSONDecodeError:
+                index += 1
+                continue
+
+            items = parsed if isinstance(parsed, list) else [parsed]
+            found_call = False
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                tool_name = item.get("name")
+                if tool_name not in self.tools:
+                    continue
+                args = (
+                    item.get("parameters")
+                    or item.get("arguments")
+                    or item.get("args")
+                    or {}
+                )
+                calls.append(
+                    {"function": {"name": tool_name, "arguments": args}}
+                )
+                found_call = True
+
+            index = end if found_call else index + 1
         return calls
+
+    def _format_rag_presenter_reply(self, content: str) -> str:
+        if self.profile.id != "rag-presenter":
+            return content
+
+        decoder = json.JSONDecoder()
+        index = 0
+        while index < len(content):
+            if content[index] != "{":
+                index += 1
+                continue
+            try:
+                parsed, end = decoder.raw_decode(content, index)
+            except json.JSONDecodeError:
+                index += 1
+                continue
+            index = end
+            if not isinstance(parsed, dict) or parsed.get("name") != "format_answer":
+                continue
+
+            arguments = parsed.get("parameters") or parsed.get("arguments") or {}
+            if not isinstance(arguments, dict):
+                continue
+            answer = str(arguments.get("answer") or "").strip()
+            if not answer:
+                continue
+
+            formatted = answer
+            evidence = arguments.get("evidence")
+            sources = []
+            if isinstance(evidence, list):
+                for item in evidence:
+                    if isinstance(item, dict) and item.get("path"):
+                        path = str(item["path"])
+                        if path not in sources:
+                            sources.append(path)
+            if sources:
+                formatted += "\n\n**Sources**\n" + "\n".join(
+                    f"- {source}" for source in sources
+                )
+            return formatted
+        return content
 
     def act(self, tool_call: dict, origin: str) -> Any:
         fn_info = tool_call.get("function", {})
@@ -105,7 +161,7 @@ class Agent:
 
         if self.profile.mode == "chat" or not self.tools:
             res = ollama.chat(model=self.model, messages=self.messages, options={"num_ctx": MAX_NUM_CTX})
-            reply = res["message"]["content"]
+            reply = self._format_rag_presenter_reply(res["message"]["content"])
             self.messages.append({"role": "assistant", "content": reply})
             return reply
 
@@ -124,7 +180,7 @@ class Agent:
             tool_calls = native_calls or text_calls
 
             if not tool_calls:
-                return msg.get("content", "")
+                return self._format_rag_presenter_reply(msg.get("content", ""))
 
             origin = "native" if native_calls else "text_json"
             for call in tool_calls:
@@ -153,7 +209,6 @@ class Agent:
                 piece = msg.get("content") or ""
                 if piece:
                     content += piece
-                    yield {"type": "token", "text": piece}
                 for call in msg.get("tool_calls") or []:
                     native_calls.append(call)
 
@@ -166,6 +221,11 @@ class Agent:
             text_calls = [] if native_calls or not use_tools else self._extract_text_tool_calls(content)
             tool_calls = native_calls or text_calls
             if not tool_calls:
+                if content:
+                    content = self._format_rag_presenter_reply(content)
+                    self.messages[-1]["content"] = content
+                    final_text = content
+                    yield {"type": "token", "text": content}
                 break
 
             origin = "native" if native_calls else "text_json"

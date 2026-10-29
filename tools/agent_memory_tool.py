@@ -4,12 +4,66 @@ import json
 
 from core_engine.tool_catalog import tool
 from agentMemory import interface
+from orchestration.rag_retriever import RAG_RETRIEVER_ID, run_rag_retriever
 
 
 @tool(provider="agentMemory")
 def read_agent_scratchpad(memory_type: str = "all") -> str:
-    """Read recent file contents and/or the latest workspace map saved in agent scratchpad memory."""
+    """Read scratchpad entries ('latest_subagent_result', 'latest_read', 'latest_map', or 'all')."""
     return json.dumps(interface.read_memory(memory_type), ensure_ascii=False, indent=2)
+
+
+@tool(provider="agentMemory")
+def call_subagent(subagent_id: str, task_prompt: str, parameters: str = "{}") -> str:
+    """Dynamically invoke a background sub-agent from subAgentLibrary/ with a task prompt and parameters."""
+    if subagent_id == RAG_RETRIEVER_ID:
+        parsed_params = parameters
+        if isinstance(parameters, str):
+            try:
+                parsed_params = json.loads(parameters or "{}")
+            except json.JSONDecodeError:
+                pass
+        return run_rag_retriever(task_prompt, parsed_params)
+
+    from orchestration.orchestration_interface import run_agent_turn
+
+    parsed_params = {}
+    if isinstance(parameters, dict):
+        parsed_params = parameters
+    elif isinstance(parameters, str) and parameters.strip().startswith("{"):
+        parsed_params = json.loads(parameters)
+    if not isinstance(parsed_params, dict):
+        raise ValueError("Sub-agent parameters must be a JSON object.")
+
+    full_prompt = f"Task: '{task_prompt}'. Parameters: {parsed_params}"
+    result = run_agent_turn(subagent_id, full_prompt)
+    return json.dumps(
+        {"subagent_id": subagent_id, "result": result}, ensure_ascii=False, indent=2
+    )
+
+
+@tool(provider="agentMemory")
+def write_agent_scratchpad(
+    subagent_id: str = "subagent",
+    task_type: str = "general",
+    status: str = "success",
+    payload: str = "",
+) -> str:
+    """Write structured sub-agent execution payloads into the shared scratchpad."""
+    parsed_payload = payload
+    if isinstance(payload, str) and payload.strip().startswith(("[", "{")):
+        try:
+            parsed_payload = json.loads(payload)
+        except Exception:
+            parsed_payload = payload
+
+    result = interface.store_subagent_result(
+        subagent_id=subagent_id,
+        task_type=task_type,
+        status=status,
+        payload=parsed_payload,
+    )
+    return json.dumps(result, ensure_ascii=False, indent=2)
 
 
 @tool(provider="agentMemory")

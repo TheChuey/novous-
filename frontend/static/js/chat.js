@@ -180,6 +180,84 @@ export function renderChatView(container) {
 
   function renderScratchpad(memory) {
     scratchpadContent.replaceChildren();
+    const subagent = memory.latest_subagent_result;
+    const subagentSection = document.createElement('section');
+    subagentSection.className = 'scratchpad-section';
+    const subagentTitle = document.createElement('h3');
+    subagentTitle.textContent = 'Latest sub-agent result';
+    subagentSection.appendChild(subagentTitle);
+    if (subagent && typeof subagent === 'object' && Object.keys(subagent).length) {
+      const payload = subagent.payload && typeof subagent.payload === 'object'
+        ? subagent.payload
+        : {};
+      const status = document.createElement('span');
+      const statusValue = String(subagent.status || 'unknown');
+      status.className = `badge ${statusValue === 'success' ? 'badge-success' : statusValue === 'error' ? 'badge-danger' : 'badge-warning'}`;
+      status.textContent = statusValue;
+      const meta = document.createElement('p');
+      meta.className = 'text-muted small';
+      const timestamp = subagent.updated_at ? new Date(subagent.updated_at).toLocaleString() : '';
+      meta.textContent = [subagent.subagent_id || 'Unknown sub-agent', subagent.task_type || '', timestamp]
+        .filter(Boolean).join(' · ');
+      subagentSection.append(status, meta);
+
+      if (payload.query) {
+        const query = document.createElement('p');
+        query.className = 'scratchpad-result-query';
+        query.textContent = `Query: ${payload.query}`;
+        subagentSection.appendChild(query);
+      }
+      if (payload.knowledge_branch_name) {
+        const branch = document.createElement('p');
+        branch.className = 'text-muted small';
+        branch.textContent = `Knowledge branch: ${payload.knowledge_branch_name}`;
+        subagentSection.appendChild(branch);
+      }
+      if (payload.error) {
+        const error = document.createElement('p');
+        error.className = 'text-danger';
+        error.textContent = payload.error;
+        subagentSection.appendChild(error);
+      }
+
+      const results = Array.isArray(payload.results) ? payload.results : [];
+      if (results.length) {
+        const count = document.createElement('p');
+        count.className = 'text-muted small';
+        count.textContent = `${results.length} retrieved passage${results.length === 1 ? '' : 's'}`;
+        subagentSection.appendChild(count);
+        results.forEach((result, index) => {
+          const details = document.createElement('details');
+          details.className = 'scratchpad-read scratchpad-result';
+          if (index === 0) details.open = true;
+          const summary = document.createElement('summary');
+          const score = Number.isFinite(Number(result.score))
+            ? ` · relevance ${Number(result.score).toFixed(3)}`
+            : '';
+          summary.textContent = `${result.path || 'Retrieved passage'}${score}`;
+          const excerpt = document.createElement('pre');
+          excerpt.textContent = result.content || '';
+          details.append(summary, excerpt);
+          subagentSection.appendChild(details);
+        });
+      } else {
+        const empty = document.createElement('p');
+        empty.className = 'text-muted';
+        empty.textContent = statusValue === 'nothing_found'
+          ? 'Retrieval completed; no relevant passages were found.'
+          : statusValue === 'error'
+            ? 'Retrieval failed. See the error above.'
+            : 'No retrieved passages were saved.';
+        subagentSection.appendChild(empty);
+      }
+    } else {
+      const empty = document.createElement('p');
+      empty.className = 'text-muted';
+      empty.textContent = 'No sub-agent results are saved.';
+      subagentSection.appendChild(empty);
+    }
+    scratchpadContent.appendChild(subagentSection);
+
     const reads = Array.isArray(memory.read_history)
       ? memory.read_history
       : (memory.latest_read ? [memory.latest_read] : []);
@@ -1265,6 +1343,7 @@ export function renderChatView(container) {
       }
 
       appendMessage('assistant', res.reply);
+      if (scratchpadDialog.open) await loadScratchpad();
     } catch (err) {
       removeMessage(thinkingId);
       appendMessage('system', 'Error communicating with engine: ' + err.message);
@@ -1281,7 +1360,11 @@ export function renderChatView(container) {
     msgDiv.className = `message ${role}-msg ${isTemporary ? 'pulse' : ''}`;
     const body = document.createElement('div');
     body.className = 'msg-body';
-    body.innerText = content;
+    if (role === 'assistant' && !isTemporary) {
+      renderAssistantMarkdown(body, content);
+    } else {
+      body.innerText = content;
+    }
     msgDiv.appendChild(body);
 
     if (!isTemporary && role !== 'system') {
@@ -1306,6 +1389,64 @@ export function renderChatView(container) {
     messagesBox.appendChild(msgDiv);
     messagesBox.scrollTop = messagesBox.scrollHeight;
     return id;
+  }
+
+  function renderAssistantMarkdown(container, markdown) {
+    container.replaceChildren();
+    const lines = String(markdown || '').split(/\r?\n/);
+    let paragraph = [];
+    let list = null;
+    const flushParagraph = () => {
+      if (!paragraph.length) return;
+      const element = document.createElement('p');
+      appendInlineMarkdown(element, paragraph.join(' '));
+      container.appendChild(element);
+      paragraph = [];
+    };
+    const closeList = () => {
+      if (!list) return;
+      container.appendChild(list);
+      list = null;
+    };
+
+    lines.forEach(line => {
+      const heading = line.match(/^#{1,3}\s+(.+)$/);
+      const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+      if (!line.trim()) {
+        flushParagraph();
+        closeList();
+      } else if (heading) {
+        flushParagraph();
+        closeList();
+        const element = document.createElement('h3');
+        appendInlineMarkdown(element, heading[1]);
+        container.appendChild(element);
+      } else if (bullet) {
+        flushParagraph();
+        if (!list) list = document.createElement('ul');
+        const item = document.createElement('li');
+        appendInlineMarkdown(item, bullet[1]);
+        list.appendChild(item);
+      } else {
+        closeList();
+        paragraph.push(line.trim());
+      }
+    });
+    flushParagraph();
+    closeList();
+  }
+
+  function appendInlineMarkdown(container, text) {
+    const pieces = String(text).split(/(\*\*[^*]+\*\*)/g);
+    pieces.forEach(piece => {
+      if (piece.startsWith('**') && piece.endsWith('**')) {
+        const strong = document.createElement('strong');
+        strong.textContent = piece.slice(2, -2);
+        container.appendChild(strong);
+      } else if (piece) {
+        container.appendChild(document.createTextNode(piece));
+      }
+    });
   }
 
   function removeMessage(id) {
