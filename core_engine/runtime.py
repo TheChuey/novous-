@@ -1,5 +1,6 @@
 import json
 import inspect
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Callable, List, Any
@@ -33,6 +34,32 @@ class Agent:
         self.tool_events: List[dict] = []
         self.tool_stats: dict[str, dict] = {}
 
+    def _is_code_subagent(self) -> bool:
+        return self.profile.id in {"code-builder", "tester", "code-troubleshooter"}
+
+    def _text_tool_call(self, item: dict) -> dict | None:
+        """Accept both flat and function-wrapped text tool-call objects."""
+        function = item.get("function")
+        if isinstance(function, dict):
+            tool_name = function.get("name")
+            args = (
+                function.get("arguments")
+                or function.get("parameters")
+                or function.get("args")
+                or {}
+            )
+        else:
+            tool_name = item.get("name")
+            args = (
+                item.get("parameters")
+                or item.get("arguments")
+                or item.get("args")
+                or {}
+            )
+        if tool_name not in self.tools:
+            return None
+        return {"function": {"name": tool_name, "arguments": args}}
+
     def _extract_text_tool_calls(self, content: str) -> List[dict]:
         text = (content or "").strip()
         calls = []
@@ -53,22 +80,47 @@ class Agent:
             for item in items:
                 if not isinstance(item, dict):
                     continue
-                tool_name = item.get("name")
-                if tool_name not in self.tools:
+                call = self._text_tool_call(item)
+                if call is None:
                     continue
-                args = (
-                    item.get("parameters")
-                    or item.get("arguments")
-                    or item.get("args")
-                    or {}
-                )
-                calls.append(
-                    {"function": {"name": tool_name, "arguments": args}}
-                )
+                calls.append(call)
                 found_call = True
 
             index = end if found_call else index + 1
         return calls
+
+    def _looks_like_malformed_code_tool_call(self, content: str) -> bool:
+        if not self._is_code_subagent():
+            return False
+        text = content or ""
+        if not any(name in text for name in self.tools):
+            return False
+        return bool(
+            re.search(r'"name"\s*:', text)
+            or re.search(r'"(?:arguments|parameters|args)"\s*:', text)
+            or "```json" in text.lower()
+        )
+
+    def _handoff_nudge(self) -> dict:
+        return {
+            "role": "system",
+            "content": (
+                "You have not written the required handoff yet. Before finishing, "
+                "call write_agent_scratchpad exactly once with your canonical "
+                "subagent ID, the requested task_type, an accurate status, and a "
+                "concise JSON payload. Do not answer with prose alone."
+            ),
+        }
+
+    def _malformed_call_nudge(self) -> dict:
+        return {
+            "role": "system",
+            "content": (
+                "Your previous tool-call JSON could not be parsed. Resend the tool "
+                "call as valid JSON. For preview_editor_code, pass the complete "
+                "proposed_content string without triple quotes."
+            ),
+        }
 
     def _format_rag_presenter_reply(self, content: str) -> str:
         if self.profile.id != "rag-presenter":
@@ -132,8 +184,8 @@ class Agent:
                 telemetry_bus.log_event(
                     trace_id,
                     "TOOL_CALL_END",
-                    name or "unknown",
                     agent_id,
+                    name or "unknown",
                     {
                         "tool_name": name or "unknown",
                         "status": "error",
@@ -166,14 +218,10 @@ class Agent:
                 args = json.loads(args)
             result = tool_func(**args) if isinstance(args, dict) else tool_func(args)
             if self._is_code_subagent_handoff(name) and trace_context:
+                from orchestration.code_handoffs import TASK_TYPE_BY_AGENT
                 from orchestration.codebuilder_run_state import codebuilder_run_state
 
                 trace_id, agent_id = trace_context
-                task_types = {
-                    "code-builder": "code_build",
-                    "tester": "code_test",
-                    "code-troubleshooter": "code_troubleshooting",
-                }
                 payload = args.get("payload", "") if isinstance(args, dict) else ""
                 if isinstance(payload, str) and payload.strip().startswith(("{", "[")):
                     try:
@@ -183,7 +231,7 @@ class Agent:
                 codebuilder_run_state.save_handoff(
                     trace_id,
                     agent_id,
-                    task_types[agent_id],
+                    TASK_TYPE_BY_AGENT[agent_id],
                     str(args.get("status", "success"))
                     if isinstance(args, dict)
                     else "success",
@@ -205,8 +253,8 @@ class Agent:
                 telemetry_bus.log_event(
                     trace_id,
                     "TOOL_CALL_END",
-                    name,
                     agent_id,
+                    name,
                     {
                         "tool_name": name,
                         "status": "success",
@@ -274,8 +322,8 @@ class Agent:
                 telemetry_bus.log_event(
                     trace_id,
                     "TOOL_CALL_END",
-                    name,
                     agent_id,
+                    name,
                     {
                         "tool_name": name,
                         "status": "error",
@@ -314,6 +362,8 @@ class Agent:
             self.messages.append({"role": "assistant", "content": reply})
             return reply
 
+        malformed_nudged = False
+        handoff_nudged = False
         for _ in range(self.MAX_TOOL_ROUNDS):
             res = ollama.chat(
                 model=self.model,
@@ -329,7 +379,19 @@ class Agent:
             tool_calls = native_calls or text_calls
 
             if not tool_calls:
-                return self._format_rag_presenter_reply(msg.get("content", ""))
+                content = msg.get("content", "")
+                if (
+                    self._looks_like_malformed_code_tool_call(content)
+                    and not malformed_nudged
+                ):
+                    self.messages.append(self._malformed_call_nudge())
+                    malformed_nudged = True
+                    continue
+                if self._is_code_subagent() and not handoff_nudged:
+                    self.messages.append(self._handoff_nudge())
+                    handoff_nudged = True
+                    continue
+                return self._format_rag_presenter_reply(content)
 
             origin = "native" if native_calls else "text_json"
             for call in tool_calls:
@@ -352,6 +414,8 @@ class Agent:
         use_tools = self.profile.mode != "chat" and bool(self.tools)
         extra = {"tools": [self._ollama_schema(t) for t in self.tools.values()]} if use_tools else {}
         final_text = ""
+        malformed_nudged = False
+        handoff_nudged = False
 
         for _ in range(self.MAX_TOOL_ROUNDS if use_tools else 1):
             content = ""
@@ -374,6 +438,17 @@ class Agent:
             text_calls = [] if native_calls or not use_tools else self._extract_text_tool_calls(content)
             tool_calls = native_calls or text_calls
             if not tool_calls:
+                if (
+                    self._looks_like_malformed_code_tool_call(content)
+                    and not malformed_nudged
+                ):
+                    self.messages.append(self._malformed_call_nudge())
+                    malformed_nudged = True
+                    continue
+                if self._is_code_subagent() and not handoff_nudged:
+                    self.messages.append(self._handoff_nudge())
+                    handoff_nudged = True
+                    continue
                 if content:
                     content = self._format_rag_presenter_reply(content)
                     self.messages[-1]["content"] = content
@@ -409,10 +484,25 @@ class Agent:
     def _ollama_schema(self, func: Callable) -> dict:
         sig = inspect.signature(func)
         doc = inspect.getdoc(func) or ""
+        descriptions = {
+            "payload": (
+                "JSON object string containing the structured handoff fields. "
+                "Never use triple-quoted strings."
+            ),
+            "status": "One of: success, nothing_found, error.",
+            "subagent_id": "The canonical sub-agent ID.",
+            "task_type": "The task type requested by orchestration.",
+            "proposed_content": "The complete proposed file or editor content.",
+        }
         properties = {}
         required = []
         for param_name, param in sig.parameters.items():
-            properties[param_name] = {"type": "string", "description": f"Parameter {param_name}"}
+            properties[param_name] = {
+                "type": "string",
+                "description": descriptions.get(
+                    param_name, f"Parameter {param_name}"
+                ),
+            }
             if param.default == inspect.Parameter.empty:
                 required.append(param_name)
         return {

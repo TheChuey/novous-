@@ -14,6 +14,13 @@ from orchestration.orchestration_schemas import (
     TraceStep,
 )
 from orchestration.orchestration_run_results import run_results
+from orchestration.code_handoffs import (
+    effective_status,
+    execution_evidence,
+    execution_failed,
+    normalize_handoff,
+    normalize_handoffs,
+)
 from orchestration.codebuilder_run_state import codebuilder_run_state
 from orchestration.orchestration_telemetry import telemetry_bus
 from orchestration.squad_registry import (
@@ -37,13 +44,78 @@ def _result_count(scratchpad_entry: dict) -> int:
     return len(results) if isinstance(results, list) else int(bool(payload))
 
 
-def _single_code_block(response: str) -> str | None:
-    """Return one complete fenced code block; avoid guessing from partial snippets."""
-    blocks = [
-        match.group(1)
-        for match in re.finditer(r"```[^\r\n`]*\r?\n([\s\S]*?)```", response or "")
+def _fenced_code_blocks(response: str) -> list[tuple[str, str]]:
+    return [
+        ((match.group(1) or "").strip().split(" ", 1)[0].lower(), match.group(2))
+        for match in re.finditer(
+            r"```([^\r\n`]*)\r?\n([\s\S]*?)```", response or ""
+        )
+        if match.group(2).strip()
     ]
-    return blocks[0] if len(blocks) == 1 and blocks[0].strip() else None
+
+
+def _single_code_block(response: str) -> str | None:
+    """Return one unambiguous code block; avoid guessing from competing snippets."""
+    blocks = _fenced_code_blocks(response)
+    if len(blocks) == 1:
+        return blocks[0][1]
+    python_blocks = [
+        content
+        for language, content in blocks
+        if language in {"python", "py", "python3"}
+    ]
+    return python_blocks[0] if len(python_blocks) == 1 else None
+
+
+def _normalized_handoffs(
+    trace_id: str,
+    subagent_ids: set[str] | None = None,
+) -> list[dict]:
+    execution = codebuilder_run_state.get_execution(trace_id)
+    handoffs = [
+        handoff
+        for handoff in codebuilder_run_state.get_handoffs(trace_id)
+        if subagent_ids is None or handoff.get("subagent_id") in subagent_ids
+    ]
+    return normalize_handoffs(handoffs, execution)
+
+
+def _normalized_latest_handoff(
+    trace_id: str,
+    subagent_id: str | None = None,
+) -> dict | None:
+    execution = codebuilder_run_state.get_execution(trace_id)
+    if subagent_id is None:
+        handoff = codebuilder_run_state.get_handoff(trace_id)
+    else:
+        handoff = next(
+            (
+                item
+                for item in reversed(codebuilder_run_state.get_handoffs(trace_id))
+                if item.get("subagent_id") == subagent_id
+            ),
+            None,
+        )
+    return normalize_handoff(handoff, execution) if handoff else None
+
+
+def _execution_evidence(trace_id: str) -> dict:
+    return execution_evidence(codebuilder_run_state.get_execution(trace_id))
+
+
+def _has_actionable_failure(trace_id: str) -> bool:
+    """Tester no-test reports are not failures; real errors and executions are."""
+    execution = codebuilder_run_state.get_execution(trace_id)
+    if execution_failed(execution):
+        return True
+    for handoff in _normalized_handoffs(trace_id):
+        if handoff.get("effective_status") != "error":
+            continue
+        if handoff.get("subagent_id") != "tester":
+            return True
+        if handoff.get("has_failure_evidence"):
+            return True
+    return False
 
 
 def _registered_tool(name: str):
@@ -75,8 +147,8 @@ def _preview_editor_handoff(trace_id: str, agent_id: str, content: str) -> None:
         telemetry_bus.log_event(
             trace_id,
             "TOOL_CALL_END",
-            "preview_editor_code",
             agent_id,
+            "preview_editor_code",
             {
                 "tool_name": "preview_editor_code",
                 "status": "error",
@@ -87,8 +159,8 @@ def _preview_editor_handoff(trace_id: str, agent_id: str, content: str) -> None:
     telemetry_bus.log_event(
         trace_id,
         "TOOL_CALL_END",
-        "preview_editor_code",
         agent_id,
+        "preview_editor_code",
         {
             "tool_name": "preview_editor_code",
             "status": "success",
@@ -129,8 +201,8 @@ def _capture_missing_code_handoff(
         telemetry_bus.log_event(
             trace_id,
             "TOOL_CALL_END",
-            "write_agent_scratchpad",
             agent_id,
+            "write_agent_scratchpad",
             {
                 "tool_name": "write_agent_scratchpad",
                 "status": "error",
@@ -141,8 +213,66 @@ def _capture_missing_code_handoff(
     telemetry_bus.log_event(
         trace_id,
         "TOOL_CALL_END",
-        "write_agent_scratchpad",
         agent_id,
+        "write_agent_scratchpad",
+        {
+            "tool_name": "write_agent_scratchpad",
+            "status": "success",
+            "duration_ms": int((time.perf_counter() - started) * 1000),
+        },
+    )
+
+
+def _capture_code_block_handoff(
+    trace_id: str, agent_id: str, task_type: str
+) -> None:
+    """Persist a tentative success when a single code block was previewed."""
+    payload = {
+        "handoff_source": "orchestrator_code_block_fallback",
+        "summary": (
+            "Recovered one complete code block from the sub-agent response and "
+            "previewed it in the editor."
+        ),
+        "files_changed": [],
+        "checks_run": [],
+        "verified": False,
+        "editor_buffer_updated": True,
+    }
+    started = time.perf_counter()
+    telemetry_bus.log_event(
+        trace_id,
+        "TOOL_CALL_START",
+        agent_id,
+        "write_agent_scratchpad",
+        {"tool_name": "write_agent_scratchpad"},
+    )
+    try:
+        write_scratchpad = _registered_tool("write_agent_scratchpad")
+        with telemetry_bus.agent_context(trace_id, agent_id):
+            write_scratchpad(
+                subagent_id=agent_id,
+                task_type=task_type,
+                status="success",
+                payload=payload,
+            )
+    except Exception:
+        telemetry_bus.log_event(
+            trace_id,
+            "TOOL_CALL_END",
+            agent_id,
+            "write_agent_scratchpad",
+            {
+                "tool_name": "write_agent_scratchpad",
+                "status": "error",
+                "duration_ms": int((time.perf_counter() - started) * 1000),
+            },
+        )
+        raise
+    telemetry_bus.log_event(
+        trace_id,
+        "TOOL_CALL_END",
+        agent_id,
+        "write_agent_scratchpad",
         {
             "tool_name": "write_agent_scratchpad",
             "status": "success",
@@ -289,7 +419,7 @@ class SequentialPattern(BasePattern):
             for worker_id in workers:
                 worker_is_retest = False
                 if worker_id == "tester":
-                    handoff_history = codebuilder_run_state.get_handoffs(trace_id)
+                    handoff_history = _normalized_handoffs(trace_id)
                     tester_positions = [
                         index
                         for index, handoff in enumerate(handoff_history)
@@ -310,7 +440,9 @@ class SequentialPattern(BasePattern):
                     )
                     worker_is_retest = (
                         latest_troubleshooter_position > latest_tester_position
-                        and handoff_history[latest_troubleshooter_position].get("status")
+                        and handoff_history[latest_troubleshooter_position].get(
+                            "effective_status"
+                        )
                         == "success"
                     )
                     if tester_positions and not worker_is_retest:
@@ -337,7 +469,7 @@ class SequentialPattern(BasePattern):
                         not worker_is_retest
                         and (
                             not builder_handoff
-                            or builder_handoff.get("status") != "success"
+                            or builder_handoff.get("effective_status") != "success"
                         )
                     ):
                         telemetry_bus.log_event(
@@ -363,20 +495,17 @@ class SequentialPattern(BasePattern):
                         step_counter += 1
                         continue
                 if worker_id == "code-troubleshooter" and "tester" in workers:
-                    upstream_errors = [
-                        handoff
-                        for handoff in codebuilder_run_state.get_handoffs(trace_id)
-                        if handoff.get("status") == "error"
-                        and handoff.get("subagent_id") != "code-troubleshooter"
-                    ]
-                    if not upstream_errors:
+                    if not _has_actionable_failure(trace_id):
                         telemetry_bus.log_event(
                             trace_id,
                             "AGENT_MESSAGE",
                             "orchestrator",
                             worker_id,
                             {
-                                "summary": "Code Troubleshooter skipped because no upstream error was reported",
+                                "summary": (
+                                    "Code Troubleshooter skipped because no "
+                                    "actionable failure evidence was reported"
+                                ),
                                 "status": "success",
                             },
                         )
@@ -386,7 +515,10 @@ class SequentialPattern(BasePattern):
                                 agent_id=worker_id,
                                 phase="SUBAGENT_EXECUTION",
                                 status="SUCCESS",
-                                details="Skipped error triage because no upstream worker reported an error",
+                                details=(
+                                    "Skipped error triage because upstream reports "
+                                    "contained no actionable failure evidence"
+                                ),
                                 timestamp=datetime.now(timezone.utc).isoformat(),
                             )
                         )
@@ -444,15 +576,8 @@ class SequentialPattern(BasePattern):
                                 "again afterward."
                             )
                         if worker_id == "tester":
-                            builder_handoff = next(
-                                (
-                                    handoff
-                                    for handoff in reversed(
-                                        codebuilder_run_state.get_handoffs(trace_id)
-                                    )
-                                    if handoff.get("subagent_id") == "code-builder"
-                                ),
-                                None,
+                            builder_handoff = _normalized_latest_handoff(
+                                trace_id, "code-builder"
                             )
                             preview = codebuilder_run_state.get_preview(trace_id)
                             source = (
@@ -464,35 +589,23 @@ class SequentialPattern(BasePattern):
                                     else None
                                 )
                             )
+                            evidence = _execution_evidence(trace_id)
                             worker_prompt += (
                                 "\n\nCode Builder handoff (JSON):\n"
                                 + json.dumps(builder_handoff or {}, ensure_ascii=False)[:8_000]
+                                + "\n\nCode execution evidence (JSON):\n"
+                                + json.dumps(evidence, ensure_ascii=False)[:8_000]
                                 + "\n\nTest the builder's actual output. The code plan "
                                 "was:\n"
                                 + implementation_plan[:8_000]
                             )
                             if worker_is_retest:
-                                previous_test = next(
-                                    (
-                                        handoff
-                                        for handoff in reversed(
-                                            codebuilder_run_state.get_handoffs(trace_id)
-                                        )
-                                        if handoff.get("subagent_id") == "tester"
-                                    ),
-                                    {},
-                                )
-                                troubleshooting = next(
-                                    (
-                                        handoff
-                                        for handoff in reversed(
-                                            codebuilder_run_state.get_handoffs(trace_id)
-                                        )
-                                        if handoff.get("subagent_id")
-                                        == "code-troubleshooter"
-                                    ),
-                                    {},
-                                )
+                                previous_test = _normalized_latest_handoff(
+                                    trace_id, "tester"
+                                ) or {}
+                                troubleshooting = _normalized_latest_handoff(
+                                    trace_id, "code-troubleshooter"
+                                ) or {}
                                 worker_prompt += (
                                     "\n\nThis is the post-troubleshooting recheck. "
                                     "Use the updated source and verify the prior failure "
@@ -515,19 +628,26 @@ class SequentialPattern(BasePattern):
                                     f"```python\n{source}\n```"
                                 )
                         if worker_id == "code-troubleshooter" and "tester" in workers:
-                            upstream_errors = [
+                            upstream_handoffs = [
                                 handoff
-                                for handoff in codebuilder_run_state.get_handoffs(trace_id)
-                                if handoff.get("status") == "error"
-                                and handoff.get("subagent_id") != worker_id
+                                for handoff in _normalized_handoffs(trace_id)
+                                if handoff.get("subagent_id") != worker_id
                             ]
+                            evidence = _execution_evidence(trace_id)
                             worker_prompt += (
-                                "\n\nUpstream code-agent errors to triage (JSON):\n"
-                                + json.dumps(upstream_errors, ensure_ascii=False)[:12_000]
-                                + "\nUse the tester's observed failure as evidence. Make "
-                                "a minimal evidence-based fix when the cause is confirmed; "
-                                "do not claim a fix is verified unless you actually rerun "
-                                "a focused check. Do not invent unrelated functionality."
+                                "\n\nUpstream code-agent handoffs to triage (JSON):\n"
+                                + json.dumps(
+                                    upstream_handoffs, ensure_ascii=False
+                                )[:12_000]
+                                + "\n\nActual code execution evidence (JSON):\n"
+                                + json.dumps(evidence, ensure_ascii=False)[:8_000]
+                                + "\nUse the execution stdout/stderr and the tester's "
+                                "observed failure as evidence. A prose description of "
+                                "failure without diagnostic output is not enough to "
+                                "claim a root cause. Make a minimal evidence-based fix "
+                                "when the cause is confirmed; do not claim a fix is "
+                                "verified unless you actually rerun a focused check. "
+                                "Do not invent unrelated functionality."
                             )
                         editor_code = request.parameters.get("editor_code")
                         editor_path = request.parameters.get("editor_path")
@@ -589,6 +709,7 @@ class SequentialPattern(BasePattern):
                             worker_id, worker_prompt, trace_id=trace_id
                         )
                         if worker_id in {"code-builder", "code-troubleshooter"}:
+                            previewed_from_fallback = False
                             if (
                                 codebuilder_run_state.get_editor_code(trace_id) is not None
                                 and codebuilder_run_state.get_preview(trace_id) is None
@@ -601,16 +722,22 @@ class SequentialPattern(BasePattern):
                                     _preview_editor_handoff(
                                         trace_id, worker_id, proposed_code
                                     )
+                                    previewed_from_fallback = True
                             handoff = codebuilder_run_state.get_handoff(trace_id)
                             if not handoff or handoff.get("subagent_id") != worker_id:
-                                _capture_missing_code_handoff(
-                                    trace_id,
-                                    worker_id,
+                                task_type = (
                                     "code_build"
                                     if worker_id == "code-builder"
-                                    else "code_troubleshooting",
-                                    worker_result,
+                                    else "code_troubleshooting"
                                 )
+                                if previewed_from_fallback:
+                                    _capture_code_block_handoff(
+                                        trace_id, worker_id, task_type
+                                    )
+                                else:
+                                    _capture_missing_code_handoff(
+                                        trace_id, worker_id, task_type, worker_result
+                                    )
                         elif worker_id == "tester":
                             handoff = codebuilder_run_state.get_handoff(trace_id)
                             if not handoff or handoff.get("subagent_id") != worker_id:
@@ -622,12 +749,12 @@ class SequentialPattern(BasePattern):
                                 )
 
                     worker_handoff = (
-                        codebuilder_run_state.get_handoff(trace_id)
+                        _normalized_latest_handoff(trace_id)
                         if worker_id in code_worker_ids
                         else None
                     )
                     worker_status = (
-                        str(worker_handoff.get("status") or "error")
+                        str(worker_handoff.get("effective_status") or "error")
                         if worker_handoff
                         and worker_handoff.get("subagent_id") == worker_id
                         else "success"
@@ -697,16 +824,21 @@ class SequentialPattern(BasePattern):
             now = datetime.now(timezone.utc).isoformat()
             _print_trace(f" ├── [{step_counter}] Inspecting scratchpad barrier...")
             if squad_id == "code-squad" and workers:
-                scratchpad_entry = codebuilder_run_state.get_handoff(trace_id) or {}
-                if scratchpad_entry.get("subagent_id") not in workers:
-                    scratchpad_entry = {}
+                raw_handoff = codebuilder_run_state.get_handoff(trace_id) or {}
+                if raw_handoff.get("subagent_id") not in workers:
+                    raw_handoff = {}
+                scratchpad_entry = (
+                    normalize_handoff(
+                        raw_handoff, codebuilder_run_state.get_execution(trace_id)
+                    )
+                    if raw_handoff
+                    else {}
+                )
                 scratchpad_snapshot = {}
                 if scratchpad_entry:
-                    handoff_history = [
-                        handoff
-                        for handoff in codebuilder_run_state.get_handoffs(trace_id)
-                        if handoff.get("subagent_id") in workers
-                    ]
+                    handoff_history = _normalized_handoffs(
+                        trace_id, set(workers)
+                    )
                     scratchpad_snapshot = {
                         "latest_subagent_result": scratchpad_entry,
                         "subagent_history": handoff_history,
@@ -722,7 +854,11 @@ class SequentialPattern(BasePattern):
                 "success"
                 if primary_only
                 else (
-                    str(scratchpad_entry.get("status") or "error")
+                    str(
+                        scratchpad_entry.get("effective_status")
+                        or scratchpad_entry.get("status")
+                        or "error"
+                    )
                     if scratchpad_entry
                     else (
                         "error"
@@ -731,17 +867,8 @@ class SequentialPattern(BasePattern):
                     )
                 )
             )
-            upstream_error_handoffs = (
-                [
-                    handoff
-                    for handoff in codebuilder_run_state.get_handoffs(trace_id)
-                    if handoff.get("status") == "error"
-                    and handoff.get("subagent_id") != "code-troubleshooter"
-                ]
-                if squad_id == "code-squad"
-                else []
-            )
-            if upstream_error_handoffs:
+            upstream_error_handoffs = []
+            if squad_id == "code-squad" and _has_actionable_failure(trace_id):
                 status = "error"
             telemetry_bus.log_event(
                 trace_id,
@@ -792,7 +919,9 @@ class SequentialPattern(BasePattern):
                     )
                 )
             )
-            handoff_history = codebuilder_run_state.get_handoffs(trace_id)
+            handoff_history = (
+                _normalized_handoffs(trace_id) if squad_id == "code-squad" else []
+            )
             tester_positions = [
                 index
                 for index, handoff in enumerate(handoff_history)
@@ -803,18 +932,23 @@ class SequentialPattern(BasePattern):
                 for index, handoff in enumerate(handoff_history)
                 if handoff.get("subagent_id") == "code-troubleshooter"
             ]
+            execution_failed_now = execution_failed(
+                codebuilder_run_state.get_execution(trace_id)
+            )
             test_passed_after_troubleshooting = (
                 bool(tester_positions)
                 and bool(troubleshooter_positions)
                 and tester_positions[-1] > troubleshooter_positions[-1]
-                and handoff_history[tester_positions[-1]].get("status") == "success"
+                and handoff_history[tester_positions[-1]].get("effective_status")
+                == "success"
+                and not execution_failed_now
             )
             if test_passed_after_troubleshooting:
                 upstream_error_handoffs = []
                 status = "success"
             elif any(
                 handoff.get("subagent_id") == "tester"
-                and handoff.get("status") == "error"
+                and handoff.get("effective_status") == "error"
                 for handoff in handoff_history
             ):
                 primary_prompt += (
@@ -841,9 +975,14 @@ class SequentialPattern(BasePattern):
                 if isinstance(scratchpad_entry, dict)
                 else None
             )
-            has_fallback_handoff = (
-                isinstance(fallback_payload, dict)
-                and fallback_payload.get("handoff_source") == "orchestrator_fallback"
+            handoff_source = (
+                fallback_payload.get("handoff_source")
+                if isinstance(fallback_payload, dict)
+                else None
+            )
+            has_fallback_handoff = handoff_source == "orchestrator_fallback"
+            has_code_block_fallback = (
+                handoff_source == "orchestrator_code_block_fallback"
             )
             blocked_change_reason = codebuilder_run_state.code_change_block_reason(
                 trace_id
@@ -878,9 +1017,13 @@ class SequentialPattern(BasePattern):
             elif (
                 squad_id == "code-squad"
                 and workers
-                and scratchpad_entry.get("status") != "success"
+                and scratchpad_entry.get("effective_status") != "success"
             ):
-                status = str(scratchpad_entry.get("status") or "error")
+                status = str(
+                    scratchpad_entry.get("effective_status")
+                    or scratchpad_entry.get("status")
+                    or "error"
+                )
                 if status == "nothing_found":
                     if scratchpad_entry.get("subagent_id") == "tester":
                         tester_payload = fallback_payload or {}
@@ -945,10 +1088,21 @@ class SequentialPattern(BasePattern):
                 )
 
             if (
+                status == "success"
+                and execution_failed(codebuilder_run_state.get_execution(trace_id))
+            ):
+                status = "error"
+            if (
                 any(step.status == "ERROR" for step in trace_steps)
                 and not test_passed_after_troubleshooting
             ):
                 status = "error"
+            if has_code_block_fallback and status == "success":
+                final_answer += (
+                    "\n\nNote: the code was recovered from the sub-agent's single "
+                    "code block and previewed, but no tests or execution checks were "
+                    "run. Treat the change as unverified until tested."
+                )
             duration_ms = int((time.perf_counter() - started) * 1000)
             if squad_id:
                 metrics_attempted = True

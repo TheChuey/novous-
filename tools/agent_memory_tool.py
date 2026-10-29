@@ -50,27 +50,24 @@ def write_agent_scratchpad(
     payload: str = "",
 ) -> str:
     """Write structured sub-agent execution payloads into the shared scratchpad."""
+    from orchestration.code_handoffs import TASK_TYPE_BY_AGENT
     from orchestration.codebuilder_run_state import codebuilder_run_state
     from orchestration.orchestration_telemetry import telemetry_bus
 
     trace_context = telemetry_bus.current_context()
+    active_agent_id = ""
     if trace_context is not None:
         trace_id, active_agent_id = trace_context
-        task_types = {
-            "code-builder": "code_build",
-            "tester": "code_test",
-            "code-troubleshooter": "code_troubleshooting",
-        }
-        if active_agent_id in task_types:
+        if active_agent_id in TASK_TYPE_BY_AGENT:
             subagent_id = active_agent_id
-            task_type = task_types[active_agent_id]
+            task_type = TASK_TYPE_BY_AGENT[active_agent_id]
 
     parsed_payload = payload
-    if isinstance(payload, str) and payload.strip().startswith(("[", "{")):
+    if isinstance(parsed_payload, str) and parsed_payload.strip().startswith(("[", "{")):
         try:
-            parsed_payload = json.loads(payload)
+            parsed_payload = json.loads(parsed_payload)
         except Exception:
-            parsed_payload = payload
+            pass
 
     result = interface.store_subagent_result(
         subagent_id=subagent_id,
