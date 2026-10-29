@@ -50,6 +50,21 @@ def write_agent_scratchpad(
     payload: str = "",
 ) -> str:
     """Write structured sub-agent execution payloads into the shared scratchpad."""
+    from orchestration.codebuilder_run_state import codebuilder_run_state
+    from orchestration.orchestration_telemetry import telemetry_bus
+
+    trace_context = telemetry_bus.current_context()
+    if trace_context is not None:
+        trace_id, active_agent_id = trace_context
+        task_types = {
+            "code-builder": "code_build",
+            "tester": "code_test",
+            "code-troubleshooter": "code_troubleshooting",
+        }
+        if active_agent_id in task_types:
+            subagent_id = active_agent_id
+            task_type = task_types[active_agent_id]
+
     parsed_payload = payload
     if isinstance(payload, str) and payload.strip().startswith(("[", "{")):
         try:
@@ -63,6 +78,15 @@ def write_agent_scratchpad(
         status=status,
         payload=parsed_payload,
     )
+
+    if trace_context is not None:
+        codebuilder_run_state.save_handoff(
+            trace_id,
+            subagent_id,
+            task_type,
+            status,
+            parsed_payload,
+        )
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 

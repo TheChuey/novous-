@@ -169,6 +169,20 @@ export function setupFileControls({ editor, status, label, buttons, openTerminal
     });
   };
 
+  const loadManagedPath = async (path, expectedEditorValue = null) => {
+    if (isDirty() && editor.getValue() !== expectedEditorValue) {
+      status.textContent = 'Save or discard your unsaved editor changes before viewing an orchestration file.';
+      return false;
+    }
+    const opened = await Api.readManagedFile(path);
+    editor.setValue(opened.content);
+    managedPath = opened.path;
+    currentPath = '';
+    markSaved(opened.path);
+    window.dispatchEvent(new CustomEvent('novous:fs-changed'));
+    return true;
+  };
+
   const runInTerminal = async () => {
     const saved = await save();
     if (!saved && !currentPath) return;
@@ -188,5 +202,13 @@ export function setupFileControls({ editor, status, label, buttons, openTerminal
   editor.setSaveHandler?.(save);
   refreshLabel();
 
-  return { refreshLabel, save, saveAs, open };
+  return {
+    refreshLabel,
+    save,
+    saveAs,
+    open,
+    loadManagedPath,
+    isDirty,
+    getCurrentPath: () => managedPath || currentPath,
+  };
 }

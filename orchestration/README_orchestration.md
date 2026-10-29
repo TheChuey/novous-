@@ -106,6 +106,101 @@ it fails explicitly if no indexed vectors are compatible with the query embeddin
 
 All patterns emit a colorized terminal trace with one step per sub-agent, a scratchpad inspection step, and a primary synthesis step.
 
+## Live Squad Observability
+
+The dashboard's **Registered agent squads** panel is separate from the existing
+Workspace squad-folder manager. It currently registers `rag-squad` and
+`code-squad`, displays their primary-agent/sub-agent topology, and records
+persistent run counts, success/failure counts, average duration, and aggregate
+health in `agentMemory/data/orchestration_squad_metrics.json`.
+
+The dashboard starts an asynchronous run with `POST /api/orchestration/run/start`
+and subscribes to `GET /api/orchestration/stream/{trace_id}` using Server-Sent
+Events. `GET /api/orchestration/squads` returns registered squad definitions and
+their metrics. `GET /api/orchestration/catalog` lists selectable primary agents
+and sub-agents from `subAgentLibrary/`. Create and delete registered squads with
+`POST /api/orchestration/squads` and `DELETE /api/orchestration/squads/{squad_id}`;
+deleting a squad does not remove its primary-agent or sub-agent definitions.
+Completed run results and the run's captured scratchpad snapshot are available at
+`GET /api/orchestration/runs/{trace_id}` and
+`GET /api/orchestration/runs/{trace_id}/scratchpad`. Result payloads are held in
+a bounded in-memory cache; `GET /api/orchestration/squads/{squad_id}/latest`
+returns a squad's newest cached result for the dashboard's View result and View
+scratchpad buttons. Telemetry remains free of prompts and document text.
+CodeBuilder workflow requests include the active editor buffer. The
+`preview_editor_code` tool stores a trace-scoped editor preview retrievable from
+`GET /api/orchestration/runs/{trace_id}/editor-preview`; `run_python_code`
+execution results are similarly available from
+`GET /api/orchestration/runs/{trace_id}/editor-execution`. The CodeBuilder UI
+loads previews and diagnostics from these endpoints rather than putting code or
+execution output into the telemetry stream. Editor-buffer previews are not
+saved automatically. When a builder or troubleshooter does not call the editor
+preview tool but returns exactly one complete fenced code block, orchestration
+uses that block as a fallback editor handoff. If neither mechanism produces a
+preview, CodeBuilder reports that explicitly instead of showing only a success
+status. Code Development workflows use only the handoff recorded by their own
+run, not the shared scratchpad's previous result. If a code sub-agent returns
+without writing its required handoff, orchestration saves its response to the
+scratchpad with error status and surfaces it for review; that fallback is not
+evidence that a fix or check succeeded. For HTTP 404 reports,
+the troubleshooter can use `inspect_http_routes(path)` to statically list Python
+route declarations; it must not guess at missing request details, run a server
+as a test, or make unrelated feature changes. In build, troubleshoot, and full-squad runs
+whose user request mentions a 404, editor previews and workspace writes are
+blocked until the request includes both the exact URL/path and HTTP method.
+The synchronous `POST /api/orchestration/run` remains available.
+
+The default Code Development Squad uses the `code-planer` primary agent and the
+`code-builder`, `tester`, and `code-troubleshooter` sub-agents. Build and
+full-squad workflows first ask the planner for an implementation plan, pass that
+plan to the builder, and then run the tester on the builder's actual output. The
+builder implements the plan in Python. The tester is read-only and runs only
+focused, safe Python checks; a test failure is
+passed with its observed diagnostics to the troubleshooter. The troubleshooter
+is skipped when the builder and tester report no error. Saved default squad
+definitions using the old triager topology are migrated to this order. The
+existing `codingagent` and `code-analyzer` definitions are not deleted; they are
+simply not part of that default squad.
+
+The CodeBuilder agent panel offers **Plan**, **Build**, **Troubleshoot**, and
+**Run full squad** actions. Plan runs the read-only planner without a
+sub-agent. Build and Run full squad run the planner, builder, tester, and
+conditionally the troubleshooter in that order. Troubleshoot runs only the
+troubleshooter against the supplied evidence. Each code-agent handoff is
+run-scoped and passed to the primary planner for the final response.
+
+Troubleshoot examines the relevant code and, when the request is to troubleshoot
+or repair and the root cause is confirmed, applies a minimal fix. It must preview
+each exact proposed file write before applying it, report only tool-confirmed
+changes, and must not claim tests were run unless it actually ran a focused check.
+
+While a CodeBuilder workflow runs, its editor activity bar displays tool calls
+and workflow status, and the chat transcript receives planner/builder/tester/
+troubleshooter stage updates and tool activity. Tester execution output and
+diagnostics appear in the editor console and chat; diagnostic line highlights
+are shown only when the executed source matches the editor buffer. Code previews
+load the current workspace file (unless that
+would replace unsaved editor work), highlight and count changed lines, and
+collapse unchanged regions with nearby context. **Show full file** restores the
+complete file. Successful writes reload the changed workspace file when safe and
+mark the changed lines as applied.
+
+Code Builder and Troubleshooter can call `preview_code_change(path,
+proposed_content)`. It validates the target under the active file-manager root,
+compares the proposed text without writing it, and emits only the relative path
+and changed line numbers to telemetry. Builder instructions require a successful
+preview before each `write_file`. Successful writes emit a separate applied
+change event. The dashboard's **Review code changes** button opens the managed
+workspace file in the editor and highlights the reported lines; source text,
+tool arguments, and proposed content are not included in telemetry.
+For a new file, the review button becomes available after the file is written.
+
+Telemetry is bounded and thread-safe. It records orchestration stages, agent
+handoffs, tool names/status/duration, scratchpad status/result counts, and
+completion status. It deliberately omits user prompts, tool arguments, tool
+results, scratchpad payloads, and retrieved document text. Trace history,
+per-trace event counts, listener queues, and SSE lifetimes are capped.
+
 ## REST API
 
 `POST /api/orchestration/run`
@@ -122,10 +217,24 @@ All patterns emit a colorized terminal trace with one step per sub-agent, a scra
 
 The response contains `trace_id`, `pattern`, `query`, `status`, `final_answer`, `result_payload`, and the full `execution_trace`.
 
+To start a dashboard workflow asynchronously, post the registered squad and the
+requested work:
+
+```json
+{
+  "squad_id": "rag-squad",
+  "user_query": "Summarize the indexed leadership notes"
+}
+```
+
+The response contains a `trace_id` for the live SSE endpoint. The asynchronous
+endpoint uses the selected squad's registered agent topology rather than
+accepting arbitrary agents from the browser.
+
 ## Testing
 
 ```bash
-python -m pytest tests/test_orchestration.py -q
+python -m pytest tests/test_orchestration.py tests/test_orchestration_observability.py -q
 ```
 
 The suite validates YAML loading, the documentation contract, and the sequential trace structure. Agent turns are mocked so the tests do not require a running Ollama server.

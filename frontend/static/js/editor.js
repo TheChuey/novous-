@@ -167,6 +167,7 @@ export function renderEditorView(container, initialPath = null) {
       suppressEditorChanges = true;
       state.editor.setLanguage(languageForPath(data.path));
       state.editor.setValue(data.content);
+      state.editor.setHighlightedLines(initialFile.previewLines || []);
       suppressEditorChanges = false;
       updateBytes();
       updatePos();
@@ -327,7 +328,7 @@ export function renderEditorView(container, initialPath = null) {
   });
   container.querySelector('#editor-save-cancel').addEventListener('click', () => saveDialog.close());
   container.querySelector('#editor-reload').addEventListener('click', () => {
-    if (state.path) openFile(state.path);
+    if (state.path) openFile(state.path, state.managedPath);
   });
   editorReady.then(instance => instance.setSaveHandler(saveFile));
 

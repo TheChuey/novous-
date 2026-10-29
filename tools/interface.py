@@ -83,7 +83,16 @@ def read_file_bytes(path: str, max_bytes: int) -> dict:
 
 def write_file(path: str, content: str) -> dict:
     """Write a file through the configured file-manager root."""
-    return file_manager_service.write_file(path, content)
+    from file_manager import backend
+    from tools.code_change_preview import record_applied_code_change
+
+    resolved = backend.resolve_workspace_path(path)
+    previous_content = (
+        resolved.read_text(encoding="utf-8") if resolved.is_file() else ""
+    )
+    result = file_manager_service.write_file(path, content)
+    record_applied_code_change(result["path"], previous_content, content)
+    return result
 
 
 def delete_file(path: str) -> dict:

@@ -21,6 +21,12 @@ def write_file(path: str, content: str) -> str:
     """
     if not path or not path.strip():
         raise ValueError("A file path is required.")
+    from orchestration.codebuilder_run_state import codebuilder_run_state
+    from orchestration.orchestration_telemetry import telemetry_bus
+
+    context = telemetry_bus.current_context()
+    if context is not None:
+        codebuilder_run_state.assert_code_changes_allowed(context[0])
     try:
         result = interface.write_file(path, content)
     except Exception as exc:

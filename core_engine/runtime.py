@@ -1,5 +1,6 @@
 import json
 import inspect
+import time
 from dataclasses import dataclass, field
 from typing import Callable, List, Any
 import ollama
@@ -72,7 +73,6 @@ class Agent:
     def _format_rag_presenter_reply(self, content: str) -> str:
         if self.profile.id != "rag-presenter":
             return content
-
         decoder = json.JSONDecoder()
         index = 0
         while index < len(content):
@@ -111,12 +111,35 @@ class Agent:
             return formatted
         return content
 
+    def _is_code_subagent_handoff(self, tool_name: str) -> bool:
+        return (
+            tool_name == "write_agent_scratchpad"
+            and self.profile.id
+            in {"code-builder", "tester", "code-troubleshooter"}
+        )
+
     def act(self, tool_call: dict, origin: str) -> Any:
         fn_info = tool_call.get("function", {})
         name = fn_info.get("name")
         args = fn_info.get("arguments", {})
 
         if name not in self.tools:
+            from orchestration.orchestration_telemetry import telemetry_bus
+
+            trace_context = telemetry_bus.current_context()
+            if trace_context:
+                trace_id, agent_id = trace_context
+                telemetry_bus.log_event(
+                    trace_id,
+                    "TOOL_CALL_END",
+                    name or "unknown",
+                    agent_id,
+                    {
+                        "tool_name": name or "unknown",
+                        "status": "error",
+                        "duration_ms": 0,
+                    },
+                )
             return f"Error: Tool '{name}' not found."
 
         stats = self.tool_stats.setdefault(
@@ -125,10 +148,47 @@ class Agent:
         stats["calls"] += 1
 
         tool_func = self.tools[name]
+        from orchestration.orchestration_telemetry import telemetry_bus
+
+        trace_context = telemetry_bus.current_context()
+        started = time.perf_counter()
+        if trace_context:
+            trace_id, agent_id = trace_context
+            telemetry_bus.log_event(
+                trace_id,
+                "TOOL_CALL_START",
+                agent_id,
+                name,
+                {"tool_name": name},
+            )
         try:
             if isinstance(args, str):
                 args = json.loads(args)
             result = tool_func(**args) if isinstance(args, dict) else tool_func(args)
+            if self._is_code_subagent_handoff(name) and trace_context:
+                from orchestration.codebuilder_run_state import codebuilder_run_state
+
+                trace_id, agent_id = trace_context
+                task_types = {
+                    "code-builder": "code_build",
+                    "tester": "code_test",
+                    "code-troubleshooter": "code_troubleshooting",
+                }
+                payload = args.get("payload", "") if isinstance(args, dict) else ""
+                if isinstance(payload, str) and payload.strip().startswith(("{", "[")):
+                    try:
+                        payload = json.loads(payload)
+                    except json.JSONDecodeError:
+                        pass
+                codebuilder_run_state.save_handoff(
+                    trace_id,
+                    agent_id,
+                    task_types[agent_id],
+                    str(args.get("status", "success"))
+                    if isinstance(args, dict)
+                    else "success",
+                    payload,
+                )
             stats["successes"] += 1
             stats["success_rate"] = stats["successes"] / stats["calls"]
             event = {"tool": name, "args": args, "status": "success", "origin": origin}
@@ -141,12 +201,101 @@ class Agent:
             if getattr(tool_func, "display_output", False) and isinstance(result, str):
                 event["display"] = result
             self.tool_events.append(event)
+            if trace_context:
+                telemetry_bus.log_event(
+                    trace_id,
+                    "TOOL_CALL_END",
+                    name,
+                    agent_id,
+                    {
+                        "tool_name": name,
+                        "status": "success",
+                        "duration_ms": int((time.perf_counter() - started) * 1000),
+                    },
+                )
+                if name in {"write_agent_scratchpad", "read_agent_scratchpad"}:
+                    handoff = {}
+                    if name == "write_agent_scratchpad":
+                        handoff = {
+                            "status": args.get("status", "success")
+                            if isinstance(args, dict)
+                            else "success",
+                            "subagent_id": args.get("subagent_id", "")
+                            if isinstance(args, dict)
+                            else "",
+                            "direction": "write",
+                        }
+                        payload = args.get("payload") if isinstance(args, dict) else None
+                        try:
+                            if isinstance(payload, str):
+                                payload = json.loads(payload)
+                        except json.JSONDecodeError:
+                            payload = None
+                        if isinstance(payload, dict):
+                            for key in ("results", "issues_found"):
+                                if isinstance(payload.get(key), list):
+                                    handoff["result_count"] = len(payload[key])
+                                    break
+                    else:
+                        try:
+                            memory = json.loads(result) if isinstance(result, str) else {}
+                        except json.JSONDecodeError:
+                            memory = {}
+                        latest = memory.get("latest_subagent_result", {})
+                        payload = latest.get("payload", {}) if isinstance(latest, dict) else {}
+                        handoff = {
+                            "status": latest.get("status", "success")
+                            if isinstance(latest, dict)
+                            else "success",
+                            "subagent_id": latest.get("subagent_id", "")
+                            if isinstance(latest, dict)
+                            else "",
+                            "direction": "read",
+                        }
+                        if isinstance(payload, dict):
+                            for key in ("results", "issues_found"):
+                                if isinstance(payload.get(key), list):
+                                    handoff["result_count"] = len(payload[key])
+                                    break
+                    telemetry_bus.log_event(
+                        trace_id,
+                        "SCRATCHPAD_HANDOFF",
+                        agent_id,
+                        "scratchpad",
+                        handoff,
+                    )
             return result
         except Exception as exc:
             stats["errors"] += 1
             stats["success_rate"] = stats["successes"] / stats["calls"]
             err_msg = f"Error executing tool '{name}': {str(exc)}"
             self.tool_events.append({"tool": name, "args": args, "status": "error", "error": str(exc), "origin": origin})
+            if trace_context:
+                telemetry_bus.log_event(
+                    trace_id,
+                    "TOOL_CALL_END",
+                    name,
+                    agent_id,
+                    {
+                        "tool_name": name,
+                        "status": "error",
+                        "duration_ms": int((time.perf_counter() - started) * 1000),
+                    },
+                )
+                if name == "write_agent_scratchpad":
+                    telemetry_bus.log_event(
+                        trace_id,
+                        "SCRATCHPAD_HANDOFF",
+                        agent_id,
+                        "scratchpad",
+                        {
+                            "status": "error",
+                            "subagent_id": args.get("subagent_id", "")
+                            if isinstance(args, dict)
+                            else "",
+                            "direction": "write",
+                        },
+                    )
             return err_msg
 
     def observe(self, tool_name: str, result: Any) -> None:
@@ -187,6 +336,10 @@ class Agent:
                 tool_name = call["function"]["name"]
                 result = self.act(call, origin)
                 self.observe(tool_name, result)
+                if self._is_code_subagent_handoff(tool_name):
+                    if isinstance(result, str) and result.startswith("Error executing tool"):
+                        return result
+                    return "Code sub-agent scratchpad handoff recorded."
 
         return "(Executed maximum tool rounds without final text summary.)"
 
@@ -229,6 +382,7 @@ class Agent:
                 break
 
             origin = "native" if native_calls else "text_json"
+            handoff_attempted = False
             for call in tool_calls:
                 name = call["function"]["name"]
                 before = len(self.tool_events)
@@ -236,6 +390,17 @@ class Agent:
                 self.observe(name, result)
                 for event in self.tool_events[before:]:
                     yield {"type": "tool_event", "event": event}
+                if self._is_code_subagent_handoff(name):
+                    final_text = (
+                        result
+                        if isinstance(result, str)
+                        and result.startswith("Error executing tool")
+                        else "Code sub-agent scratchpad handoff recorded."
+                    )
+                    handoff_attempted = True
+                    break
+            if handoff_attempted:
+                break
         else:
             final_text = "(Executed maximum tool rounds without final text summary.)"
 

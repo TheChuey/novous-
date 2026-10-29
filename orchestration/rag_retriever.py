@@ -46,6 +46,23 @@ def run_rag_retriever(task_prompt: str, parameters: dict) -> str:
         status=status,
         payload=payload,
     )
+    from orchestration.orchestration_telemetry import telemetry_bus
+
+    trace_context = telemetry_bus.current_context()
+    if trace_context:
+        trace_id, agent_id = trace_context
+        telemetry_bus.log_event(
+            trace_id,
+            "SCRATCHPAD_HANDOFF",
+            agent_id,
+            "scratchpad",
+            {
+                "status": status,
+                "subagent_id": RAG_RETRIEVER_ID,
+                "result_count": len(payload.get("results", [])),
+                "direction": "write",
+            },
+        )
     return json.dumps(
         {
             "subagent_id": RAG_RETRIEVER_ID,

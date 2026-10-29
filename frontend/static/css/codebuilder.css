@@ -242,6 +242,45 @@ body.is-resizing {
   padding: 0.35rem;
 }
 
+.codebuilder-scratchpad-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.25rem;
+  border-top: 1px solid var(--border-color);
+}
+.codebuilder-scratchpad-dialog {
+  width: min(760px, 92vw);
+  max-height: 85vh;
+  padding: 1rem;
+  color: var(--text-main);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+}
+.codebuilder-scratchpad-dialog::backdrop { background: rgba(0, 0, 0, 0.7); }
+.codebuilder-scratchpad-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.codebuilder-scratchpad-heading h2 { margin: 0; font-size: 1rem; }
+.codebuilder-scratchpad-heading p { margin: 0.25rem 0 0; }
+.codebuilder-scratchpad-content {
+  max-height: 68vh;
+  overflow: auto;
+  margin: 0.75rem 0 0;
+  padding: 0.75rem;
+  background: var(--bg-dark);
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 0.8rem/1.5 Consolas, monospace;
+}
+
 .codebuilder-agent-select {
   grid-column: 1 / -1;
   width: 100%;
@@ -625,6 +664,47 @@ button.diagnostic-item {
 .codebuilder-chat-actions .btn {
   width: 100%;
 }
+
+.codebuilder-workflow-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.codebuilder-orchestration-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.2rem 0.6rem;
+  padding: 0.45rem 0.7rem;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.76rem;
+}
+.codebuilder-orchestration-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.codebuilder-orchestration-summary span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.codebuilder-orchestration-bar p {
+  grid-column: 1;
+  margin: 0;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.codebuilder-orchestration-bar button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+#codebuilder-editor-activity[data-state="running"] { color: var(--primary); }
+#codebuilder-editor-activity[data-state="error"] { color: var(--danger); }
+#codebuilder-editor-activity[data-state="success"] { color: var(--success); }
 
 /* ---------- Expanded code modal ---------- */
 .codebuilder-code-overlay {

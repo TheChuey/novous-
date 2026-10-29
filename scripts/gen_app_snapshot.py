@@ -18,17 +18,20 @@ MAX_FILE_BYTES = 200_000
 
 OUT = ROOT / "app_documentation" / f"NOVOUS_APP_SNAPSHOT_{TODAY}_new.md"
 
-KEY_COMPONENTS = """- server.py: FastAPI app entrypoint serving static UI and API routes
-- core_engine/: agent factory, runtime, tool catalog, langgraph tools
+KEY_COMPONENTS = """- server.py: FastAPI app entrypoint serving static UI and API routes, including the orchestration router
+- core_engine/: agent factory, runtime, tool catalog, langgraph tools, and required RAG-presenter delegation
+- orchestration/: sub-agent registry, execution patterns, REST router, and deterministic RAG retriever
+- subAgentLibrary/: pure-YAML definitions for background sub-agents
 - editor/: editor session, operations, schemas, interface
-- agentMemory/: shared agent scratchpad plus a SQL-backed RAG knowledge base
+- agentMemory/: shared scratchpad with sub-agent history plus a SQL-backed RAG knowledge base
 - codebuilder/: code plan and execution pillar with terminal and file tools
 - file_manager/: sandboxed file CRUD service, schemas, and API
-- tools/: agent-facing tools (read, write, edit, delete, map, memory, editor)
-- frontend/: static assets and HTML pages (index, chat, editor, code builder, testing, terminal)
-- library/: centralized single-file agent definitions
+- tools/: agent-facing tools (read, write, edit, delete, map, memory, sub-agent invocation, editor)
+- frontend/: static assets and HTML pages, including chat rendering of the latest sub-agent result
+- library/: centralized primary-agent definitions, including rag-presenter
 - workspace/: project configuration and workflow utilities
 - test_environment/: prompt builder, test runner, tool workbench, test agents
+- tests/: orchestration and sub-agent scratchpad tests
 - about/: app identity source synced to the index page and app documentation
 - scripts/: documentation and migration generators
 - app_documentation/: generated snapshot and master copy documents"""
@@ -80,7 +83,7 @@ def main():
         f.write("Description: Self-contained reference for an AI agent. Captures Novous app purpose, architecture, file structure, and complete source code. Designed for grounding/understanding without repo access.\n\n")
         f.write("# NOVOUS APPLICATION SNAPSHOT\n\n")
         f.write("## 1) Overview\n\n")
-        f.write("Novous is an agent orchestration/workspace system with a FastAPI backend, a static frontend, a core engine for agents and tools, editor integration, shared agent memory, a code builder, a sandboxed file manager, a repository-root agent library, and a test environment.\n\n")
+        f.write("Novous is an agent orchestration/workspace system with a FastAPI backend, a static frontend, a core engine for agents and tools, a sub-agent orchestration pillar with enforced RAG retrieval, editor integration, shared agent memory, a code builder, a sandboxed file manager, a repository-root agent library, and a test environment.\n\n")
         f.write(f"Key components:\n{KEY_COMPONENTS}\n\n")
         f.write("## 2) Table of Contents\n\n")
         f.write("1. Overview\n")

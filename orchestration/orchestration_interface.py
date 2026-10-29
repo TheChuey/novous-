@@ -1,6 +1,7 @@
 """Gateway interfacing orchestration with core_engine and agentMemory."""
 
 from pathlib import Path
+from contextlib import nullcontext
 from typing import Any, Tuple
 
 from agentMemory import interface as memory_interface
@@ -52,6 +53,10 @@ def read_latest_subagent_scratchpad() -> dict[str, Any]:
     return memory.get("latest_subagent_result", {})
 
 
+def read_scratchpad_snapshot() -> dict[str, Any]:
+    return memory_interface.read_memory()
+
+
 def _build_profile(agent_id: str, meta: dict[str, Any], body: str) -> AgentProfile:
     tools = meta.get("tools") or []
     if not isinstance(tools, list):
@@ -71,23 +76,34 @@ def _build_profile(agent_id: str, meta: dict[str, Any], body: str) -> AgentProfi
 
 
 def run_agent_turn(
-    agent_id: str, prompt_input: str, parameters: dict[str, Any] | None = None
+    agent_id: str,
+    prompt_input: str,
+    parameters: dict[str, Any] | None = None,
+    trace_id: str | None = None,
 ) -> str:
-    if _normalize_agent_id(agent_id) == "rag-retriever":
-        from orchestration.rag_retriever import run_rag_retriever
+    from orchestration.orchestration_telemetry import telemetry_bus
 
-        return run_rag_retriever(prompt_input, parameters or {})
+    context = (
+        telemetry_bus.agent_context(trace_id, agent_id)
+        if trace_id
+        else nullcontext()
+    )
+    with context:
+        if _normalize_agent_id(agent_id) == "rag-retriever":
+            from orchestration.rag_retriever import run_rag_retriever
 
-    meta, body = load_agent(agent_id)
-    profile = _build_profile(agent_id, meta, body)
-    tools = (
-        tool_catalog.get_tools(profile.tools)
-        if profile.mode == "agent" and profile.tools
-        else []
-    )
-    agent_instance = runtime.Agent(
-        model=profile.model or None,
-        tools=tools,
-        profile=profile,
-    )
-    return str(agent_instance.think(prompt_input))
+            return run_rag_retriever(prompt_input, parameters or {})
+
+        meta, body = load_agent(agent_id)
+        profile = _build_profile(agent_id, meta, body)
+        tools = (
+            tool_catalog.get_tools(profile.tools)
+            if profile.mode == "agent" and profile.tools
+            else []
+        )
+        agent_instance = runtime.Agent(
+            model=profile.model or None,
+            tools=tools,
+            profile=profile,
+        )
+        return str(agent_instance.think(prompt_input))

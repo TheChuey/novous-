@@ -7,6 +7,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = REPO_ROOT / "workspace"
 LIBRARY_ROOT = REPO_ROOT / "library"
+SUBAGENT_LIBRARY_ROOT = REPO_ROOT / "subAgentLibrary"
 ALLOWED_PATHS_CONFIG = REPO_ROOT / "tools" / "allowed_paths.json"
 
 
@@ -37,6 +38,21 @@ def resolve_project_path(relative_path: str, root: Path | None = None) -> Path:
             candidate.relative_to(allowed_root)
         except ValueError:
             raise ValueError(f"Access outside agent library '{allowed_root}' is forbidden.") from None
+        return candidate
+
+    if clean_rel == "subAgentLibrary" or clean_rel.startswith("subAgentLibrary/"):
+        allowed_root = SUBAGENT_LIBRARY_ROOT.resolve()
+        candidate = (REPO_ROOT / clean_rel).resolve()
+        if candidate.parent != allowed_root or candidate.suffix.lower() != ".yaml":
+            raise ValueError(
+                f"Only YAML files directly inside sub-agent library '{allowed_root}' can be edited."
+            )
+        try:
+            candidate.relative_to(allowed_root)
+        except ValueError:
+            raise ValueError(
+                f"Access outside sub-agent library '{allowed_root}' is forbidden."
+            ) from None
         return candidate
 
     if root is None and Path(relative_path).is_absolute():
@@ -72,12 +88,18 @@ def read_file_content(relative_path: str) -> dict:
 
 def write_file_content(relative_path: str, content: str) -> dict:
     abs_path = resolve_project_path(relative_path)
+    if relative_path.replace("\\", "/").startswith("subAgentLibrary/") and not abs_path.is_file():
+        raise FileNotFoundError(
+            f"Sub-agent definition does not exist and cannot be created here: {relative_path}"
+        )
     abs_path.parent.mkdir(parents=True, exist_ok=True)
     abs_path.write_text(content, encoding="utf-8")
     return {"path": relative_path, "bytes_written": len(content.encode('utf-8'))}
 
 
 def delete_path(relative_path: str) -> dict:
+    if relative_path.replace("\\", "/").startswith("subAgentLibrary/"):
+        raise ValueError("Sub-agent definition files cannot be deleted from the editor.")
     abs_path = resolve_project_path(relative_path)
     if abs_path.is_dir():
         if any(abs_path.iterdir()):
@@ -91,6 +113,8 @@ def delete_path(relative_path: str) -> dict:
 
 
 def create_path(relative_path: str, kind: str = "file") -> dict:
+    if relative_path.replace("\\", "/").startswith("subAgentLibrary/"):
+        raise ValueError("New sub-agent definition files cannot be created from the editor.")
     abs_path = resolve_project_path(relative_path)
     if abs_path.exists():
         raise FileExistsError(f"Path already exists: {relative_path}")

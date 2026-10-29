@@ -57,6 +57,17 @@ function createTextareaEditor(element, initialValue) {
       return { lineNumber: lines.length, column: lines[lines.length - 1].length + 1 };
     },
     setDiagnostics: () => {},
+    setHighlightedLines: (lines) => {
+      if (!Array.isArray(lines) || !lines.length) return;
+      const sourceLines = textarea.value.split('\n');
+      const targetLine = Math.max(1, Math.min(lines[0], sourceLines.length));
+      const lineStart = sourceLines.slice(0, targetLine - 1).join('\n').length
+        + (targetLine > 1 ? 1 : 0);
+      const lineEnd = lineStart + sourceLines[targetLine - 1].length;
+      textarea.focus();
+      textarea.setSelectionRange(lineStart, lineEnd);
+    },
+    setChangeView: () => {},
     setRunHandler: (handler) => { runHandler = handler; },
     setSaveHandler: (handler) => { saveHandler = handler; },
     onChange: (handler) => { changeHandler = handler; },
@@ -96,6 +107,7 @@ export async function attachCodeBuilderEditor(
       fontSize: 14,
       fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace",
       fontLigatures: true,
+      glyphMargin: true,
       formatOnPaste: true,
       guides: { bracketPairs: true, indentation: true },
       lineNumbers: 'on',
@@ -122,6 +134,7 @@ export async function attachCodeBuilderEditor(
       run: () => runHandler?.(),
     });
     let saveAction = null;
+    let highlightDecorations = [];
 
     return {
       getValue: () => editor.getValue(),
@@ -167,6 +180,61 @@ export async function attachCodeBuilderEditor(
           startColumn: item.column || 1,
           endColumn: (item.column || 1) + 1,
         })));
+      },
+      setHighlightedLines: (lines, kind = 'preview') => {
+        const applied = kind === 'applied';
+        const error = kind === 'error';
+        highlightDecorations = editor.deltaDecorations(
+          highlightDecorations,
+          (Array.isArray(lines) ? lines : [])
+            .filter(line => Number.isInteger(line) && line > 0)
+            .map(line => ({
+              range: new monaco.Range(line, 1, line, 1),
+              options: {
+                isWholeLine: true,
+                className: applied
+                  ? 'code-change-applied-line'
+                  : error
+                    ? 'code-change-error-line'
+                    : 'code-change-preview-line',
+                glyphMarginClassName: applied
+                  ? 'code-change-applied-glyph'
+                  : error
+                    ? 'code-change-error-glyph'
+                    : 'code-change-preview-glyph',
+                overviewRuler: {
+                  color: applied ? '#22c55e' : error ? '#ef4444' : '#facc15',
+                  position: monaco.editor.OverviewRulerLane.Right
+                }
+              }
+            }))
+        );
+        if (lines?.length) editor.revealLineInCenter(lines[0]);
+      },
+      setChangeView: (lines, compact = true) => {
+        const model = editor.getModel();
+        if (typeof editor.setHiddenAreas !== 'function' || !model) return;
+        if (!compact || !Array.isArray(lines) || !lines.length) {
+          editor.setHiddenAreas([]);
+          return;
+        }
+        const visible = new Set();
+        lines.forEach(line => {
+          for (let current = Math.max(1, line - 2); current <= line + 2; current += 1) {
+            if (current <= model.getLineCount()) visible.add(current);
+          }
+        });
+        const hidden = [];
+        let start = null;
+        for (let line = 1; line <= model.getLineCount() + 1; line += 1) {
+          if (line <= model.getLineCount() && !visible.has(line)) {
+            if (start === null) start = line;
+          } else if (start !== null) {
+            hidden.push(new monaco.Range(start, 1, line - 1, 1));
+            start = null;
+          }
+        }
+        editor.setHiddenAreas(hidden);
       },
       dispose: () => editor.dispose(),
     };

@@ -4,6 +4,119 @@ import { buildTestPanel } from './test_panel.js';
 import { openTestSuiteRunner } from './test_suite_runner.js';
 import { renderTree } from './tree.js';
 
+export function formatScratchpadMarkdown(memory) {
+  const lines = ['# Agent Scratchpad', '', `Exported: ${new Date().toLocaleString()}`, ''];
+  const subagentHistory = Array.isArray(memory.subagent_history)
+    ? [...memory.subagent_history]
+    : [];
+  const latestSubagent = memory.latest_subagent_result;
+  if (
+    latestSubagent
+    && !subagentHistory.some(entry => entry.updated_at === latestSubagent.updated_at)
+  ) {
+    subagentHistory.push(latestSubagent);
+  }
+
+  lines.push('## Sub-agent Results', '');
+  if (!subagentHistory.length) {
+    lines.push('No sub-agent results are currently saved.', '');
+  } else {
+    subagentHistory.slice().reverse().forEach((entry, index) => {
+      const payload = entry.payload && typeof entry.payload === 'object'
+        ? entry.payload
+        : {};
+      lines.push(
+        `### ${index === 0 ? 'Latest: ' : ''}${entry.subagent_id || 'Unknown sub-agent'}`,
+        '',
+        `- **Status:** ${entry.status || 'unknown'}`,
+        `- **Task type:** ${entry.task_type || 'unspecified'}`
+      );
+      if (entry.updated_at) lines.push(`- **Updated:** ${entry.updated_at}`);
+      if (payload.query) lines.push(`- **Query:** ${String(payload.query).replace(/\r?\n/g, ' ')}`);
+      if (payload.knowledge_branch_name) {
+        lines.push(`- **Knowledge branch:** ${payload.knowledge_branch_name}`);
+      }
+      if (payload.knowledge_branch_id) {
+        lines.push(`- **Knowledge branch ID:** ${payload.knowledge_branch_id}`);
+      }
+      if (payload.error) lines.push(`- **Error:** ${payload.error}`);
+      if (payload.skipped_incompatible_chunks) {
+        lines.push(`- **Skipped incompatible vectors:** ${payload.skipped_incompatible_chunks}`);
+      }
+
+      const results = Array.isArray(payload.results) ? payload.results : [];
+      if (results.length) {
+        lines.push('', `#### Retrieved passages (${results.length})`, '');
+        results.forEach((result, resultIndex) => {
+          lines.push(`##### ${resultIndex + 1}. ${result.path || 'Retrieved passage'}`);
+          if (result.score !== undefined && Number.isFinite(Number(result.score))) {
+            lines.push('', `- **Relevance:** ${Number(result.score).toFixed(4)}`);
+          }
+          if (result.chunk_index !== undefined) {
+            lines.push(`- **Chunk:** ${result.chunk_index}`);
+          }
+          lines.push('', '###### Passage', '');
+          const content = String(result.content || '');
+          const longestFence = Math.max(
+            0,
+            ...Array.from(content.matchAll(/`+/g), match => match[0].length)
+          );
+          const fence = '`'.repeat(Math.max(3, longestFence + 1));
+          lines.push(fence, content || '(No passage text returned.)', fence, '');
+        });
+      } else {
+        lines.push('', entry.status === 'nothing_found'
+          ? 'Retrieval completed without relevant passages.'
+          : 'No retrieved passages were saved.', '');
+      }
+      if (index < subagentHistory.length - 1) lines.push('---', '');
+    });
+  }
+
+  const reads = Array.isArray(memory.read_history)
+    ? memory.read_history
+    : (memory.latest_read ? [memory.latest_read] : []);
+  lines.push('## Recent File Reads', '');
+  if (!reads.length) {
+    lines.push('No file reads are currently saved.', '');
+  } else {
+    reads.forEach((entry, index) => {
+      if (index) lines.push('---', '');
+      lines.push(`### ${entry.path || 'Unknown file'}`, '');
+      if (entry.updated_at) lines.push(`- **Read at:** ${entry.updated_at}`);
+      if (entry.request) lines.push(`- **Request:** ${String(entry.request).replace(/\r?\n/g, ' ')}`);
+      lines.push('', '#### Contents', '');
+      const content = String(entry.content || '');
+      const longestFence = Math.max(
+        0,
+        ...Array.from(content.matchAll(/`+/g), match => match[0].length)
+      );
+      const fence = '`'.repeat(Math.max(3, longestFence + 1));
+      lines.push(fence, content, fence, '');
+    });
+  }
+
+  lines.push('## Latest Workspace Map', '');
+  if (memory.latest_map?.tree) {
+    lines.push(`Requested path: ${memory.latest_map.requested_path || 'Workspace root'}`, '');
+    const renderNode = (node, depth = 0) => {
+      const indent = '  '.repeat(depth);
+      (node.children || []).forEach(child => {
+        const label = child.type === 'directory' ? `**${child.name}/**` : child.name;
+        lines.push(`${indent}- ${label}${child.path ? ` — \`${child.path}\`` : ''}`);
+        if (child.type === 'directory') renderNode(child, depth + 1);
+      });
+    };
+    lines.push(`- **${memory.latest_map.tree.name || 'Workspace'}/**`);
+    renderNode(memory.latest_map.tree);
+    lines.push('');
+  } else {
+    lines.push('No workspace map is currently saved.', '');
+  }
+
+  return lines.join('\n');
+}
+
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -87,7 +200,7 @@ export function renderChatView(container) {
       <div class="scratchpad-dialog-head">
         <div>
           <h2>Agent Scratchpad</h2>
-          <p class="text-muted small">Recent file reads and the latest workspace map.</p>
+          <p class="text-muted small">Sub-agent results, retrieved evidence, recent file reads, and the latest workspace map.</p>
         </div>
         <button type="button" class="btn btn-sm" data-scratchpad-close aria-label="Close">Close</button>
       </div>
@@ -836,36 +949,6 @@ export function renderChatView(container) {
     }
   });
 
-  function formatScratchpadReads(memory) {
-    const reads = Array.isArray(memory.read_history)
-      ? memory.read_history
-      : (memory.latest_read ? [memory.latest_read] : []);
-    const lines = ['# Agent File Reads', '', `Exported: ${new Date().toLocaleString()}`, ''];
-
-    if (!reads.length) {
-      lines.push('No file reads are currently saved.', '');
-      return lines.join('\n');
-    }
-
-    reads.forEach((entry, index) => {
-      if (index > 0) lines.push('---', '');
-      lines.push(`## ${entry.path || 'Unknown file'}`, '');
-      if (entry.updated_at) lines.push(`- **Read at:** ${entry.updated_at}`);
-      if (entry.request) lines.push(`- **Request:** ${entry.request.replace(/\r?\n/g, ' ')}`);
-      lines.push('', '### Contents', '');
-
-      const content = String(entry.content || '');
-      const longestFence = Math.max(
-        0,
-        ...Array.from(content.matchAll(/`+/g), match => match[0].length)
-      );
-      const fence = '`'.repeat(Math.max(3, longestFence + 1));
-      lines.push(fence, content, fence, '');
-    });
-
-    return lines.join('\n');
-  }
-
   async function saveScratchpad(event) {
     const button = event.currentTarget;
     button.disabled = true;
@@ -873,8 +956,8 @@ export function renderChatView(container) {
       const memory = await Api.getAgentScratchpad();
       const date = new Date().toISOString().slice(0, 10);
       await Api.saveMarkdown(
-        formatScratchpadReads(memory),
-        `novous-agent-reads-${date}.md`
+        formatScratchpadMarkdown(memory),
+        `novous-agent-scratchpad-${date}.md`
       );
     } catch (error) {
       if (error.name === 'AbortError') return;
@@ -885,7 +968,7 @@ export function renderChatView(container) {
   }
 
   async function clearScratchpad(event) {
-    if (!window.confirm('Clear all saved agent reads and workspace maps? This cannot be undone.')) return;
+    if (!window.confirm('Clear all saved sub-agent results, file reads, and workspace maps? This cannot be undone.')) return;
     const button = event.currentTarget;
     button.disabled = true;
     try {

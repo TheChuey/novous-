@@ -377,6 +377,49 @@ export const Api = {
 
   // --- Squads ---
   async getSquads() { return get('/api/squads'); },
+
+  async getOrchestrationSquads() {
+    return get('/api/orchestration/squads');
+  },
+
+  async getLatestOrchestrationRun(squadId) {
+    return get(`/api/orchestration/squads/${encodeURIComponent(squadId)}/latest`);
+  },
+
+  async getOrchestrationCatalog() {
+    return get('/api/orchestration/catalog');
+  },
+
+  async createOrchestrationSquad(squad) {
+    return send('POST', '/api/orchestration/squads', squad);
+  },
+
+  async deleteOrchestrationSquad(squadId) {
+    return send('DELETE', `/api/orchestration/squads/${encodeURIComponent(squadId)}`);
+  },
+
+  async startOrchestrationRun(squadId, userQuery, workflowAction = 'all', parameters = {}) {
+    return send('POST', '/api/orchestration/run/start', {
+      squad_id: squadId,
+      user_query: userQuery,
+      workflow_action: workflowAction,
+      parameters
+    });
+  },
+
+  async getOrchestrationRunResult(traceId) {
+    return get(`/api/orchestration/runs/${encodeURIComponent(traceId)}`);
+  },
+
+  async getOrchestrationRunScratchpad(traceId) {
+    return get(`/api/orchestration/runs/${encodeURIComponent(traceId)}/scratchpad`);
+  },
+  async getOrchestrationEditorPreview(traceId) {
+    return get(`/api/orchestration/runs/${encodeURIComponent(traceId)}/editor-preview`);
+  },
+  async getOrchestrationEditorExecution(traceId) {
+    return get(`/api/orchestration/runs/${encodeURIComponent(traceId)}/editor-execution`);
+  },
   async createSquad(name, description = '') {
     return send('POST', '/api/squads/create', { name, description });
   },

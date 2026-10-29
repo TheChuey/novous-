@@ -65,7 +65,11 @@ WORKSPACE_PACKAGE = "workspace"
 WORKSPACE_SOURCE_EXT = {".py"}
 WORKSPACE_SOURCE_FILES = {"project.json"}
 
-SKIP_FILES = {"novous2-ai-builder-prompt-v2.md", "rag_config.json"}
+SKIP_FILES = {
+    "novous2-ai-builder-prompt-v2.md",
+    "rag_config.json",
+    "SubAgentOrchastrationPlan.md",
+}
 SKIP_PREFIXES = ("NOVOUS_APP_SNAPSHOT", "NOVOUS2_APP_SNAPSHOT", "MASTER_COPY")
 
 

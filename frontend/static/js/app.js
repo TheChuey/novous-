@@ -15,6 +15,9 @@ export const AppState = {
   ragScanJob: null
 };
 
+let dashboardTraceSource = null;
+let latestCodeChangePreview = null;
+
 const views = {
   dashboard: renderDashboardView,
   editor: renderEditorView,
@@ -32,6 +35,10 @@ function esc(value) {
 
 // --- Dashboard -------------------------------------------------------------
 function renderDashboardView(container) {
+  if (dashboardTraceSource) {
+    dashboardTraceSource.close();
+    dashboardTraceSource = null;
+  }
   const project = AppState.project || {};
   const agents = AppState.agents || [];
   const squads = project.squads || [];
@@ -107,6 +114,60 @@ function renderDashboardView(container) {
               <button class="btn btn-sm btn-ghost" data-squad-delete="${esc(s.name)}">✕</button></li>`).join('')
               || '<li class="text-muted">No squads yet.</li>'}
           </ul>
+          <div class="agent-observability">
+            <div class="card-head">
+              <div>
+                <h4>Registered agent squads</h4>
+                <p class="text-muted small">Live orchestration health and workflow traces. Separate from Workspace squad folders.</p>
+              </div>
+              <button class="btn btn-sm btn-primary" id="dash-new-agent-squad">+ New agent squad</button>
+            </div>
+            <form id="dash-agent-squad-form" class="agent-squad-form hidden">
+              <label class="small" for="dash-agent-squad-name">Squad name</label>
+              <input id="dash-agent-squad-name" class="form-input" maxlength="80" required placeholder="e.g. Documentation Squad">
+              <label class="small" for="dash-agent-squad-description">Description</label>
+              <input id="dash-agent-squad-description" class="form-input" maxlength="500" placeholder="What this squad does">
+              <label class="small" for="dash-agent-squad-primary">Primary agent</label>
+              <select id="dash-agent-squad-primary" class="form-select" required>
+                <option value="">Loading agents…</option>
+              </select>
+              <fieldset class="agent-squad-subagent-fieldset">
+                <legend class="small">Sub-agents from subAgentLibrary</legend>
+                <div id="dash-agent-squad-subagents" class="agent-squad-subagents">
+                  <span class="text-muted small">Loading sub-agents…</span>
+                </div>
+              </fieldset>
+              <p class="small text-danger hidden" id="dash-agent-squad-error" role="alert"></p>
+              <div class="root-management-actions">
+                <button class="btn btn-sm btn-primary" type="submit">Create squad</button>
+                <button class="btn btn-sm" type="button" id="dash-cancel-agent-squad">Cancel</button>
+              </div>
+            </form>
+            <div id="dash-agent-squads" class="agent-squad-list" aria-live="polite">
+              <p class="text-muted small">Loading registered squads…</p>
+            </div>
+            <label class="small" for="dash-orchestration-query">Workflow request</label>
+            <textarea id="dash-orchestration-query" class="form-input orchestration-query" rows="3"
+              placeholder="Describe the work for the selected agent squad"></textarea>
+            <p class="small" id="dash-orchestration-status" role="status" aria-live="polite"></p>
+            <div class="orchestration-terminal-wrap">
+              <div class="orchestration-terminal-head">
+                <strong>Live execution trace</strong>
+                <span class="text-muted small">Prompts, tool arguments, and retrieved document text are not shown.</span>
+                <button class="btn btn-sm hidden" id="dash-review-code-change" type="button">Review code changes</button>
+              </div>
+              <pre id="dash-orchestration-terminal" class="orchestration-terminal" aria-live="polite">Start a workflow to view its trace.</pre>
+            </div>
+            <dialog id="dash-orchestration-dialog" class="orchestration-result-dialog">
+              <form method="dialog">
+                <div class="orchestration-dialog-head">
+                  <h3 id="dash-orchestration-dialog-title">Workflow result</h3>
+                  <button class="btn btn-sm" aria-label="Close">Close</button>
+                </div>
+              </form>
+              <pre id="dash-orchestration-dialog-content" class="orchestration-dialog-content"></pre>
+            </dialog>
+          </div>
         </section>
 
         <section class="card dash-tree-card">
@@ -331,6 +392,378 @@ function renderDashboardView(container) {
     if (!confirm(`Delete squad "${name}"?`)) return;
     try { await Api.deleteSquad(name); await refreshProject(); renderDashboardView(container); }
     catch (err) { alert(err.message); }
+  });
+
+  const agentSquadList = container.querySelector('#dash-agent-squads');
+  const orchestrationQuery = container.querySelector('#dash-orchestration-query');
+  const orchestrationStatus = container.querySelector('#dash-orchestration-status');
+  const orchestrationTerminal = container.querySelector('#dash-orchestration-terminal');
+  const agentSquadForm = container.querySelector('#dash-agent-squad-form');
+  const primaryAgentSelect = container.querySelector('#dash-agent-squad-primary');
+  const subagentOptions = container.querySelector('#dash-agent-squad-subagents');
+  const squadFormError = container.querySelector('#dash-agent-squad-error');
+  const resultDialog = container.querySelector('#dash-orchestration-dialog');
+  const resultDialogTitle = container.querySelector('#dash-orchestration-dialog-title');
+  const resultDialogContent = container.querySelector('#dash-orchestration-dialog-content');
+  const reviewCodeChangeButton = container.querySelector('#dash-review-code-change');
+  const latestSquadTraces = new Map();
+  function showCodeChangePreview(preview) {
+    latestCodeChangePreview = preview;
+    reviewCodeChangeButton.classList.remove('hidden');
+    reviewCodeChangeButton.disabled = !preview.fileExists || !preview.changedLines.length;
+    reviewCodeChangeButton.textContent = !preview.fileExists
+      ? `New file will be reviewable after write · ${preview.path}`
+      : preview.changedLines.length
+        ? `Review ${preview.changedLines.length} changed lines · ${preview.path}`
+        : `No changed lines · ${preview.path}`;
+  }
+  if (latestCodeChangePreview) showCodeChangePreview(latestCodeChangePreview);
+  reviewCodeChangeButton.addEventListener('click', () => {
+    if (!latestCodeChangePreview?.fileExists || !latestCodeChangePreview.changedLines.length) return;
+    switchTab('editor', {
+      path: latestCodeChangePreview.path,
+      managedFile: true,
+      previewLines: latestCodeChangePreview.changedLines
+    });
+  });
+
+  function appendTraceLine(text) {
+    const lines = (orchestrationTerminal.textContent || '').split('\n');
+    if (lines.length === 1 && lines[0] === 'Start a workflow to view its trace.') {
+      orchestrationTerminal.textContent = '';
+    }
+    orchestrationTerminal.textContent += `${text}\n`;
+    const currentLines = orchestrationTerminal.textContent.split('\n');
+    if (currentLines.length > 200) {
+      orchestrationTerminal.textContent = currentLines.slice(-200).join('\n');
+    }
+    orchestrationTerminal.scrollTop = orchestrationTerminal.scrollHeight;
+  }
+
+  function renderAgentSquads(squads) {
+    agentSquadList.classList.remove('text-danger');
+    agentSquadList.replaceChildren();
+    if (!squads.length) {
+      agentSquadList.textContent = 'No registered agent squads are available.';
+      return;
+    }
+    squads.forEach(squad => {
+      const card = document.createElement('article');
+      card.className = 'agent-squad-card';
+      const head = document.createElement('div');
+      head.className = 'agent-squad-head';
+      const name = document.createElement('strong');
+      name.textContent = squad.name;
+      const badge = document.createElement('span');
+      const health = squad.metrics?.last_status || 'healthy';
+      badge.className = `badge ${health === 'healthy' ? 'badge-success' : health === 'degraded' ? 'badge-warning' : 'badge-danger'}`;
+      badge.textContent = health;
+      head.append(name, badge);
+
+      const description = document.createElement('p');
+      description.className = 'text-muted small';
+      description.textContent = squad.description;
+      const topology = document.createElement('p');
+      topology.className = 'agent-squad-topology';
+      const primary = document.createElement('span');
+      primary.textContent = `Primary: ${squad.primary_agent}  →  Subagents: `;
+      topology.appendChild(primary);
+      const subagents = squad.subagents || [];
+      if (!subagents.length) {
+        topology.appendChild(document.createTextNode('none'));
+      } else {
+        subagents.forEach((subagentId, index) => {
+          if (index) topology.appendChild(document.createTextNode(', '));
+          const link = document.createElement('button');
+          link.type = 'button';
+          link.className = 'agent-subagent-link';
+          link.dataset.editSubagent = subagentId;
+          link.textContent = subagentId;
+          link.title = `Edit subAgentLibrary/${subagentId}.yaml`;
+          topology.appendChild(link);
+        });
+      }
+      const metrics = document.createElement('p');
+      metrics.className = 'agent-squad-metrics small';
+      const values = squad.metrics || {};
+      metrics.textContent = `${values.total_runs || 0} runs · ${values.successful_runs || 0} successful · ${values.failed_runs || 0} failed · avg ${Math.round(values.average_duration_ms || 0)} ms`;
+      const run = document.createElement('button');
+      run.type = 'button';
+      run.className = 'btn btn-sm btn-primary';
+      run.dataset.runSquad = squad.squad_id;
+      run.textContent = 'Run workflow';
+      const actions = document.createElement('div');
+      actions.className = 'agent-squad-actions';
+      actions.appendChild(run);
+      const traceId = latestSquadTraces.get(squad.squad_id);
+      const viewResult = document.createElement('button');
+      viewResult.type = 'button';
+      viewResult.className = 'btn btn-sm';
+      viewResult.textContent = 'View result';
+      viewResult.disabled = !traceId;
+      if (traceId) {
+        viewResult.dataset.viewRunResult = traceId;
+      }
+      const viewScratchpad = document.createElement('button');
+      viewScratchpad.type = 'button';
+      viewScratchpad.className = 'btn btn-sm';
+      viewScratchpad.textContent = 'View scratchpad';
+      viewScratchpad.disabled = !traceId;
+      if (traceId) {
+        viewScratchpad.dataset.viewRunScratchpad = traceId;
+      }
+      actions.append(viewResult, viewScratchpad);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn btn-sm btn-danger';
+      remove.dataset.deleteAgentSquad = squad.squad_id;
+      remove.textContent = 'Delete squad';
+      actions.appendChild(remove);
+      card.append(head, description, topology, metrics, actions);
+      agentSquadList.appendChild(card);
+    });
+  }
+
+  function renderSquadCatalog(catalog) {
+    primaryAgentSelect.replaceChildren();
+    (catalog.agents || []).forEach(agent => {
+      const option = document.createElement('option');
+      option.value = agent.id;
+      option.textContent = `${agent.name} (${agent.id})`;
+      primaryAgentSelect.appendChild(option);
+    });
+    if (!primaryAgentSelect.options.length) {
+      primaryAgentSelect.innerHTML = '<option value="">No agents available</option>';
+    }
+
+    subagentOptions.replaceChildren();
+    (catalog.subagents || []).forEach(agent => {
+      const label = document.createElement('label');
+      label.className = 'agent-subagent-option';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.name = 'subagents';
+      checkbox.value = agent.id;
+      const copy = document.createElement('span');
+      copy.textContent = `${agent.name} (${agent.id})`;
+      label.append(checkbox, copy);
+      subagentOptions.appendChild(label);
+    });
+    if (!subagentOptions.children.length) {
+      subagentOptions.textContent = 'No sub-agent definitions were found.';
+    }
+  }
+
+  container.querySelector('#dash-new-agent-squad').addEventListener('click', () => {
+    agentSquadForm.classList.toggle('hidden');
+    squadFormError.classList.add('hidden');
+  });
+  container.querySelector('#dash-cancel-agent-squad').addEventListener('click', () => {
+    agentSquadForm.reset();
+    agentSquadForm.classList.add('hidden');
+    squadFormError.classList.add('hidden');
+  });
+  Api.getOrchestrationCatalog().then(renderSquadCatalog).catch(error => {
+    primaryAgentSelect.innerHTML = '<option value="">Could not load agents</option>';
+    subagentOptions.textContent = `Could not load sub-agents: ${error.message}`;
+  });
+
+  agentSquadForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    squadFormError.classList.add('hidden');
+    const subagents = [...subagentOptions.querySelectorAll('input[name="subagents"]:checked')]
+      .map(input => input.value);
+    const submit = agentSquadForm.querySelector('[type="submit"]');
+    submit.disabled = true;
+    try {
+      await Api.createOrchestrationSquad({
+        name: container.querySelector('#dash-agent-squad-name').value.trim(),
+        description: container.querySelector('#dash-agent-squad-description').value.trim(),
+        primary_agent: primaryAgentSelect.value,
+        subagents
+      });
+      agentSquadForm.reset();
+      agentSquadForm.classList.add('hidden');
+      renderAgentSquads((await Api.getOrchestrationSquads()).squads || []);
+    } catch (error) {
+      squadFormError.textContent = error.message;
+      squadFormError.classList.remove('hidden');
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  async function refreshAgentSquads() {
+    const data = await Api.getOrchestrationSquads();
+    const squadList = data.squads || [];
+    const latestRuns = await Promise.all(
+      squadList.map(squad => Api.getLatestOrchestrationRun(squad.squad_id))
+    );
+    latestRuns.forEach((entry, index) => {
+      if (entry.result?.trace_id) {
+        latestSquadTraces.set(squadList[index].squad_id, entry.result.trace_id);
+      }
+    });
+    renderAgentSquads(squadList);
+  }
+
+  refreshAgentSquads().catch(error => {
+    agentSquadList.textContent = `Could not load registered squads: ${error.message}`;
+    agentSquadList.classList.add('text-danger');
+  });
+
+  agentSquadList.addEventListener('click', async event => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    if (button.dataset.editSubagent) {
+      switchTab('editor', `subAgentLibrary/${button.dataset.editSubagent}.yaml`);
+      return;
+    }
+    if (button.dataset.deleteAgentSquad) {
+      const squadId = button.dataset.deleteAgentSquad;
+      if (!confirm(`Delete squad "${squadId}"? This removes only the squad registration and its metrics. Agents and sub-agent files will not be deleted.`)) return;
+      button.disabled = true;
+      try {
+        await Api.deleteOrchestrationSquad(squadId);
+        latestSquadTraces.delete(squadId);
+        await refreshAgentSquads();
+      } catch (error) {
+        orchestrationStatus.textContent = `Could not delete squad: ${error.message}`;
+        orchestrationStatus.className = 'small text-danger';
+        button.disabled = false;
+      }
+      return;
+    }
+    if (button.dataset.viewRunResult) {
+      button.disabled = true;
+      try {
+        const result = await Api.getOrchestrationRunResult(button.dataset.viewRunResult);
+        const lines = [
+          `Status: ${result.status}`,
+          '',
+          'Final answer',
+          result.final_answer || '(No final answer returned.)'
+        ];
+        if (result.result_payload !== undefined && result.result_payload !== null) {
+          lines.push('', 'Sub-agent result payload', JSON.stringify(result.result_payload, null, 2));
+        }
+        if (result.execution_trace?.length) {
+          lines.push('', 'Execution steps');
+          result.execution_trace.forEach(step => {
+            lines.push(`${step.step_number}. ${step.agent_id} · ${step.phase} · ${step.status}`);
+            if (step.error_reason) lines.push(`   ${step.error_reason}`);
+          });
+        }
+        resultDialogTitle.textContent = 'Workflow result';
+        resultDialogContent.textContent = lines.join('\n');
+        resultDialog.showModal();
+      } catch (error) {
+        orchestrationStatus.textContent = `Could not load workflow result: ${error.message}`;
+        orchestrationStatus.className = 'small text-danger';
+      } finally {
+        button.disabled = false;
+      }
+      return;
+    }
+    if (button.dataset.viewRunScratchpad) {
+      button.disabled = true;
+      try {
+        const scratchpad = await Api.getOrchestrationRunScratchpad(
+          button.dataset.viewRunScratchpad
+        );
+        resultDialogTitle.textContent = 'Workflow scratchpad';
+        resultDialogContent.textContent = JSON.stringify(scratchpad, null, 2);
+        resultDialog.showModal();
+      } catch (error) {
+        orchestrationStatus.textContent = `Could not load workflow scratchpad: ${error.message}`;
+        orchestrationStatus.className = 'small text-danger';
+      } finally {
+        button.disabled = false;
+      }
+      return;
+    }
+    if (!button.dataset.runSquad) return;
+    const workflowAction = button.dataset.workflowAction || 'all';
+    const query = orchestrationQuery.value.trim();
+    if (!query) {
+      orchestrationStatus.textContent = 'Enter a workflow request first.';
+      orchestrationStatus.className = 'small text-danger';
+      orchestrationQuery.focus();
+      return;
+    }
+    button.disabled = true;
+    if (dashboardTraceSource) dashboardTraceSource.close();
+    orchestrationTerminal.textContent = '';
+    orchestrationStatus.textContent = 'Starting workflow…';
+    orchestrationStatus.className = 'small text-muted';
+    try {
+      const started = await Api.startOrchestrationRun(
+        button.dataset.runSquad, query, workflowAction
+      );
+      orchestrationStatus.textContent = `Running ${started.squad_id} · trace ${started.trace_id}`;
+      orchestrationStatus.className = 'small text-muted';
+      const source = new EventSource(
+        `/api/orchestration/stream/${encodeURIComponent(started.trace_id)}`
+      );
+      dashboardTraceSource = source;
+      const seenSequences = new Set();
+      source.addEventListener('open', () => {
+        orchestrationStatus.textContent = `Connected · trace ${started.trace_id}`;
+      });
+      source.addEventListener('telemetry', eventMessage => {
+        try {
+          const eventData = JSON.parse(eventMessage.data);
+          if (seenSequences.has(eventData.sequence)) return;
+          seenSequences.add(eventData.sequence);
+          const detail = eventData.data || {};
+          if (
+            ['CODE_CHANGE_PREVIEW', 'CODE_CHANGE_APPLIED'].includes(eventData.event_type)
+            && detail.path
+          ) {
+            showCodeChangePreview({
+              path: detail.path,
+              changedLines: Array.isArray(detail.changed_lines) ? detail.changed_lines : [],
+              fileExists: detail.file_exists !== false
+            });
+          }
+          const line = [
+            new Date(eventData.timestamp).toLocaleTimeString(),
+            eventData.event_type,
+            `${eventData.sender} → ${eventData.receiver}`,
+            detail.tool_name ? `tool=${detail.tool_name}` : '',
+            detail.status ? `status=${detail.status}` : '',
+            detail.duration_ms !== undefined ? `${detail.duration_ms}ms` : '',
+            detail.path ? `path=${detail.path}` : '',
+            detail.changed_lines?.length ? `lines=${detail.changed_lines.join(',')}` : '',
+            detail.error || ''
+          ].filter(Boolean).join(' · ');
+          appendTraceLine(line);
+          if (eventData.event_type === 'RUN_COMPLETE') {
+            orchestrationStatus.textContent = `Workflow ${detail.status || 'complete'} · trace ${started.trace_id}`;
+            orchestrationStatus.className = `small ${detail.status === 'error' ? 'text-danger' : 'text-success'}`;
+            source.close();
+            if (dashboardTraceSource === source) dashboardTraceSource = null;
+            latestSquadTraces.set(started.squad_id, started.trace_id);
+            refreshAgentSquads().catch(error => {
+              orchestrationStatus.textContent += ` · refresh failed: ${error.message}`;
+            });
+          }
+        } catch (error) {
+          appendTraceLine(`Could not read trace event: ${error.message}`);
+        }
+      });
+      source.addEventListener('error', () => {
+        if (source.readyState === EventSource.CLOSED) {
+          orchestrationStatus.textContent = 'Trace stream closed before completion.';
+          orchestrationStatus.className = 'small text-danger';
+        }
+      });
+    } catch (error) {
+      orchestrationStatus.textContent = `Could not start workflow: ${error.message}`;
+      orchestrationStatus.className = 'small text-danger';
+    } finally {
+      button.disabled = false;
+    }
   });
 
   const dashboardTree = renderTree(container.querySelector('#dash-tree'), {
@@ -732,6 +1165,10 @@ export function updateHealthBadge(health) {
 }
 
 export function switchTab(tab, payload = null) {
+  if (tab !== 'dashboard' && dashboardTraceSource) {
+    dashboardTraceSource.close();
+    dashboardTraceSource = null;
+  }
   AppState.activeTab = tab;
   document.querySelectorAll('.nav-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.tab === tab));

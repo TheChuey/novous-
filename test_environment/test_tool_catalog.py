@@ -28,6 +28,9 @@ class TestToolCatalog(unittest.TestCase):
             "search_workspace",
             "project_status",
             "run_python_code",
+            "preview_editor_code",
+            "preview_code_change",
+            "inspect_http_routes",
             "send_code_to_editor",
             "run_code_in_editor",
             "ask_user_questions",
@@ -46,7 +49,7 @@ class TestToolCatalog(unittest.TestCase):
         }
         for exp in expected:
             self.assertIn(exp, names)
-        self.assertEqual(len(tools), 23)
+        self.assertEqual(len(tools), 26)
 
     def test_tools_directory_contains_only_the_file_tools_and_promoted_module(self):
         files = {path.name for path in tool_catalog.TOOLS_DIR.iterdir() if path.is_file()}
@@ -61,6 +64,7 @@ class TestToolCatalog(unittest.TestCase):
                 "map_files_tool.py",
                 "agent_memory_tool.py",
                 "promoted_tools.py",
+                "code_change_preview.py",
                 "read_tool.py",
                 "write_tool.py",
             },

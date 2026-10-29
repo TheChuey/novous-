@@ -168,6 +168,9 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
   const clearButton = document.getElementById('clear-console');
   const status = document.getElementById('codebuilder-status');
   const agentList = document.getElementById('codebuilder-agent-list');
+  const scratchpadDialog = document.getElementById('codebuilder-scratchpad-dialog');
+  const scratchpadContent = document.getElementById('codebuilder-scratchpad-content');
+  const scratchpadStatus = document.getElementById('codebuilder-scratchpad-status');
   const agentRefresh = document.getElementById('codebuilder-agent-refresh');
   const agentsPanel = document.getElementById('codebuilder-agents-panel');
   const agentsToggle = document.getElementById('codebuilder-agents-toggle');
@@ -179,6 +182,11 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
   const chatPanel = document.getElementById('codebuilder-chat-panel');
   const chatExpand = document.getElementById('codebuilder-chat-expand');
   const chatClear = document.getElementById('codebuilder-chat-clear');
+  const orchestrationButtons = [...document.querySelectorAll('[data-codebuilder-workflow]')];
+  const orchestrationStatus = document.getElementById('codebuilder-orchestration-status');
+  const editorActivity = document.getElementById('codebuilder-editor-activity');
+  const changeCount = document.getElementById('codebuilder-change-count');
+  const changeViewToggle = document.getElementById('codebuilder-change-view');
   const consoleCollapse = document.getElementById('codebuilder-console-collapse');
   const shell = agentsPanel?.closest('.codebuilder-shell') ?? root.closest('.codebuilder-shell');
   const layout = shell?.querySelector('.codebuilder-layout');
@@ -186,7 +194,10 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
   if (!root || !output || !diagnostics || !runButton || !runMode || !demoButton || !clearButton ||
       !agentList || !agentRefresh || !agentsPanel || !agentsToggle ||
       !modelSelect || !chatForm || !chatInput || !chatMessages || !chatStatus ||
-      !chatPanel || !chatExpand || !chatClear || !consoleCollapse || !shell || !layout) {
+      !chatPanel || !chatExpand || !chatClear || !consoleCollapse || !shell || !layout ||
+      !scratchpadDialog || !scratchpadContent || !scratchpadStatus ||
+      orchestrationButtons.length === 0 || !orchestrationStatus ||
+      !editorActivity || !changeCount || !changeViewToggle) {
     console.error('CodeBuilder could not start because a required page element is missing.');
     return null;
   }
@@ -201,6 +212,12 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
   let chatPending = false;
   let manualRunMode = null;
   const chatCodeEditors = new Set();
+  let orchestrationSource = null;
+  let orchestrationRunning = false;
+  let workflowEditorSource = null;
+  let workflowEditorDelivered = false;
+  let compactChangedLines = false;
+  let currentChangedLines = [];
 
   const detectRunMode = () => (RISKY_CODE_PATTERN.test(editor.getValue()) ? 'risky' : 'safe');
   const currentRunMode = () => (manualRunMode || detectRunMode());
@@ -1047,6 +1064,47 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     return button;
   };
 
+  const loadScratchpad = async () => {
+    scratchpadStatus.textContent = 'Loading agent scratchpad…';
+    scratchpadContent.textContent = '';
+    try {
+      const memory = await Api.getAgentScratchpad();
+      if (Object.keys(memory).length) {
+        scratchpadContent.textContent = JSON.stringify(memory, null, 2);
+        scratchpadStatus.textContent = 'Scratchpad loaded.';
+      } else {
+        scratchpadContent.textContent = 'The agent scratchpad is empty.';
+        scratchpadStatus.textContent = 'No saved agent results, reads, or maps.';
+      }
+    } catch (error) {
+      scratchpadContent.textContent = '';
+      scratchpadStatus.textContent = `Could not load scratchpad: ${error.message}`;
+    }
+  };
+
+  const viewScratchpad = async () => {
+    scratchpadDialog.showModal();
+    await loadScratchpad();
+  };
+
+  const clearScratchpad = async button => {
+    if (!confirm('Clear the shared agent scratchpad? This removes saved sub-agent results, reads and maps.')) {
+      return;
+    }
+    if (!scratchpadDialog.open) scratchpadDialog.showModal();
+    button.disabled = true;
+    scratchpadStatus.textContent = 'Clearing agent scratchpad…';
+    try {
+      await Api.clearAgentScratchpad();
+      scratchpadContent.textContent = 'The agent scratchpad is empty.';
+      scratchpadStatus.textContent = 'Agent scratchpad cleared.';
+    } catch (error) {
+      scratchpadStatus.textContent = `Could not clear scratchpad: ${error.message}`;
+    } finally {
+      button.disabled = false;
+    }
+  };
+
   const renderAgents = () => {
     agentList.replaceChildren();
 
@@ -1100,6 +1158,21 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
     );
     memoryTile.setAttribute('aria-label', 'Memory mode');
     agentList.appendChild(memoryTile);
+
+    const scratchpadActions = document.createElement('div');
+    scratchpadActions.className = 'codebuilder-scratchpad-actions';
+    const viewScratchpadButton = document.createElement('button');
+    viewScratchpadButton.type = 'button';
+    viewScratchpadButton.className = 'btn btn-sm';
+    viewScratchpadButton.textContent = 'View agent scratchpad';
+    viewScratchpadButton.addEventListener('click', viewScratchpad);
+    const clearScratchpadButton = document.createElement('button');
+    clearScratchpadButton.type = 'button';
+    clearScratchpadButton.className = 'btn btn-sm btn-danger';
+    clearScratchpadButton.textContent = 'Clear scratchpad';
+    clearScratchpadButton.addEventListener('click', () => clearScratchpad(clearScratchpadButton));
+    scratchpadActions.append(viewScratchpadButton, clearScratchpadButton);
+    agentList.appendChild(scratchpadActions);
 
     FUTURE_AGENT_OPTIONS.forEach(option => {
       const tile = buildAgentTile(
@@ -1245,6 +1318,302 @@ export async function setupCodeBuilderPage(rootId = 'codebuilder-editor') {
       runTerminal: document.getElementById('run-in-terminal')
     },
     openTerminalWith: (command) => openTerminalWith(command)
+  });
+
+  const updateChangedLines = (lines, eventType) => {
+    currentChangedLines = Array.isArray(lines)
+      ? [...new Set(lines.filter(line => Number.isInteger(line) && line > 0))].sort((a, b) => a - b)
+      : [];
+    changeCount.textContent = `${currentChangedLines.length} changed line${currentChangedLines.length === 1 ? '' : 's'}`;
+    changeViewToggle.disabled = currentChangedLines.length === 0;
+    changeViewToggle.textContent = compactChangedLines ? 'Show full file' : 'Show changed area';
+    editor.setHighlightedLines(currentChangedLines, eventType);
+    editor.setChangeView(currentChangedLines, compactChangedLines);
+  };
+
+  const workflowAgentName = agentId => ({
+    'code-planer': 'Code Planner',
+    'code-builder': 'Code Builder',
+    tester: 'Code Tester',
+    'code-troubleshooter': 'Code Troubleshooter',
+  }[agentId] || agentId || 'Code squad');
+
+  const applyOrchestrationEvent = async eventData => {
+    const detail = eventData.data || {};
+    if (eventData.event_type === 'AGENT_MESSAGE') {
+      const phase = detail.summary === 'Sub-agent phase completed' && detail.status === 'error'
+        ? `${workflowAgentName(eventData.sender)} reported an error; see the test output and final report.`
+        : {
+          'Sub-agent phase started': `${workflowAgentName(eventData.receiver)} started.`,
+          'Sub-agent phase completed': `${workflowAgentName(eventData.sender)} finished.`,
+          'Code Tester skipped because builder did not succeed': 'Code Tester skipped because the builder did not report a successful implementation.',
+          'Code Troubleshooter skipped because no upstream error was reported': 'Code Troubleshooter skipped because no upstream error was reported.',
+          'Implementation plan started': 'Code Planner is planning the implementation…',
+          'Implementation plan completed': `Code Planner finished the implementation plan (${detail.status || 'complete'}).`,
+          'Primary synthesis started': 'Planner is preparing the workflow response…',
+          'Primary synthesis completed': 'Planner finished the response.',
+        }[detail.summary];
+      if (phase) {
+        editorActivity.textContent = phase;
+        editorActivity.dataset.state = detail.status || 'running';
+        orchestrationStatus.textContent = phase;
+        appendChatMessage('system', phase);
+      }
+      return;
+    }
+    if (eventData.event_type === 'ERROR') {
+      const message = `${workflowAgentName(eventData.sender)} encountered an orchestration error.`;
+      editorActivity.textContent = message;
+      editorActivity.dataset.state = 'error';
+      orchestrationStatus.textContent = message;
+      appendChatMessage('system', message);
+      return;
+    }
+    if (eventData.event_type === 'TOOL_CALL_START') {
+      const phase = `${workflowAgentName(eventData.sender)} is using ${detail.tool_name || 'a tool'}…`;
+      editorActivity.textContent = phase;
+      editorActivity.dataset.state = 'running';
+      appendChatMessage('system', phase);
+      return;
+    }
+    if (eventData.event_type === 'TOOL_CALL_END') {
+      const phase = `${workflowAgentName(eventData.sender)}: ${detail.tool_name || 'Tool'} ${detail.status || 'finished'}.`;
+      editorActivity.textContent = phase;
+      editorActivity.dataset.state = detail.status || 'success';
+      appendChatMessage('system', phase);
+      return;
+    }
+    if (eventData.event_type === 'EDITOR_CODE_EXECUTION') {
+      const execution = await Api.getOrchestrationEditorExecution(eventData.trace_id);
+      const diagnosticsList = Array.isArray(execution.diagnostics) ? execution.diagnostics : [];
+      const outputParts = [`Workflow code execution: ${execution.status || detail.status || 'complete'}`];
+      if (execution.source_matches_editor === false) {
+        outputParts.push('The tester ran a focused test snippet; diagnostic line numbers do not refer to the displayed editor source.');
+      }
+      if (execution.stdout) outputParts.push(execution.stdout.trimEnd());
+      if (execution.stderr) outputParts.push(execution.stderr.trimEnd());
+      if (!execution.stdout && !execution.stderr) outputParts.push('(no console output)');
+      output.textContent = outputParts.join('\n\n');
+      appendChatMessage('system', outputParts.join('\n\n').slice(0, 6_000));
+      renderDiagnostics(diagnosticsList);
+      editor.setDiagnostics(diagnosticsList);
+      const errorLines = Array.isArray(detail.diagnostic_lines) ? detail.diagnostic_lines : [];
+      if (errorLines.length) editor.setHighlightedLines(errorLines, 'error');
+      editorActivity.textContent = `Editor code execution ${execution.status || detail.status || 'complete'}`;
+      editorActivity.dataset.state = detail.status || 'success';
+      return;
+    }
+    if (eventData.event_type === 'EDITOR_CODE_PREVIEW') {
+      const preview = await Api.getOrchestrationEditorPreview(eventData.trace_id);
+      if (workflowEditorSource !== null && editor.getValue() !== workflowEditorSource) {
+        orchestrationStatus.textContent =
+          'Corrected code is ready, but the editor changed during the workflow; it was not replaced.';
+        return;
+      }
+      editor.setValue(preview.content);
+      editor.setDiagnostics([]);
+      renderDiagnostics([]);
+      workflowEditorDelivered = true;
+      const lines = Array.isArray(preview.changed_lines) ? preview.changed_lines : [];
+      updateChangedLines(lines, 'applied');
+      status.textContent = 'Corrected code preview loaded. Save the editor to keep these changes.';
+      editorActivity.textContent = 'Corrected code loaded in editor (not saved)';
+      editorActivity.dataset.state = 'success';
+      orchestrationStatus.textContent =
+        `Corrected code loaded in editor: ${lines.length} changed line${lines.length === 1 ? '' : 's'}. Save to keep it.`;
+      return;
+    }
+    if (!['CODE_CHANGE_PREVIEW', 'CODE_CHANGE_APPLIED'].includes(eventData.event_type) ||
+        !detail.path) return;
+
+    const lines = Array.isArray(detail.changed_lines) ? detail.changed_lines : [];
+    const applied = eventData.event_type === 'CODE_CHANGE_APPLIED';
+    let loadedIntoEditor = true;
+    if (!applied && detail.file_exists === false) {
+      loadedIntoEditor = false;
+      orchestrationStatus.textContent = `Preview for new file ${detail.path}; it will be available in the editor after the write.`;
+    } else {
+      try {
+        loadedIntoEditor = await fileControls.loadManagedPath(
+          detail.path,
+          applied ? workflowEditorSource : null
+        );
+        if (!loadedIntoEditor) {
+          orchestrationStatus.textContent =
+            `Changes in ${detail.path}; editor has unsaved work, so the file was not replaced.`;
+        }
+      } catch (error) {
+        loadedIntoEditor = false;
+        orchestrationStatus.textContent = `Could not load ${detail.path}: ${error.message}`;
+      }
+    }
+    if (loadedIntoEditor) {
+      updateChangedLines(lines, applied ? 'applied' : 'preview');
+      if (applied) {
+        workflowEditorDelivered = true;
+        editor.setDiagnostics([]);
+        renderDiagnostics([]);
+      }
+    } else {
+      currentChangedLines = lines;
+      changeCount.textContent = `${lines.length} changed line${lines.length === 1 ? '' : 's'}${detail.file_exists === false ? ' · new file' : ' · file not loaded'}`;
+      changeViewToggle.disabled = true;
+    }
+    editorActivity.textContent = applied
+      ? `Applied changes in ${detail.path}`
+      : `Previewing changes in ${detail.path}`;
+    editorActivity.dataset.state = applied ? 'success' : 'preview';
+    appendChatMessage(
+      'system',
+      `${applied ? 'Applied' : 'Previewed'} ${lines.length} changed line${lines.length === 1 ? '' : 's'} in ${detail.path}.`
+    );
+    if (loadedIntoEditor) {
+      orchestrationStatus.textContent = applied
+        ? `Applied ${lines.length} changed line${lines.length === 1 ? '' : 's'} in ${detail.path}`
+        : `Preview: ${lines.length} changed line${lines.length === 1 ? '' : 's'} in ${detail.path}`;
+    }
+  };
+
+  changeViewToggle.addEventListener('click', () => {
+    compactChangedLines = !compactChangedLines;
+    updateChangedLines(currentChangedLines, 'preview');
+  });
+
+  const startCodeWorkflow = async action => {
+    const query = chatInput.value.trim();
+    if (!query) {
+      orchestrationStatus.textContent = 'Enter a workflow request in the agent message box first.';
+      chatInput.focus();
+      return;
+    }
+    if (orchestrationRunning) return;
+    orchestrationRunning = true;
+    orchestrationButtons.forEach(button => { button.disabled = true; });
+    changeCount.textContent = '0 changed lines';
+    changeViewToggle.disabled = true;
+    currentChangedLines = [];
+    editor.setHighlightedLines([]);
+    editor.setChangeView([], false);
+    compactChangedLines = false;
+    editorActivity.textContent = 'Starting Code Development Squad…';
+    editorActivity.dataset.state = 'running';
+    renderDiagnostics([]);
+    editor.setDiagnostics([]);
+    output.textContent = `${action === 'all' ? 'Full squad' : action} workflow started…`;
+    orchestrationStatus.textContent = 'Starting orchestration…';
+    chatStatus.textContent = `Starting ${action === 'all' ? 'full squad' : action} workflow…`;
+    workflowEditorSource = editor.getValue();
+    workflowEditorDelivered = false;
+    orchestrationSource?.close();
+    try {
+      const started = await Api.startOrchestrationRun('code-squad', query, action, {
+        editor_code: workflowEditorSource,
+        editor_path: fileControls.getCurrentPath(),
+      });
+      orchestrationStatus.textContent = `Running ${action} · ${started.trace_id}`;
+      const source = new EventSource(
+        `/api/orchestration/stream/${encodeURIComponent(started.trace_id)}`
+      );
+      orchestrationSource = source;
+      let eventQueue = Promise.resolve();
+      let runCompleteSeen = false;
+      source.addEventListener('telemetry', event => {
+        try {
+          const eventData = JSON.parse(event.data);
+          eventQueue = eventQueue.then(() => applyOrchestrationEvent(eventData)).catch(error => {
+            orchestrationStatus.textContent = `Could not display workflow event: ${error.message}`;
+          });
+          if (eventData.event_type === 'RUN_COMPLETE') {
+            runCompleteSeen = true;
+            eventQueue = eventQueue.then(async () => {
+              let runResult = null;
+              try {
+                runResult = await Api.getOrchestrationRunResult(started.trace_id);
+                appendChatMessage(
+                  'assistant',
+                  runResult.final_answer || 'The workflow completed without a final response.'
+                );
+              } catch (error) {
+                appendChatMessage(
+                  'assistant',
+                  `The workflow finished, but its final response could not be loaded: ${error.message}`
+                );
+              }
+              if (action !== 'plan' && !workflowEditorDelivered) {
+                try {
+                  const preview = await Api.getOrchestrationEditorPreview(started.trace_id);
+                  if (editor.getValue() === workflowEditorSource) {
+                    editor.setValue(preview.content);
+                    workflowEditorDelivered = true;
+                    updateChangedLines(preview.changed_lines || [], 'applied');
+                    status.textContent = 'Code preview loaded. Save the editor to keep these changes.';
+                    appendChatMessage(
+                      'assistant',
+                      'The workflow returned code and it is now displayed in the editor. Save the editor if you want to keep it.'
+                    );
+                  }
+                } catch (error) {
+                  const note = editor.getValue() !== workflowEditorSource
+                    ? 'The editor changed while the workflow was running, so its result was not inserted.'
+                    : runResult
+                      ? 'No editor change was applied. See the workflow response for the current-run findings and any missing evidence.'
+                      : `The workflow finished, but its result could not be retrieved (${error.message}).`;
+                  orchestrationStatus.textContent = note;
+                  editorActivity.textContent = runResult
+                    ? 'No editor change was applied'
+                    : 'Workflow result could not be retrieved';
+                  editorActivity.dataset.state = runResult ? 'info' : 'error';
+                }
+              }
+              const resultStatus = eventData.data?.status || 'complete';
+              if (workflowEditorDelivered || action === 'plan') {
+                orchestrationStatus.textContent = `${action} workflow ${resultStatus}. Trace: ${started.trace_id}`;
+              }
+              orchestrationStatus.dataset.state = resultStatus;
+              chatStatus.textContent = `Code squad ${resultStatus}`;
+              if (workflowEditorDelivered || action === 'plan') {
+                editorActivity.textContent = `Code squad workflow ${resultStatus}`;
+                editorActivity.dataset.state = resultStatus;
+              }
+              orchestrationRunning = false;
+              workflowEditorSource = null;
+              workflowEditorDelivered = false;
+              orchestrationButtons.forEach(button => { button.disabled = false; });
+              source.close();
+              if (orchestrationSource === source) orchestrationSource = null;
+            });
+          }
+        } catch (error) {
+          orchestrationStatus.textContent = `Could not read workflow event: ${error.message}`;
+        }
+      });
+      source.addEventListener('error', () => {
+        if (source.readyState === EventSource.CLOSED && orchestrationRunning && !runCompleteSeen) {
+          orchestrationStatus.textContent = 'Workflow trace closed before completion.';
+          orchestrationStatus.dataset.state = 'error';
+          editorActivity.textContent = 'Workflow trace closed before completion';
+          editorActivity.dataset.state = 'error';
+          orchestrationRunning = false;
+          workflowEditorSource = null;
+          workflowEditorDelivered = false;
+          orchestrationButtons.forEach(button => { button.disabled = false; });
+        }
+      });
+    } catch (error) {
+      orchestrationStatus.textContent = `Could not start orchestration: ${error.message}`;
+      orchestrationStatus.dataset.state = 'error';
+      editorActivity.textContent = 'Could not start orchestration';
+      editorActivity.dataset.state = 'error';
+      orchestrationRunning = false;
+      workflowEditorSource = null;
+      workflowEditorDelivered = false;
+      orchestrationButtons.forEach(button => { button.disabled = false; });
+    }
+  };
+  orchestrationButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      startCodeWorkflow(button.dataset.codebuilderWorkflow);
+    });
   });
   editor.onChange(() => {
     fileControls.refreshLabel();
@@ -1487,12 +1856,18 @@ export function renderCodeBuilderView(container) {
               </select>
             </label>
             <textarea id="codebuilder-chat-input" class="form-input" rows="4"
-                      placeholder="Ask the selected agent about your Python code…"
-                      aria-label="Message to agent"></textarea>
+                      placeholder="Ask the selected agent, or enter a task for Code squad…"
+                      aria-label="Message to agent or Code squad workflow"></textarea>
             <div class="codebuilder-chat-actions">
               <button id="codebuilder-chat-clear" class="btn btn-sm"
                       type="button" aria-label="Clear chat" title="Clear the chat conversation">Clear</button>
               <button class="btn btn-primary" type="submit" disabled>Send</button>
+            </div>
+            <div class="codebuilder-workflow-actions" aria-label="Code squad orchestration">
+              <button class="btn btn-sm" type="button" data-codebuilder-workflow="plan">Plan</button>
+              <button class="btn btn-sm btn-primary" type="button" data-codebuilder-workflow="build">Build</button>
+              <button class="btn btn-sm" type="button" data-codebuilder-workflow="troubleshoot">Troubleshoot</button>
+              <button class="btn btn-sm" type="button" data-codebuilder-workflow="all">Run full squad</button>
             </div>
           </form>
         </section>
@@ -1501,6 +1876,14 @@ export function renderCodeBuilderView(container) {
              aria-orientation="vertical" aria-label="Resize chat panel"></div>
 
         <section class="codebuilder-editor-panel" aria-label="Python editor">
+          <div class="codebuilder-orchestration-bar" aria-live="polite">
+            <div class="codebuilder-orchestration-summary">
+              <span id="codebuilder-editor-activity" data-state="idle">Code squad tools appear here while they run.</span>
+              <span id="codebuilder-change-count">0 changed lines</span>
+            </div>
+            <p id="codebuilder-orchestration-status" role="status">Choose an orchestration action in the agent panel.</p>
+            <button id="codebuilder-change-view" class="btn btn-sm" type="button" disabled>Show full file</button>
+          </div>
           <div id="codebuilder-editor" class="editor-surface"></div>
           <div class="codebuilder-statusbar">
             <span id="codebuilder-status">Loading editor…</span>
@@ -1561,9 +1944,22 @@ export function renderCodeBuilderView(container) {
           <div id="codebuilder-agent-list" class="codebuilder-agent-list"></div>
         </aside>
       </main>
+      <dialog id="codebuilder-scratchpad-dialog" class="codebuilder-scratchpad-dialog">
+        <div class="codebuilder-scratchpad-heading">
+          <div>
+            <h2>Agent scratchpad</h2>
+            <p id="codebuilder-scratchpad-status" class="text-muted small" role="status">Ready.</p>
+          </div>
+          <button class="btn btn-sm" type="button" data-scratchpad-close>Close</button>
+        </div>
+        <pre id="codebuilder-scratchpad-content" class="codebuilder-scratchpad-content" aria-live="polite"></pre>
+      </dialog>
     </div>
   `;
 
+  container.querySelector('[data-scratchpad-close]')?.addEventListener('click', () => {
+    container.querySelector('#codebuilder-scratchpad-dialog')?.close();
+  });
   setupCodeBuilderPage();
 }
 

@@ -36,7 +36,7 @@ def test_orchestration_sequential_default_pattern():
         parameters={"test": True},
     )
 
-    def fake_turn(agent_id, prompt_input, parameters=None):
+    def fake_turn(agent_id, prompt_input, parameters=None, trace_id=None):
         return f"{agent_id} completed: {prompt_input[:40]}"
 
     with patch(
@@ -45,6 +45,9 @@ def test_orchestration_sequential_default_pattern():
     ), patch(
         "orchestration.orchestration_patterns.interface.read_latest_subagent_scratchpad",
         return_value={"status": "success", "payload": {"test": True}},
+    ), patch(
+        "orchestration.orchestration_patterns.interface.read_scratchpad_snapshot",
+        return_value={"latest_subagent_result": {"status": "success"}},
     ):
         res = run_orchestration(req)
 
